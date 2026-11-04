@@ -293,28 +293,29 @@ app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
   const actorId=String(req.body?.actorId||""), targetId=String(req.body?.targetId||""), action=String(req.body?.action||"");
   let actorName=actorId, targetName=targetId, before=null;
   try {
+    const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
     if(!/^\d+$/.test(actorId)||!/^\d+$/.test(targetId)||!["promote","demote"].includes(action))
-      return res.status(400).json({error:"Invalid in-game ranking request."});
+      fail(400,"Invalid in-game ranking request.");
     const settings=await getGameSettings();
-    if(!settings.enabled) return res.status(403).json({error:"In-game ranking is disabled by Lemonz management."});
-    if(action==="promote"&&!settings.allow_promote) return res.status(403).json({error:"In-game promotions are disabled."});
-    if(action==="demote"&&!settings.allow_demote) return res.status(403).json({error:"In-game demotions are disabled."});
+    if(!settings.enabled) fail(403,"In-game ranking is disabled by Lemonz management.");
+    if(action==="promote"&&!settings.allow_promote) fail(403,"In-game promotions are disabled.");
+    if(action==="demote"&&!settings.allow_demote) fail(403,"In-game demotions are disabled.");
     const [actor,targetUser]=await Promise.all([getPublicUser(actorId),getPublicUser(targetId)]);
     actorName=actor.name; targetName=targetUser.name;
     const [actorIdentity,target]=await Promise.all([getIdentity(actorId),getMember(targetId)]);
     if(!actorIdentity.inGroup||actorIdentity.rank<settings.min_actor_rank)
-      return res.status(403).json({error:"You do not meet the in-game ranking rank requirement."});
-    if(!target) return res.status(404).json({error:"That player is not in Lemonz."});
+      fail(403,"You do not meet the in-game ranking rank requirement.");
+    if(!target) fail(404,"That player is not in Lemonz.");
     before=target.role;
     if(target.role.rank<settings.min_target_rank)
-      return res.status(403).json({error:"That player's current rank is below the configured target rank requirement."});
-    if(actorId===targetId) return res.status(400).json({error:"You cannot rank yourself."});
+      fail(403,"That player's current rank is below the configured target rank requirement.");
+    if(actorId===targetId) fail(400,"You cannot rank yourself.");
     const allRoles=await getRoles();
     const allowed=allRoles.filter(r=>r.rank<actorIdentity.rank);
     const desired=action==="promote"
       ? allowed.filter(r=>r.rank>before.rank).sort((a,b)=>a.rank-b.rank)[0]
       : allowed.filter(r=>r.rank<before.rank && r.rank>=settings.min_target_rank).sort((a,b)=>b.rank-a.rank)[0];
-    if(!desired) return res.status(400).json({error:action==="promote"?"No higher role below your own rank is available.":"No lower role at or above the configured target rank is available."});
+    if(!desired) fail(400,action==="promote"?"No higher role below your own rank is available.":"No lower role at or above the configured target rank is available.");
     const membershipId=target.membershipId;
     const currentPaths=(target.membership.roles?.length?target.membership.roles:target.membership.role?[target.membership.role]:[]);
     const newPath=desired.path||`groups/${GROUP_ID}/roles/${desired.id}`;
