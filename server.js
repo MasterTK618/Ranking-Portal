@@ -294,12 +294,11 @@ app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
   let actorName=actorId, targetName=targetId, before=null;
   try {
     const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
-    if(!/^\d+$/.test(actorId)||!/^\d+$/.test(targetId)||!["promote","demote"].includes(action))
+    if(!/^\d+$/.test(actorId)||!/^\d+$/.test(targetId)||action!=="promote")
       fail(400,"Invalid in-game ranking request.");
     const settings=await getGameSettings();
     if(!settings.enabled) fail(403,"In-game ranking is disabled by Lemonz management.");
-    if(action==="promote"&&!settings.allow_promote) fail(403,"In-game promotions are disabled.");
-    if(action==="demote"&&!settings.allow_demote) fail(403,"In-game demotions are disabled.");
+    if(!settings.allow_promote) fail(403,"In-game promotions are disabled.");
     const [actor,targetUser]=await Promise.all([getPublicUser(actorId),getPublicUser(targetId)]);
     actorName=actor.name; targetName=targetUser.name;
     const [actorIdentity,target]=await Promise.all([getIdentity(actorId),getMember(targetId)]);
@@ -312,10 +311,8 @@ app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
     if(actorId===targetId) fail(400,"You cannot rank yourself.");
     const allRoles=await getRoles();
     const allowed=allRoles.filter(r=>r.rank<actorIdentity.rank);
-    const desired=action==="promote"
-      ? allowed.filter(r=>r.rank>before.rank).sort((a,b)=>a.rank-b.rank)[0]
-      : allowed.filter(r=>r.rank<before.rank && r.rank>=settings.min_target_rank).sort((a,b)=>b.rank-a.rank)[0];
-    if(!desired) fail(400,action==="promote"?"No higher role below your own rank is available.":"No lower role at or above the configured target rank is available.");
+    const desired=allowed.filter(r=>r.rank>before.rank).sort((a,b)=>a.rank-b.rank)[0];
+    if(!desired) fail(400,"No higher role below your own rank is available.");
     const membershipId=target.membershipId;
     const currentPaths=(target.membership.roles?.length?target.membership.roles:target.membership.role?[target.membership.role]:[]);
     const newPath=desired.path||`groups/${GROUP_ID}/roles/${desired.id}`;
@@ -324,7 +321,7 @@ app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
     const verified=await getMember(targetId);
     if(verified?.role?.id!==desired.id) throw new Error("Roblox accepted the request, but the new role could not be verified.");
     await logAction({actorId,actorName,targetId,targetName,previousRole:before?.name||"Unknown",newRole:desired.name,action,reason:"In-game Ranking Stick",status:"SUCCESS"});
-    res.json({ok:true,message:`${targetName} was ${action==="promote"?"promoted":"demoted"} to ${desired.name}.`,newRole:desired.name});
+    res.json({ok:true,message:`${targetName} was promoted to ${desired.name}.`,newRole:desired.name});
   } catch(e) {
     try { await logAction({actorId:actorId||"unknown",actorName,targetId:targetId||"unknown",targetName,previousRole:before?.name||null,newRole:null,action:action||"unknown",reason:"In-game Ranking Stick",status:"FAILED",details:e.message}); } catch {}
     next(e);
