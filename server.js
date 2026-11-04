@@ -11,10 +11,9 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const GROUP_ID = process.env.ROBLOX_GROUP_ID || "16597698";
 const MIN_RANK = Number(process.env.MIN_RANK || 245);
-const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined });
 
-const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY","APP_URL"];
+const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY"];
 const missing = required.filter(k => !process.env[k]);
 if (missing.length) console.warn("Missing environment variables:", missing.join(", "));
 
