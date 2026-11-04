@@ -19,6 +19,7 @@
       <button class="nav-item" data-page="rank"><span>↗</span> Rank members</button>
       <button class="nav-item" data-page="members"><span>♙</span> Members</button>
       <button class="nav-item" data-page="logs"><span>☷</span> Ranking logs</button>
+      <button class="nav-item hidden" id="settingsNav" data-page="settings"><span>⚙</span> Settings</button>
       <div class="sidebar-bottom">
         <div class="group-pill"><span class="status-dot"></span><span><b>Lemonz</b><small>Group #16597698</small></span></div>
         <button id="themeToggle" class="theme-toggle"><span id="themeIcon">☾</span><span id="themeText">Dark mode</span></button>
@@ -43,6 +44,20 @@
           <div class="content-card rank-form"><label for="memberSearch">ROBLOX USERNAME</label><div class="search-row"><input id="memberSearch" placeholder="Enter a username…" autocomplete="off"><button id="searchMember" class="primary-btn">Search member</button></div><div id="memberResult" class="member-result hidden"></div><div id="rankControls" class="hidden"><div class="form-divider"></div><div class="form-grid"><div><label for="newRole">NEW GROUP ROLE</label><select id="newRole"><option value="">Choose a role…</option></select></div><div><label for="rankAction">ACTION</label><select id="rankAction"><option value="set">Set role</option><option value="promote">Promote</option><option value="demote">Demote</option></select></div></div><label for="reason">REASON <span class="muted">(required for demotions)</span></label><textarea id="reason" rows="3" placeholder="Add a short reason for this change…"></textarea><div class="form-footer"><span>Roblox hierarchy rules still apply.</span><button id="submitRank" class="primary-btn">Confirm ranking</button></div></div></div>
         </section>
         <section id="membersPage" class="page hidden"><div class="page-intro"><div><h2>Members</h2><p>Search a member by their Roblox username to view their current Lemonz role.</p></div></div><div class="content-card"><div class="search-row"><input id="directorySearch" placeholder="Search Roblox username…"><button id="directoryButton" class="primary-btn">Search</button></div><div id="directoryResult" class="table-wrap"></div></div></section>
+        <section id="settingsPage" class="page hidden">
+          <div class="page-intro"><div><h2>In-game ranking settings</h2><p>Control who can use the Ranking Stick and which members can be promoted or demoted in-game.</p></div></div>
+          <div class="content-card rank-form">
+            <div class="form-grid">
+              <div><label for="gameMinActorRank">MINIMUM STAFF RANK TO USE THE STICK</label><input id="gameMinActorRank" type="number" min="1" max="255" value="245"></div>
+              <div><label for="gameMinTargetRank">MINIMUM CURRENT RANK OF TARGET</label><input id="gameMinTargetRank" type="number" min="1" max="255" value="1"></div>
+            </div>
+            <label class="setting-check"><input id="gameRankingEnabled" type="checkbox" checked> Enable in-game ranking</label>
+            <label class="setting-check"><input id="gameAllowPromote" type="checkbox" checked> Allow promotions with the Ranking Stick</label>
+            <label class="setting-check"><input id="gameAllowDemote" type="checkbox" checked> Allow demotions with the Ranking Stick</label>
+            <div class="form-footer"><span>Only the group owner (rank 255) can save these settings.</span><button id="saveGameSettings" class="primary-btn">Save settings</button></div>
+            <p class="muted">The target-rank requirement checks the member's current rank before the action. Roblox hierarchy rules still prevent staff from assigning roles equal to or above their own rank.</p>
+          </div>
+        </section>
         <section id="logsPage" class="page hidden"><div class="page-intro"><div><h2>Ranking logs</h2><p>A record of role changes made through the portal.</p></div><button id="refreshLogs" class="quiet-btn">↻ Refresh</button></div><div class="content-card"><div id="logsTable" class="table-wrap"></div></div></section>
       </div>
       <footer>LEMONZ RANKING PORTAL <span>•</span> SECURE STAFF TOOLS</footer>
