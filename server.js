@@ -118,7 +118,7 @@ app.get("/auth/login", (req,res) => {
 app.post("/auth/challenge", async (req,res,next) => {
   try {
     const username = String(req.body?.username || "").trim();
-    if (!/^[\\w]{3,20}$/.test(username)) return res.status(400).json({error:"Enter a valid Roblox username."});
+    if (!/^[\w]{3,20}$/.test(username)) return res.status(400).json({error:"Enter a valid Roblox username."});
     const lookup = await fetch("https://users.roblox.com/v1/usernames/users", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({usernames:[username],excludeBannedUsers:true})
