@@ -103,7 +103,6 @@ async function loadGameSettings(){
     $("gameMinTargetRank").value=s.min_target_rank;
     $("gameRankingEnabled").checked=s.enabled;
     $("gameAllowPromote").checked=s.allow_promote;
-    $("gameAllowDemote").checked=s.allow_demote;
   }catch(e){notice(e.message,"error")}
 }
 $("saveGameSettings").addEventListener("click",async()=>{
@@ -113,8 +112,7 @@ $("saveGameSettings").addEventListener("click",async()=>{
       minActorRank:Number($("gameMinActorRank").value),
       minTargetRank:Number($("gameMinTargetRank").value),
       enabled:$("gameRankingEnabled").checked,
-      allowPromote:$("gameAllowPromote").checked,
-      allowDemote:$("gameAllowDemote").checked
+      allowPromote:$("gameAllowPromote").checked
     })});
     notice("In-game ranking settings saved.","success");
     $("gameMinActorRank").value=d.settings.min_actor_rank;
