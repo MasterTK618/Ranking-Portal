@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5c928">
+  <title>Verify Roblox Account · Lemonz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main style="max-width:620px;margin:8vh auto;padding:20px">
+    <section class="content-card" style="padding:30px">
+      <a class="brand" href="/" style="margin:0 0 28px"><span class="brand-mark">L</span><span>lemonz<span class="brand-sub">RANKING PORTAL</span></span></a>
+      <div class="eyebrow">STAFF ACCESS</div>
+      <h1 style="margin:10px 0 8px">Verify your Roblox account</h1>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">Enter your Roblox username. We'll give you a temporary code to place in your Roblox profile description to prove you control the account.</p>
+      <div id="authMessage" class="notice hidden" role="status"></div>
+      <div id="stepOne" style="margin-top:22px">
+        <label for="robloxUsername" style="display:block;font-size:10px;font-weight:800;color:var(--muted);margin-bottom:8px">ROBLOX USERNAME</label>
+        <input id="robloxUsername" placeholder="Your exact Roblox username" autocomplete="username" maxlength="20">
+        <button id="createCode" class="primary-btn" style="margin-top:14px">Get verification code</button>
+      </div>
+      <div id="stepTwo" class="hidden" style="margin-top:22px">
+        <p style="font-size:13px">On your Roblox profile, temporarily add this exact code to your <b>About</b> description:</p>
+        <div id="verificationCode" style="font-size:24px;font-weight:800;letter-spacing:2px;background:var(--panel2);border:1px dashed #d9b321;border-radius:10px;padding:16px;text-align:center;user-select:all"></div>
+        <p style="font-size:11px;color:var(--muted);line-height:1.6">Edit your Roblox profile, save the description, then return here. The code expires in 10 minutes. Remove it from your description after verification.</p>
+        <button id="verifyCode" class="primary-btn">I've added the code — verify me</button>
+        <button id="startOver" class="quiet-btn" style="margin-left:8px">Start over</button>
+      </div>
+      <p style="font-size:10px;color:var(--muted);margin-top:24px">Verification checks the public Roblox profile description. Never enter your Roblox password or share your account cookie.</p>
+      <a href="/" style="font-size:12px;color:var(--muted)">← Back to Lemonz portal</a>
+    </section>
+  </main>
+  <script src="/auth.js" defer></script>
+</body>
+</html>
