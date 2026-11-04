@@ -14,7 +14,7 @@ const MIN_RANK = Number(process.env.MIN_RANK || 245);
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined });
 
-const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY","ROBLOX_OAUTH_CLIENT_ID","ROBLOX_OAUTH_CLIENT_SECRET","ROBLOX_OAUTH_REDIRECT_URI","APP_URL"];
+const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY","APP_URL"];
 const missing = required.filter(k => !process.env[k]);
 if (missing.length) console.warn("Missing environment variables:", missing.join(", "));
 
@@ -114,44 +114,54 @@ async function requireRanker(req,res,next) {
 }
 
 app.get("/auth/login", (req,res) => {
-  if (!APP_URL || !process.env.ROBLOX_OAUTH_CLIENT_ID) return res.status(503).send("Roblox login is not configured yet.");
-  const state = random(24), verifier = random(48), nonce = random(24);
-  req.session.oauth = { state, verifier, nonce };
-  const q = new URLSearchParams({
-    client_id: process.env.ROBLOX_OAUTH_CLIENT_ID,
-    redirect_uri: process.env.ROBLOX_OAUTH_REDIRECT_URI,
-    response_type: "code", scope: "openid profile",
-    state, nonce, code_challenge: sha256(verifier), code_challenge_method: "S256"
-  });
-  res.redirect("https://apis.roblox.com/oauth/v1/authorize?" + q.toString());
+  res.sendFile(require("node:path").join(process.cwd(),"public","auth.html"));
 });
-app.get("/auth/callback", async (req,res,next) => {
+app.post("/auth/challenge", async (req,res,next) => {
   try {
-    const pending = req.session.oauth;
-    if (!pending || !req.query.code || req.query.state !== pending.state) return res.status(400).send("Login expired or state check failed. Please go back and sign in again.");
-    delete req.session.oauth;
-    const tokenResponse = await fetch("https://apis.roblox.com/oauth/v1/token", {
-      method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" },
-      body:new URLSearchParams({
-        grant_type:"authorization_code", code:String(req.query.code),
-        client_id:process.env.ROBLOX_OAUTH_CLIENT_ID,
-        client_secret:process.env.ROBLOX_OAUTH_CLIENT_SECRET,
-        redirect_uri:process.env.ROBLOX_OAUTH_REDIRECT_URI,
-        code_verifier:pending.verifier
-      })
+    const username = String(req.body?.username || "").trim();
+    if (!/^[\\w]{3,20}$/.test(username)) return res.status(400).json({error:"Enter a valid Roblox username."});
+    const lookup = await fetch("https://users.roblox.com/v1/usernames/users", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({usernames:[username],excludeBannedUsers:true})
     });
-    const tokens = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokens.access_token) return res.status(401).send("Roblox did not complete sign-in. Please try again.");
-    const profileResponse = await fetch("https://apis.roblox.com/oauth/v1/userinfo", { headers:{ Authorization:`Bearer ${tokens.access_token}` } });
+    const data = await lookup.json();
+    const found = data.data?.[0];
+    if (!lookup.ok || !found) return res.status(404).json({error:"Roblox username not found."});
+    const code = "LEMONZ-" + random(5).toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7);
+    req.session.pendingVerification = { id:String(found.id), name:found.name, code, expiresAt:Date.now()+10*60*1000, attempts:0 };
+    req.session.save(err => {
+      if (err) return next(err);
+      res.json({ok:true, username:found.name, code, expiresInMinutes:10});
+    });
+  } catch(e) { next(e); }
+});
+app.post("/auth/verify", async (req,res,next) => {
+  try {
+    const pending = req.session.pendingVerification;
+    if (!pending || Date.now() > pending.expiresAt) {
+      delete req.session.pendingVerification;
+      return res.status(400).json({error:"Your verification code expired. Start again to get a new one."});
+    }
+    pending.attempts += 1;
+    if (pending.attempts > 5) {
+      delete req.session.pendingVerification;
+      return res.status(429).json({error:"Too many attempts. Start again for a new code."});
+    }
+    const profileResponse = await fetch("https://users.roblox.com/v1/users/" + encodeURIComponent(pending.id));
     const profile = await profileResponse.json();
-    if (!profileResponse.ok || !profile.sub) return res.status(401).send("Could not verify your Roblox account.");
-    const userId = String(profile.sub).replace(/^https?:\/\/users\.roblox\.com\/v1\/users\//,"");
-    if (!/^\d+$/.test(userId)) return res.status(401).send("Roblox returned an unexpected account ID.");
+    if (!profileResponse.ok || String(profile.id) !== pending.id) return res.status(502).json({error:"Could not check that Roblox profile right now. Try again."});
+    if (!String(profile.description || "").includes(pending.code)) {
+      req.session.save(() => {});
+      return res.status(400).json({error:"We couldn't find your code in that Roblox profile description yet. Add the exact code, save your profile, and try again."});
+    }
+    const verifiedUser = { id:pending.id, name:pending.name, picture:null };
+    delete req.session.pendingVerification;
     await new Promise((resolve,reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
-    req.session.user = { id:userId, name:profile.preferred_username || profile.nickname || profile.name || `User ${userId}`, picture:profile.picture || null };
+    req.session.user = verifiedUser;
     req.session.csrfToken = random(32);
-    res.redirect("/");
-  } catch (e) { next(e); }
+    await new Promise((resolve,reject) => req.session.save(err => err ? reject(err) : resolve()));
+    res.json({ok:true,redirect:"/"});
+  } catch(e) { next(e); }
 });
 app.post("/auth/logout", requireLogin, csrf, (req,res) => req.session.destroy(err => err ? res.status(500).json({error:"Could not sign out."}) : res.clearCookie("lemonz.sid").json({ok:true})));
 
