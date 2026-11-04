@@ -164,11 +164,22 @@ app.post("/auth/verify", async (req,res,next) => {
 });
 app.post("/auth/logout", requireLogin, csrf, (req,res) => req.session.destroy(err => err ? res.status(500).json({error:"Could not sign out."}) : res.clearCookie("lemonz.sid").json({ok:true})));
 
-app.get("/api/me", requireLogin, async (req,res,next) => {
+app.get("/api/me", requireLogin, async (req,res) => {
   try {
     const identity = await getIdentity(req.session.user.id);
     res.json({ user:req.session.user, identity, csrfToken:req.session.csrfToken, groupId:GROUP_ID, minRank:MIN_RANK });
-  } catch(e) { next(e); }
+  } catch(e) {
+    // Keep profile-description sign-in independent from the separate Roblox Groups API credential.
+    console.error("Roblox Groups API unavailable during profile sign-in:", e.message, e.roblox || "");
+    res.json({
+      user:req.session.user,
+      identity:{ userId:req.session.user.id, inGroup:false, rank:0, roleName:"Group connection unavailable", canRank:false, apiUnavailable:true },
+      apiError:"Your Roblox profile is verified, but the portal cannot access Lemonz group data yet. A valid user-owned Roblox Open Cloud API key with Groups permissions is required for ranking.",
+      csrfToken:req.session.csrfToken,
+      groupId:GROUP_ID,
+      minRank:MIN_RANK
+    });
+  }
 });
 app.get("/api/roles", requireLogin, requireRanker, async (req,res,next) => {
   try {
