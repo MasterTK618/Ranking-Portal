@@ -117,6 +117,7 @@ tool.Activated:Connect(function()
 end)
 
 remote.OnClientEvent:Connect(function(state, message, position)
+	if not screenGui then createGui() end
 	if state == "queued" then
 		setStatus("Queue position " .. tostring(position) .. ": " .. tostring(message))
 	else
