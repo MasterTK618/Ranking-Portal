@@ -12,7 +12,7 @@ A Roblox account-ownership-verified ranking portal for Lemonz group **16597698**
 - The backend only offers roles strictly below the signed-in rank.
 - Demotions require a reason.
 - PostgreSQL-backed sessions and ranking audit logs, including in-game actions.
-- In-game Ranking Stick API with server-side rank checks and owner-configurable rank locks.
+- In-game promotion system with a promotion-only Ranking Stick and `!promote username` chat command, server-side rank checks, and owner-configurable rank locks.
 - API rate limiting, secure session cookies, CSRF header checks, and security headers.
 
 ## Important
@@ -66,10 +66,10 @@ Redeploy after changing environment variables. `APP_URL` is not used by the prof
 
 ## In-game Ranking Stick
 
-The repository includes two Roblox scripts:
+The repository includes two Roblox scripts. The stick only promotes; eligible staff can also type `!promote username` in chat to promote a player in the same server:
 
 - `roblox/RankingStick.server.lua` — server-side queue and secure request to the portal.
-- `roblox/RankingStick.client.lua` — player highlighting, Promote/Demote selector, and queue status display.
+- `roblox/RankingStick.client.lua` — player highlighting and promotion queue status display.
 
 ### Configure the game connection
 
@@ -89,10 +89,10 @@ Keep the shared secret only in the normal server Script and Render's private env
 
 The group owner (rank 255) sees **Settings** in the portal. These controls configure:
 - Minimum staff rank required to use the in-game stick.
-- Minimum current rank a target must have before the stick can promote or demote them.
+- Minimum current rank a target must have before they can be promoted.
 - Whether in-game ranking, promotions, and demotions are enabled.
 
-Each in-game request is checked again by the portal against the live Roblox group ranks and settings. Successful and failed ranking requests are recorded in the same **Ranking logs** page as website rankings. The stick processes requests in queue order and shows the queue position and result to the staff member.
+Each in-game request is checked again by the portal against the live Roblox group ranks and settings. Successful and failed ranking requests are recorded in the same **Ranking logs** page as website rankings. The stick and chat command process requests in queue order and shows the queue position and result to the staff member.
 
 ## Local development
 
