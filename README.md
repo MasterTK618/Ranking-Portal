@@ -11,7 +11,8 @@ A Roblox account-ownership-verified ranking portal for Lemonz group **16597698**
 - Member username lookup, current role display, promote/demote/set-role actions.
 - The backend only offers roles strictly below the signed-in rank.
 - Demotions require a reason.
-- PostgreSQL-backed sessions and ranking audit logs.
+- PostgreSQL-backed sessions and ranking audit logs, including in-game actions.
+- In-game Ranking Stick API with server-side rank checks and owner-configurable rank locks.
 - API rate limiting, secure session cookies, CSRF header checks, and security headers.
 
 ## Important
@@ -45,6 +46,7 @@ Set these privately in the backend host dashboard. Use `.env.example` as the che
 | `SESSION_SECRET` | A long, random secret (at least 32 random bytes) |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `ROBLOX_API_KEY` | Your Roblox Open Cloud API key |
+| `INGAME_API_SECRET` | A long random shared secret used only between Roblox server scripts and this backend |
 | `ROBLOX_GROUP_ID` | `16597698` |
 | `MIN_RANK` | `245` |
 
@@ -60,6 +62,37 @@ Redeploy after changing environment variables. `APP_URL` is not used by the prof
 4. A rank below 245 can sign in but cannot access ranking tools.
 5. A rank of 245 or above can search a member and assign only roles below their own rank.
 6. Check Ranking logs after a test action.
+
+
+## In-game Ranking Stick
+
+The repository includes two Roblox scripts:
+
+- `roblox/RankingStick.server.lua` — server-side queue and secure request to the portal.
+- `roblox/RankingStick.client.lua` — player highlighting, Promote/Demote selector, and queue status display.
+
+### Configure the game connection
+
+1. In Render, open the web service's **Environment** settings and add `INGAME_API_SECRET`. Use a long, random value (at least 32 characters). Do not send it to anyone or commit it to GitHub.
+2. Copy your Render service's public URL (for example, `https://your-service.onrender.com`).
+3. In `roblox/RankingStick.server.lua`, replace `PORTAL_URL` with that exact URL and `GAME_SECRET` with the same secret you entered in Render.
+4. In Roblox Studio, create a Tool named `RankingStick` in `StarterPack`.
+5. Add a Part named `Handle` inside the Tool.
+6. Add a normal **Script** and paste the contents of `roblox/RankingStick.server.lua`.
+7. Add a **LocalScript** and paste the contents of `roblox/RankingStick.client.lua`.
+8. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
+9. Publish the experience and test with two players in a private server.
+
+Keep the shared secret only in the normal server Script and Render's private environment settings. Never put it in the LocalScript, ReplicatedStorage, a client-visible ModuleScript, or chat.
+
+### Dashboard rank locks
+
+The group owner (rank 255) sees **Settings** in the portal. These controls configure:
+- Minimum staff rank required to use the in-game stick.
+- Minimum current rank a target must have before the stick can promote or demote them.
+- Whether in-game ranking, promotions, and demotions are enabled.
+
+Each in-game request is checked again by the portal against the live Roblox group ranks and settings. Successful and failed ranking requests are recorded in the same **Ranking logs** page as website rankings. The stick processes requests in queue order and shows the queue position and result to the staff member.
 
 ## Local development
 
