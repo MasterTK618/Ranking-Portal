@@ -293,7 +293,7 @@ app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
   const actorId=String(req.body?.actorId||""), targetId=String(req.body?.targetId||""), action=String(req.body?.action||"");
   let actorName=actorId, targetName=targetId, before=null;
   try {
-    if(!/^\\d+$/.test(actorId)||!/^\\d+$/.test(targetId)||!["promote","demote"].includes(action))
+    if(!/^\d+$/.test(actorId)||!/^\d+$/.test(targetId)||!["promote","demote"].includes(action))
       return res.status(400).json({error:"Invalid in-game ranking request."});
     const settings=await getGameSettings();
     if(!settings.enabled) return res.status(403).json({error:"In-game ranking is disabled by Lemonz management."});
