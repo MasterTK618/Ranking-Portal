@@ -5,7 +5,7 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local PORTAL_URL = "https://YOUR-RENDER-SERVICE.onrender.com" -- Replace with your actual Render service URL
+local PORTAL_URL = "https://ranking-portal.onrender.com"
 local GAME_SECRET = "PASTE_THE_SAME_INGAME_API_SECRET_FROM_RENDER_HERE"
 
 local tool = script.Parent
