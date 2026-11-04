@@ -58,10 +58,12 @@ local function processQueue()
 					sendStatus(actor, "result", data.message or "Ranking successful!")
 				else
 					local message = data.error or data.message
-					if response.StatusCode == 404 and (not message or message == "") then
-						message = "Portal returned HTTP 404. Check that PORTAL_URL is your exact Render service URL and that the latest server.js deployment is live."
+					if not message or message == "" then
+						local body = tostring(response.Body or "")
+						if #body > 180 then body = string.sub(body, 1, 180) .. "..." end
+						message = "HTTP " .. tostring(response.StatusCode) .. " from " .. tostring(response.Url or PORTAL_URL) .. (body ~= "" and (": " .. body) or " (empty response body)")
 					end
-					sendStatus(actor, "result", message or ("Ranking failed (HTTP " .. tostring(response.StatusCode) .. ")."))
+					sendStatus(actor, "result", message)
 				end
 			end
 		end
