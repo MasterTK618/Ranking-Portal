@@ -40,44 +40,28 @@ local function createGui()
 	screenGui.ResetOnSpawn = false
 	screenGui.Parent = playerGui
 
-	local frame = Instance.new("Frame")
-	frame.Name = "Panel"
-	frame.AnchorPoint = Vector2.new(0.5, 0)
-	frame.Position = UDim2.new(0.5, 0, 0, 18)
-	frame.Size = UDim2.fromOffset(310, 92)
-	frame.BackgroundColor3 = Color3.fromRGB(28, 28, 25)
-	frame.BorderSizePixel = 0
-	frame.Parent = screenGui
-	Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
-
-	local title = Instance.new("TextLabel")
-	title.BackgroundTransparency = 1
-	title.Position = UDim2.fromOffset(12, 7)
-	title.Size = UDim2.new(1, -24, 0, 20)
-	title.Font = Enum.Font.GothamBold
-	title.Text = "LEMONZ  •  RANKING STICK"
-	title.TextColor3 = Color3.fromRGB(255, 218, 65)
-	title.TextSize = 12
-	title.Parent = frame
-
-
 	statusLabel = Instance.new("TextLabel")
-	statusLabel.BackgroundTransparency = 1
-	statusLabel.Position = UDim2.fromOffset(12, 38)
-	statusLabel.Size = UDim2.new(1, -24, 0, 42)
+	statusLabel.Name = "Status"
+	statusLabel.AnchorPoint = Vector2.new(0.5, 0)
+	statusLabel.Position = UDim2.new(0.5, 0, 0, 8)
+	statusLabel.Size = UDim2.fromOffset(270, 24)
+	statusLabel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	statusLabel.BackgroundTransparency = 0.25
+	statusLabel.BorderSizePixel = 0
 	statusLabel.Font = Enum.Font.Gotham
-	statusLabel.Text = "Click a player to promote them, or type !promote username in chat."
-	statusLabel.TextColor3 = Color3.fromRGB(235, 235, 230)
-	statusLabel.TextSize = 10
-	statusLabel.TextWrapped = true
-	statusLabel.Parent = frame
+	statusLabel.Text = "Aim at a player and click to promote"
+	statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	statusLabel.TextSize = 11
+	statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	statusLabel.Parent = screenGui
+	Instance.new("UICorner", statusLabel).CornerRadius = UDim.new(0, 5)
 end
 
 tool.Equipped:Connect(function(equippedMouse)
 	mouse = equippedMouse
 	equipped = true
 	createGui()
-	setStatus("Click a player to promote them, or type !promote username in chat.")
+	setStatus("Aim at a player and click to promote.")
 end)
 
 tool.Unequipped:Connect(function()
