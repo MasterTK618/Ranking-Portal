@@ -97,11 +97,15 @@ async function refreshOverview(){
   const data=await api("/api/me");sessionData=data;
   $("welcomeName").textContent=data.user.name;
   $("myRole").textContent=data.identity.roleName;
-  $("myRank").textContent="Rank "+data.identity.rank;
-  $("accessStatus").textContent=data.identity.canRank?"Enabled":"No access";
+  $("myRank").textContent=data.identity.apiUnavailable?"—":"Rank "+data.identity.rank;
+  $("accessStatus").textContent=data.identity.apiUnavailable?"Group API unavailable":(data.identity.canRank?"Enabled":"No access");
   $("userBox").textContent=data.user.name+" · "+data.identity.roleName;
   $("recentCount").textContent="—";
-  if(!data.identity.canRank){
+  if(data.identity.apiUnavailable){
+    document.querySelectorAll(".nav-item[data-page='rank'],.nav-item[data-page='members'],.nav-item[data-page='logs']").forEach(b=>b.classList.add("hidden"));
+    $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
+    notice(data.apiError || "Your Roblox profile is verified, but group ranking access is not configured yet.","error");
+  }else if(!data.identity.canRank){
     document.querySelectorAll(".nav-item[data-page='rank'],.nav-item[data-page='members'],.nav-item[data-page='logs']").forEach(b=>b.classList.add("hidden"));
     $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
     notice("Your Roblox account is verified, but your current Lemonz rank is below "+data.minRank+". Ranking tools are restricted.","error");
