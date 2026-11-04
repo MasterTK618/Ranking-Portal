@@ -13,7 +13,7 @@ const GROUP_ID = process.env.ROBLOX_GROUP_ID || "16597698";
 const MIN_RANK = Number(process.env.MIN_RANK || 245);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined });
 
-const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY"];
+const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY","INGAME_API_SECRET"];
 const missing = required.filter(k => !process.env[k]);
 if (missing.length) console.warn("Missing environment variables:", missing.join(", "));
 
@@ -88,12 +88,41 @@ async function logAction({ actorId, actorName, targetId, targetName, previousRol
   );
 }
 async function ensureSchema() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS game_ranking_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1), enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    min_actor_rank INTEGER NOT NULL DEFAULT 245, min_target_rank INTEGER NOT NULL DEFAULT 1,
+    allow_promote BOOLEAN NOT NULL DEFAULT TRUE, allow_demote BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await pool.query(`INSERT INTO game_ranking_settings(id) VALUES(1) ON CONFLICT (id) DO NOTHING`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ranking_logs (
     id BIGSERIAL PRIMARY KEY, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
     target_id TEXT NOT NULL, target_name TEXT NOT NULL, previous_role TEXT,
     new_role TEXT, action TEXT NOT NULL, reason TEXT, status TEXT NOT NULL,
     details TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+}
+async function getGameSettings() {
+  const result = await pool.query("SELECT enabled,min_actor_rank,min_target_rank,allow_promote,allow_demote,updated_at FROM game_ranking_settings WHERE id=1");
+  return result.rows[0];
+}
+async function getPublicUser(userId) {
+  const response = await fetch("https://users.roblox.com/v1/users/" + encodeURIComponent(userId));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("Could not verify a Roblox user.");
+  return { id:String(data.id), name:data.name || String(userId) };
+}
+function requirePortalOwner(req,res,next) {
+  if (!req.identity || req.identity.rank < 255) return res.status(403).json({error:"Only the Lemonz group owner (rank 255) can change in-game ranking settings."});
+  next();
+}
+function requireGameSecret(req,res,next) {
+  const expected = process.env.INGAME_API_SECRET || "";
+  const supplied = req.get("x-lemonz-game-key") || "";
+  if (!expected || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied),Buffer.from(expected))) {
+    return res.status(401).json({error:"Invalid game server credential."});
+  }
+  next();
 }
 function requireLogin(req,res,next) {
   if (!req.session.user) return res.status(401).json({ error:"Sign in with Roblox first." });
@@ -237,6 +266,66 @@ app.post("/api/rank", requireLogin, csrf, requireRanker, async (req,res,next) =>
     res.json({ok:true,message:`${targetName || "Member"} is now ${desired.name}.`,previousRole:before?.name,newRole:desired.name});
   } catch(e) {
     try { await logAction({actorId:req.session.user.id,actorName:req.session.user.name,targetId:String(targetId||"unknown"),targetName:String(targetName||targetId||"Unknown"),previousRole:before?.name||null,newRole:null,action:String(action||"unknown"),reason:String(reason||"").trim(),status:"FAILED",details:e.message}); } catch {}
+    next(e);
+  }
+});
+app.get("/api/settings/game-ranking", requireLogin, requireRanker, async (req,res,next) => {
+  try { const settings=await getGameSettings(); res.json({settings,canConfigure:req.identity.rank>=255}); }
+  catch(e){next(e);}
+});
+app.put("/api/settings/game-ranking", requireLogin, csrf, requireRanker, async (req,res,next) => {
+  try {
+    if (req.identity.rank < 255) return res.status(403).json({error:"Only the Lemonz group owner (rank 255) can change these settings."});
+    const b=req.body||{};
+    const enabled=!!b.enabled, allowPromote=!!b.allowPromote, allowDemote=!!b.allowDemote;
+    const minActorRank=Number(b.minActorRank), minTargetRank=Number(b.minTargetRank);
+    if (!Number.isInteger(minActorRank)||minActorRank<1||minActorRank>255||!Number.isInteger(minTargetRank)||minTargetRank<1||minTargetRank>255)
+      return res.status(400).json({error:"Rank requirements must be whole numbers from 1 to 255."});
+    const result=await pool.query("UPDATE game_ranking_settings SET enabled=$1,min_actor_rank=$2,min_target_rank=$3,allow_promote=$4,allow_demote=$5,updated_at=NOW() WHERE id=1 RETURNING enabled,min_actor_rank,min_target_rank,allow_promote,allow_demote,updated_at",
+      [enabled,minActorRank,minTargetRank,allowPromote,allowDemote]);
+    res.json({ok:true,settings:result.rows[0]});
+  } catch(e){next(e);}
+});
+app.get("/api/game/config", requireGameSecret, async (req,res,next) => {
+  try { res.json({groupId:GROUP_ID,settings:await getGameSettings()}); } catch(e){next(e);}
+});
+app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
+  const actorId=String(req.body?.actorId||""), targetId=String(req.body?.targetId||""), action=String(req.body?.action||"");
+  let actorName=actorId, targetName=targetId, before=null;
+  try {
+    if(!/^\\d+$/.test(actorId)||!/^\\d+$/.test(targetId)||!["promote","demote"].includes(action))
+      return res.status(400).json({error:"Invalid in-game ranking request."});
+    const settings=await getGameSettings();
+    if(!settings.enabled) return res.status(403).json({error:"In-game ranking is disabled by Lemonz management."});
+    if(action==="promote"&&!settings.allow_promote) return res.status(403).json({error:"In-game promotions are disabled."});
+    if(action==="demote"&&!settings.allow_demote) return res.status(403).json({error:"In-game demotions are disabled."});
+    const [actor,targetUser]=await Promise.all([getPublicUser(actorId),getPublicUser(targetId)]);
+    actorName=actor.name; targetName=targetUser.name;
+    const [actorIdentity,target]=await Promise.all([getIdentity(actorId),getMember(targetId)]);
+    if(!actorIdentity.inGroup||actorIdentity.rank<settings.min_actor_rank)
+      return res.status(403).json({error:"You do not meet the in-game ranking rank requirement."});
+    if(!target) return res.status(404).json({error:"That player is not in Lemonz."});
+    before=target.role;
+    if(target.role.rank<settings.min_target_rank)
+      return res.status(403).json({error:"That player's current rank is below the configured target rank requirement."});
+    if(actorId===targetId) return res.status(400).json({error:"You cannot rank yourself."});
+    const allRoles=await getRoles();
+    const allowed=allRoles.filter(r=>r.rank<actorIdentity.rank);
+    const desired=action==="promote"
+      ? allowed.filter(r=>r.rank>before.rank).sort((a,b)=>a.rank-b.rank)[0]
+      : allowed.filter(r=>r.rank<before.rank && r.rank>=settings.min_target_rank).sort((a,b)=>b.rank-a.rank)[0];
+    if(!desired) return res.status(400).json({error:action==="promote"?"No higher role below your own rank is available.":"No lower role at or above the configured target rank is available."});
+    const membershipId=target.membershipId;
+    const currentPaths=(target.membership.roles?.length?target.membership.roles:target.membership.role?[target.membership.role]:[]);
+    const newPath=desired.path||`groups/${GROUP_ID}/roles/${desired.id}`;
+    await roblox(`/groups/${GROUP_ID}/memberships/${membershipId}:assignRole`,{method:"POST",body:JSON.stringify({role:newPath})});
+    for(const path of currentPaths) if(path!==newPath) await roblox(`/groups/${GROUP_ID}/memberships/${membershipId}:unassignRole`,{method:"POST",body:JSON.stringify({role:path})});
+    const verified=await getMember(targetId);
+    if(verified?.role?.id!==desired.id) throw new Error("Roblox accepted the request, but the new role could not be verified.");
+    await logAction({actorId,actorName,targetId,targetName,previousRole:before?.name||"Unknown",newRole:desired.name,action,reason:"In-game Ranking Stick",status:"SUCCESS"});
+    res.json({ok:true,message:`${targetName} was ${action==="promote"?"promoted":"demoted"} to ${desired.name}.`,newRole:desired.name});
+  } catch(e) {
+    try { await logAction({actorId:actorId||"unknown",actorName,targetId:targetId||"unknown",targetName,previousRole:before?.name||null,newRole:null,action:action||"unknown",reason:"In-game Ranking Stick",status:"FAILED",details:e.message}); } catch {}
     next(e);
   }
 });
