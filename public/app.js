@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Rank members",members:"Members",logs:"Ranking logs"};
+const pageNames = {overview:"Overview",rank:"Rank members",members:"Members",logs:"Ranking logs",settings:"Settings"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
@@ -19,6 +19,7 @@ function showPage(page) {
   clearNotice();
   if(page==="logs") loadLogs();
   if(page==="rank") loadRoles();
+  if(page==="settings") loadGameSettings();
 }
 document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go)));
@@ -93,6 +94,35 @@ async function loadLogs(){
   }catch(e){$("logsTable").textContent=e.message}
 }
 $("refreshLogs").addEventListener("click",loadLogs);
+async function loadGameSettings(){
+  try{
+    const d=await api("/api/settings/game-ranking");
+    if(!d.canConfigure){$("settingsNav").classList.add("hidden");notice("Only the group owner can configure in-game ranking.","error");return}
+    const s=d.settings;
+    $("gameMinActorRank").value=s.min_actor_rank;
+    $("gameMinTargetRank").value=s.min_target_rank;
+    $("gameRankingEnabled").checked=s.enabled;
+    $("gameAllowPromote").checked=s.allow_promote;
+    $("gameAllowDemote").checked=s.allow_demote;
+  }catch(e){notice(e.message,"error")}
+}
+$("saveGameSettings").addEventListener("click",async()=>{
+  const btn=$("saveGameSettings");btn.disabled=true;btn.textContent="Saving…";
+  try{
+    const d=await api("/api/settings/game-ranking",{method:"PUT",body:JSON.stringify({
+      minActorRank:Number($("gameMinActorRank").value),
+      minTargetRank:Number($("gameMinTargetRank").value),
+      enabled:$("gameRankingEnabled").checked,
+      allowPromote:$("gameAllowPromote").checked,
+      allowDemote:$("gameAllowDemote").checked
+    })});
+    notice("In-game ranking settings saved.","success");
+    $("gameMinActorRank").value=d.settings.min_actor_rank;
+    $("gameMinTargetRank").value=d.settings.min_target_rank;
+  }catch(e){notice(e.message,"error")}
+  finally{btn.disabled=false;btn.textContent="Save settings"}
+});
+
 async function refreshOverview(){
   const data=await api("/api/me");sessionData=data;
   $("welcomeName").textContent=data.user.name;
@@ -111,6 +141,7 @@ async function refreshOverview(){
     notice("Your Roblox account is verified, but your current Lemonz rank is below "+data.minRank+". Ranking tools are restricted.","error");
   }else{
     document.querySelectorAll(".nav-item").forEach(b=>b.classList.remove("hidden"));
+    $("settingsNav").classList.toggle("hidden",data.identity.rank<255);
     $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
     try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}
   }
