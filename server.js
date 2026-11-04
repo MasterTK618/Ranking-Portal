@@ -62,7 +62,7 @@ async function getRoles() {
   return roles.map(r => ({ id: String(r.id || r.path?.split("/").pop()), name: r.displayName, rank: Number(r.rank), path: r.path })).sort((a,b) => a.rank - b.rank);
 }
 async function getMembership(userId) {
-  const filter = `user == "users/${userId}"`;
+  const filter = `user == 'users/${userId}'`;
   const q = new URLSearchParams({ maxPageSize: "10", filter });
   const data = await roblox(`/groups/${GROUP_ID}/memberships?${q}`);
   return (data.groupMemberships || []).find(m => m.user === `users/${userId}`) || null;
