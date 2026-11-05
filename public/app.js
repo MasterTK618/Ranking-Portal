@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Ranking",members:"Members",logs:"Ranking Logs",sessions:"Shifts",activity:"Activity",punishments:"Punishments",promotions:"Promotion Suggestions",leaves:"Time Off",settings:"Settings"};
+const pageNames = {overview:"Overview",rank:"Ranking",members:"Members",logs:"Ranking Logs",sessions:"Shifts",activity:"Activity",punishments:"Punishments",promotions:"Promotion Suggestions",leaves:"Time Off",knowledge:"Knowledge Hub",settings:"Settings"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
@@ -26,6 +26,7 @@ function showPage(page) {
   if(page==="punishments") loadManagement("punishments");
   if(page==="promotions") loadManagement("promotions");
   if(page==="leaves") loadManagement("leaves");
+  if(page==="knowledge") loadKnowledge();
 }
 document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go)));
@@ -96,14 +97,14 @@ $("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toL
 async function loadManagementSettings(){
   try{
     const d=await api("/api/management/settings");
-    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank"};
+    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank"};
     Object.entries(map).forEach(([key,id])=>$(id).value=d.settings[key]);
   }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
 }
 $("saveManagementSettings").addEventListener("click",async()=>{
   const btn=$("saveManagementSettings");btn.disabled=true;btn.textContent="Saving…";
   try{
-    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank"};
+    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank"};
     const values={};Object.entries(map).forEach(([key,id])=>values[key]=Number($(id).value));
     await api("/api/management/settings",{method:"PUT",body:JSON.stringify(values)});
     notice("Management permissions saved.","success");
@@ -111,6 +112,13 @@ $("saveManagementSettings").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="Save permissions"}
 });
 
+let knowledgeItems=[],knowledgeCanManage=false;
+async function loadKnowledge(){const list=$("knowledgeList");if(!list)return;list.textContent="Loading resources…";try{const d=await api("/api/management/knowledge");knowledgeItems=d.items||[];knowledgeCanManage=!!d.canManage;$("knowledgeManager").classList.toggle("hidden",!knowledgeCanManage);renderKnowledge();}catch(e){list.textContent=e.message;}}
+function renderKnowledge(){const q=($("knowledgeSearch").value||"").trim().toLowerCase();const items=knowledgeItems.filter(x=>[x.title,x.category,x.content,x.kind].some(v=>String(v||"").toLowerCase().includes(q)));$("knowledgeList").innerHTML=items.length?items.map(x=>{const body=escapeHtml(x.content);const open=x.kind==="link"?'<a class="knowledge-open" href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer">Open resource ↗</a>':'<details><summary>Read document</summary><div class="knowledge-document">'+body.replace(/\n/g,"<br>")+'</div></details>';return '<article class="knowledge-card"><div class="knowledge-card-top"><span class="knowledge-kind">'+(x.kind==="link"?"↗ LINK":"▤ DOCUMENT")+'</span><span class="knowledge-rank">RANK '+x.min_rank+'+</span></div><h3>'+escapeHtml(x.title)+'</h3><small>'+escapeHtml(x.category)+' · Added by '+escapeHtml(x.created_by_name)+'</small><p>'+body.slice(0,260)+(body.length>260?"…":"")+'</p>'+open+(knowledgeCanManage?'<button class="danger-btn" data-knowledge-delete="'+x.id+'">Delete</button>':"")+'</article>';}).join(""):'<div class="empty-state">No resources are available to your rank, or your search found no matches.</div>';}
+$("refreshKnowledge")?.addEventListener("click",loadKnowledge);$("knowledgeSearch")?.addEventListener("input",renderKnowledge);
+$("knowledgeKind")?.addEventListener("change",()=>{$("knowledgeUrlWrap").classList.toggle("hidden",$("knowledgeKind").value!=="link");});
+$("saveKnowledge")?.addEventListener("click",async()=>{const b=$("saveKnowledge");b.disabled=true;try{await api("/api/management/knowledge",{method:"POST",body:JSON.stringify({title:$("knowledgeTitle").value,category:$("knowledgeCategory").value,kind:$("knowledgeKind").value,minRank:Number($("knowledgeMinRank").value),url:$("knowledgeUrl").value,content:$("knowledgeContent").value})});["knowledgeTitle","knowledgeCategory","knowledgeUrl","knowledgeContent"].forEach(id=>$(id).value="");$("knowledgeMinRank").value="1";notice("Knowledge resource published.","success");await loadKnowledge();}catch(e){notice(e.message,"error");}finally{b.disabled=false;}});
+document.addEventListener("click",async e=>{const b=e.target.closest("[data-knowledge-delete]");if(!b)return;if(!confirm("Delete this knowledge resource?"))return;try{await api("/api/management/knowledge/"+encodeURIComponent(b.dataset.knowledgeDelete),{method:"DELETE"});notice("Resource deleted.","success");loadKnowledge();}catch(err){notice(err.message,"error");}});
 async function loadGameSettings(){
   try{
     const d=await api("/api/settings/game-ranking");
