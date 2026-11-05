@@ -744,3 +744,5 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .permission-group summary small{color:var(--muted);font-weight:400}
 .page-intro .quiet-btn,.page-intro .primary-btn{white-space:nowrap}
 @media(max-width:760px){.page{padding:20px 14px 34px}.card,.panel,.workspace-card{padding:16px}.page-intro{flex-direction:column}.data-table{display:block;overflow-x:auto;white-space:nowrap}}
+
+.team-role-explainer{color:var(--muted);font-size:11px;line-height:1.5}.team-role-count{display:inline-flex;align-items:center;border:1px solid rgba(245,201,40,.25);background:rgba(245,201,40,.08);color:#f5c928;padding:6px 9px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap}.team-role-source{font-size:9px;color:#f5c928;border:1px solid rgba(245,201,40,.2);padding:3px 6px;border-radius:999px;white-space:nowrap}
