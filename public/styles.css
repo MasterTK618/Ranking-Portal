@@ -379,3 +379,40 @@ body.dark .sidebar{background:linear-gradient(180deg,#22221f,#1c1c19)}
 body.dark .session-stat{background:linear-gradient(145deg,var(--panel),var(--panel2))}
 body.dark .team-card{background:linear-gradient(145deg,var(--panel),var(--panel2))}
 body.dark .data-table tbody tr:hover{background:rgba(245,201,40,.055)}
+
+
+/* Expanded management workspace layouts */
+#settingsPage{display:flex;flex-direction:column;gap:22px}
+#settingsPage>.content-card{padding:26px 28px;margin:0;border-radius:20px}
+#settingsPage .section-heading{align-items:flex-start;margin-bottom:20px}
+#settingsPage .section-heading h3,#settingsPage>.content-card>h3{font-size:17px;margin:0 0 7px}
+#settingsPage .section-heading p,#settingsPage>.content-card>.muted{font-size:12px;line-height:1.65;max-width:760px}
+#settingsPage .form-grid{gap:18px 22px}
+#settingsPage label{font-size:10px;letter-spacing:.65px;margin-bottom:8px}
+#settingsPage input:not([type=checkbox]):not([type=color]),#settingsPage select{min-height:44px;padding:11px 13px}
+#settingsPage .form-footer{margin-top:22px;padding-top:18px}
+.teams-settings-card{display:flex;flex-direction:column;gap:18px}
+.teams-settings-card .form-divider{margin:8px 0}
+.team-create-grid{gap:18px 22px}
+#teamMembersSelect{min-height:280px;height:280px}
+#teamMembersSelect option{padding:9px}
+.staff-card{display:flex;align-items:center;gap:13px;text-align:left;cursor:pointer;min-height:92px;padding:14px 16px}
+.staff-card-copy{flex:1;min-width:0}
+.staff-card-side{display:flex;flex-direction:column;align-items:flex-end;gap:9px;min-width:125px}
+.staff-team-picker{width:100%;max-width:180px;min-height:34px;padding:6px 8px;font-size:11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--text)}
+.staff-team-picker:focus{outline:2px solid var(--accent);outline-offset:1px}
+#directoryResult .staff-card{cursor:default}
+#directoryResult .staff-card:hover{transform:translateY(-1px)}
+#taskTeamAssignFilter{min-width:190px}
+#knowledgeManager{padding:26px 28px}
+#knowledgeManager .form-grid{gap:18px 22px}
+#knowledgeTeamFilter{min-width:190px}
+.knowledge-card{padding:21px;display:flex;flex-direction:column;gap:6px}
+.knowledge-card h3{font-size:16px}
+.knowledge-card>small{line-height:1.5}
+@media(max-width:700px){
+ #settingsPage>.content-card,#knowledgeManager{padding:19px}
+ .staff-card{align-items:flex-start;flex-wrap:wrap}
+ .staff-card-side{margin-left:auto;min-width:115px}
+ .staff-team-picker{max-width:145px}
+}
