@@ -360,12 +360,18 @@ async function loadLeaveAudit(){
     el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>STAFF MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td class="reason-cell">'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave activity has been recorded yet.</div>';
   }catch(e){el.textContent=e.message}
 }
+function fillTeamFilter(id){
+ const el=$(id);if(!el)return "ALL";const previous=el.value;
+ el.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
+ if([...el.options].some(o=>o.value===previous))el.value=previous;
+ return el.value||"ALL";
+}
 async function loadTasks(){
   $("taskTable").textContent="Loading staff tasks…";
   try{if(!staffDirectory.length)await loadStaffDirectory();
-    const d=await api("/api/management/tasks"),items=d.items||[],filter=$("taskStatusFilter").value,q=($("taskSearch").value||"").toLowerCase();
+    const d=await api("/api/management/tasks"),items=d.items||[],filter=$("taskStatusFilter").value,q=($("taskSearch").value||"").toLowerCase();const teamFilter=fillTeamFilter("taskTeamFilter");
     const select=$("taskAssignedTo"),previous=select.value;select.innerHTML='<option value="">Choose a staff member…</option>'+staffDirectory.filter(m=>Number(m.rank)>=Number(d.settings.task_view_rank)).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+'</option>').join("");if(previous)select.value=previous;
-    const rows=items.filter(x=>(filter==="ALL"||x.status===filter)&&[x.title,x.description,x.assigned_to_name,x.created_by_name,x.priority,x.status].some(v=>String(v||"").toLowerCase().includes(q)));
+    const rows=items.filter(x=>(filter==="ALL"||x.status===filter)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!x.assigned_team_name:managementTeams.some(t=>String(t.id)===teamFilter&&t.name===x.assigned_team_name)))&&[x.title,x.description,x.assigned_to_name,x.assigned_team_name,x.assigned_department,x.created_by_name,x.priority,x.status].some(v=>String(v||"").toLowerCase().includes(q)));
     const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
     $("taskSummary").innerHTML=counts.map(x=>`<article class="session-stat"><span>✓</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
     $("taskAuditCard").classList.toggle("hidden",!d.canManage);
@@ -510,8 +516,8 @@ async function loadSessions(){
   $("sessionSummary").innerHTML=counts.map(x=>'<article class="session-stat"><span>▦</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
   const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
   $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
-  const q=$("sessionSearch")?.value||"",filter=$("sessionFilter")?.value||"all";
-  const visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now;return filter==="all"||(filter==="upcoming"&&future&&["PLANNED","DELAYED"].includes(s.status))||(filter==="past"&&(!future||["CANCELED","COMPLETED"].includes(s.status)));});
+  const q=$("sessionSearch")?.value||"",filter=$("sessionFilter")?.value||"all",teamFilter=fillTeamFilter("sessionTeamFilter");
+  const visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now;const teamMatch=teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!s.host_team_name:managementTeams.some(t=>String(t.id)===teamFilter&&t.name===s.host_team_name));return teamMatch&&(filter==="all"||(filter==="upcoming"&&future&&["PLANNED","DELAYED"].includes(s.status))||(filter==="past"&&(!future||["CANCELED","COMPLETED"].includes(s.status))));});
   renderSessionTable(visible,$("sessionList"),q);
   const historyFilter=$("sessionHistoryFilter")?.value||"all",historyQ=$("sessionHistorySearch")?.value||"";
   const history=all.filter(s=>{const ended=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")<now||["COMPLETED","CANCELED","DELAYED"].includes(s.status);return ended&&(historyFilter==="all"||s.status===historyFilter);});
