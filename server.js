@@ -211,6 +211,31 @@ app.get("/api/me", requireLogin, async (req,res) => {
     });
   }
 });
+
+app.get("/api/staff", requireLogin, requireRanker, async (req,res,next)=>{
+  try{
+    const roles=await getRoles(), memberships=[];let token="";
+    do{
+      const query=new URLSearchParams({maxPageSize:"100"});if(token)query.set("pageToken",token);
+      const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+query.toString());
+      memberships.push(...(page.groupMemberships||[]));token=page.nextPageToken||"";
+    }while(token&&memberships.length<1000);
+    const base=memberships.map(m=>{
+      const id=String(m.user||"").split("/").pop();
+      const paths=m.roles&&m.roles.length?m.roles:m.role?[m.role]:[];
+      const role=paths.map(p=>roles.find(r=>r.path===p)).filter(Boolean).sort((a,b)=>b.rank-a.rank)[0];
+      return {id,rank:role?role.rank:0,role:role?role.name:"Member"};
+    }).filter(m=>/^\d+$/.test(m.id));
+    const profiles=[];
+    for(let i=0;i<base.length;i+=100){
+      const response=await fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:base.slice(i,i+100).map(m=>Number(m.id)),excludeBannedUsers:false})});
+      const data=await response.json().catch(()=>({}));if(response.ok)profiles.push(...(data.data||[]));
+    }
+    const byId=new Map(profiles.map(p=>[String(p.id),p]));
+    res.json({members:base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.id,displayName:byId.get(m.id)?.displayName||""})).sort((a,b)=>a.username.localeCompare(b.username))});
+  }catch(e){next(e);}
+});
+
 app.get("/api/roles", requireLogin, requireRanker, async (req,res,next) => {
   try {
     const roles = await getRoles();
