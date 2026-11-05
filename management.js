@@ -228,14 +228,20 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.patch("/sessions/:id/roles",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const cfg=await settings(),found=await pool.query("SELECT * FROM staff_shifts WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Session not found."});
-    if(String(found.rows[0].created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(cfg.session_status_rank))return res.status(403).json({error:"You cannot edit this session's roles."});
-    const hostId=String(req.body?.hostId||""),cohostId=String(req.body?.cohostId||"");
-    if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
-    const ids=[hostId,...(cohostId?[cohostId]:[])],checks=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-    if(checks.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"Host and co-host must be current Lemonz staff members."});
+    if(String(found.rows[0].created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(cfg.session_status_rank))return res.status(403).json({error:"You cannot edit this session."});
+    const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||""),status=String(b.status||"PLANNED"),statusNote=String(b.statusNote||"").trim().slice(0,500),sessionType=String(b.sessionType||"PROMOTIONAL");
+    const hostId=String(b.hostId||""),cohostId=String(b.cohostId||""),promoterId=String(b.promoterId||"");
+    const overseeIds=Array.isArray(b.overseeIds)?[...new Set(b.overseeIds.map(String).filter(Boolean))]:[],attendeeIds=Array.isArray(b.attendeeIds)?[...new Set(b.attendeeIds.map(String).filter(Boolean))]:[];
+    const ids=[hostId,cohostId,promoterId,...overseeIds,...attendeeIds].filter(Boolean),parsed=new Date(date+"T00:00:00.000Z");
+    if(!title||title.length>100||! /^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||! /^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!hostId||!["PLANNED","ONGOING","DELAYED","CANCELED","COMPLETED"].includes(status)||!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(sessionType))return res.status(400).json({error:"Check the session name, date, time, type, status, and host."});
+    if(new Set(ids).size!==ids.length)return res.status(400).json({error:"Each staff member can only have one session role."});
+    const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
+    if(identities.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"All assigned people must be current Lemonz staff."});
+    const ranks=new Map(identities.map(x=>[x.id,Number(x.who.rank)]));
+    if([...overseeIds,...(promoterId?[promoterId]:[])].some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Oversee and Promoter must be rank 245 or higher."});
     const names=await Promise.all(ids.map(async id=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];})),map=Object.fromEntries(names);
-    const result=await pool.query("UPDATE staff_shifts SET host_id=$1,host_name=$2,cohost_id=$3,cohost_name=$4,updated_at=NOW() WHERE id=$5 RETURNING *",[hostId,map[hostId],cohostId||null,cohostId?map[cohostId]:null,req.params.id]);
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","ROLES_UPDATED",String(req.params.id),result.rows[0].title,"Host: "+map[hostId]+" | Co-host: "+(cohostId?map[cohostId]:"None"),String(req.session.user.id),String(req.session.user.name)]);
+    const result=await pool.query("UPDATE staff_shifts SET title=$1,session_date=$2,session_time=$3,session_type=$4,status=$5,status_note=$6,host_id=$7,host_name=$8,cohost_id=$9,cohost_name=$10,promoter_id=$11,promoter_name=$12,oversee_id=$13,oversee_name=$14,oversee_ids=$15,oversee_names=$16,attendee_ids=$17,attendee_names=$18,updated_at=NOW() WHERE id=$19 RETURNING *",[title,date,time,sessionType,status,statusNote,hostId,map[hostId],cohostId||null,cohostId?map[cohostId]:null,promoterId||null,promoterId?map[promoterId]:null,overseeIds[0]||null,overseeIds.map(id=>map[id]).join(", ")||null,overseeIds,overseeIds.map(id=>map[id]),attendeeIds,attendeeIds.map(id=>map[id]),req.params.id]);
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","UPDATED",String(req.params.id),title,"Session details and assignments updated",String(req.session.user.id),String(req.session.user.name)]);
     res.json({ok:true,session:result.rows[0]});
   }catch(e){next(e);}});
   router.patch("/sessions/:id/status",csrf,async(req,res,next)=>{try{
