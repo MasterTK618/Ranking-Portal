@@ -71,42 +71,40 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
 
 
-  // Teams and departments are owner-managed. A team belongs to a department; staff can be assigned to one team.
+  // Teams and departments are owner-managed. Staff can belong to multiple teams.
   router.get("/teams",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-    const teams=await pool.query("SELECT t.*,COUNT(tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.department,t.name");
-    const members=await pool.query("SELECT user_id,team_id FROM management_team_members");
+    const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.department,t.name");
+    const members=await pool.query("SELECT user_id,team_id FROM management_team_members ORDER BY user_id,team_id");
     res.json({teams:teams.rows,members:members.rows,canManage:Number(who.rank)>=255});
   }catch(e){next(e);}});
   router.post("/teams",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams and departments."});
-    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),groupRoleRank=b.groupRoleRank==null||b.groupRoleRank===""?null:Number(b.groupRoleRank);
-    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||(groupRoleRank!==null&&(!Number.isInteger(groupRoleRank)||groupRoleRank<1||groupRoleRank>255)))return res.status(400).json({error:"Check the team name, department, description, color, and optional group-role rank."});
-    const r=await pool.query("INSERT INTO management_teams(name,department,description,color,group_role_rank,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",[name,department,description,color,groupRoleRank,String(req.session.user.id)]);
+    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),groupRoleRanks=[...new Set((Array.isArray(b.groupRoleRanks)?b.groupRoleRanks:(b.groupRoleRank==null||b.groupRoleRank===""?[]:[b.groupRoleRank])).map(Number))];
+    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||groupRoleRanks.some(v=>!Number.isInteger(v)||v<1||v>255))return res.status(400).json({error:"Check the team details and selected group roles."});
+    const r=await pool.query("INSERT INTO management_teams(name,department,description,color,group_role_ranks,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",[name,department,description,color,groupRoleRanks,String(req.session.user.id)]);
     res.json({ok:true,team:r.rows[0]});
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
   router.put("/teams/:id",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams and departments."});
-    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),groupRoleRank=b.groupRoleRank==null||b.groupRoleRank===""?null:Number(b.groupRoleRank);
-    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||(groupRoleRank!==null&&(!Number.isInteger(groupRoleRank)||groupRoleRank<1||groupRoleRank>255)))return res.status(400).json({error:"Check the team name, department, description, color, and optional group-role rank."});
-    const r=await pool.query("UPDATE management_teams SET name=$1,department=$2,description=$3,color=$4,group_role_rank=$5,updated_at=NOW() WHERE id=$6 RETURNING *",[name,department,description,color,groupRoleRank,req.params.id]);
+    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),groupRoleRanks=[...new Set((Array.isArray(b.groupRoleRanks)?b.groupRoleRanks:(b.groupRoleRank==null||b.groupRoleRank===""?[]:[b.groupRoleRank])).map(Number))];
+    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||groupRoleRanks.some(v=>!Number.isInteger(v)||v<1||v>255))return res.status(400).json({error:"Check the team details and selected group roles."});
+    const r=await pool.query("UPDATE management_teams SET name=$1,department=$2,description=$3,color=$4,group_role_ranks=$5,group_role_rank=NULL,updated_at=NOW() WHERE id=$6 RETURNING *",[name,department,description,color,groupRoleRank,req.params.id]);
     if(!r.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true,team:r.rows[0]});
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
   router.put("/teams/member/:userId",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
-    const userId=String(req.params.userId);if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
-    const teamId=req.body?.teamId==null||req.body.teamId===""?null:String(req.body.teamId);
-    if(teamId!==null){const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[teamId]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});}
-    await pool.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);
-    if(teamId!==null)await pool.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3)",[userId,teamId,String(req.session.user.id)]);
-    res.json({ok:true,userId,teamId});
+    const userId=String(req.params.userId);if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
+    const teamIds=Array.isArray(req.body?.teamIds)?[...new Set(req.body.teamIds.map(String))]:[];
+    const valid=await pool.query("SELECT id FROM management_teams WHERE id=ANY($1::bigint[])",[teamIds]);if(valid.rowCount!==teamIds.length)return res.status(400).json({error:"One or more selected teams do not exist."});
+    const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);for(const id of teamIds)await client.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,team_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[userId,id,String(req.session.user.id)]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+    res.json({ok:true,userId,teamIds});
   }catch(e){next(e);}});
   router.put("/teams/:id/members",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
-    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\d+$/.test(x)))]:[];
+    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\\d+$/.test(x)))]:[];
     const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
-    await pool.query("DELETE FROM management_team_members WHERE team_id=$1",[req.params.id]);
-    for(const id of ids)await pool.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id) DO UPDATE SET team_id=EXCLUDED.team_id,assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[id,req.params.id,String(req.session.user.id)]);
+    const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_team_members WHERE team_id=$1",[req.params.id]);for(const id of ids)await client.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,team_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[id,req.params.id,String(req.session.user.id)]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
     res.json({ok:true,assigned:ids.length});
   }catch(e){next(e);}});
   router.delete("/teams/:id",csrf,async(req,res,next)=>{try{
@@ -459,8 +457,15 @@ async function ensureManagementSchema(pool) {
     leave_approve_rank INTEGER NOT NULL DEFAULT 245, knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, session_create_rank INTEGER NOT NULL DEFAULT 238, session_delete_rank INTEGER NOT NULL DEFAULT 245, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_create_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS session_delete_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS task_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS task_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_approve_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_status_rank INTEGER NOT NULL DEFAULT 245");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS management_team_members (user_id TEXT PRIMARY KEY,team_id BIGINT NOT NULL REFERENCES management_teams(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS management_team_members (user_id TEXT NOT NULL,team_id BIGINT NOT NULL REFERENCES management_teams(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,team_id))`);
+  await pool.query(`DO $ DECLARE pk_name TEXT; cols name[]; BEGIN
+    SELECT conname, ARRAY(SELECT a.attname::name FROM pg_attribute a WHERE a.attrelid='management_team_members'::regclass AND a.attnum=ANY(conkey)) INTO pk_name,cols FROM pg_constraint WHERE conrelid='management_team_members'::regclass AND contype='p';
+    IF pk_name IS NOT NULL AND cols=ARRAY['user_id']::name[] THEN EXECUTE format('ALTER TABLE management_team_members DROP CONSTRAINT %I',pk_name); END IF;
+    IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='management_team_members'::regclass AND contype='p') THEN ALTER TABLE management_team_members ADD PRIMARY KEY(user_id,team_id); END IF;
+  END $`);
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS group_role_rank INTEGER");
+  await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS group_role_ranks INTEGER[] NOT NULL DEFAULT ARRAY[]::INTEGER[]");
+  await pool.query("UPDATE management_teams SET group_role_ranks=ARRAY[group_role_rank] WHERE group_role_rank IS NOT NULL AND cardinality(group_role_ranks)=0");
   await pool.query("CREATE INDEX IF NOT EXISTS management_team_members_team_idx ON management_team_members(team_id)");
   await pool.query("INSERT INTO management_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING");
   await pool.query("CREATE TABLE IF NOT EXISTS staff_shifts (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL DEFAULT 'Shift',session_date DATE,session_time TIME,host_id TEXT,host_name TEXT,cohost_id TEXT,cohost_name TEXT,oversee_id TEXT,oversee_name TEXT,oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],promoter_id TEXT,promoter_name TEXT,attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],created_by TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
