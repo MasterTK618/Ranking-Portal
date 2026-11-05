@@ -145,15 +145,19 @@ async function loadTeamsSettings(){
   managementTeams=Array.isArray(d.teams)?d.teams:[];
   teamAssignments=new Map();
   for(const x of(d.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}
-  try{const staff=await api("/api/staff");teamStaffCache=Array.isArray(staff.members)?staff.members:[];if(!teamStaffCache.length)throw new Error("Roblox returned no staff members. Check staff minimum rank and group connection diagnostics.");}catch(staffError){const memberBox=$("teamMembersSelect");if(memberBox)memberBox.innerHTML='<div class="empty-state error-state">Teams loaded, but staff could not load: '+escapeHtml(staffError.message)+'</div>';throw staffError;}
+  let staffLoadError=null,groupRoles=[];
+  const roleResult=await api("/api/group/roles");
+  groupRoles=Array.isArray(roleResult.roles)?roleResult.roles:[];
+  if(!groupRoles.length)throw new Error("Roblox returned no group roles. Check the configured group ID.");
+  try{const staff=await api("/api/staff");teamStaffCache=Array.isArray(staff.members)?staff.members:[];}catch(staffError){staffLoadError=staffError;teamStaffCache=[];}
   if(teamStaffCache.length){try{await syncTeamsByGroupRole();}catch(syncError){console.warn("Team auto-assignment sync failed:",syncError);}}
-  const ranks=[...new Map((Array.isArray(d.roles)&&d.roles.length?d.roles:teamStaffCache.map(m=>({rank:m.rank,name:m.role}))).map(r=>[String(r.rank),{rank:Number(r.rank),role:String(r.name||r.role||("Rank "+r.rank))}])).values()].filter(r=>Number.isInteger(r.rank)&&r.rank>=1&&r.rank<=255).sort((x,y)=>x.rank-y.rank);
+  const ranks=groupRoles.map(r=>({rank:Number(r.rank),role:String(r.name||("Rank "+r.rank))})).filter(r=>Number.isInteger(r.rank)&&r.rank>=0&&r.rank<=255).sort((x,y)=>x.rank-y.rank);
   for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),previous=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===previous))el.value=previous;}
   const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
   teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
   if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
   teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
-  renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();updateTeamRuleFields();
+  renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();updateTeamRuleFields();if(staffLoadError){const memberBox=$("teamMembersSelect");if(memberBox)memberBox.insertAdjacentHTML("afterbegin",'<div class="empty-state error-state">The complete group role list loaded, but the staff member list is unavailable: '+escapeHtml(staffLoadError.message)+'</div>');}
  }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';throw e;}
 }
 async function syncTeamsByGroupRole(){if(!teamStaffCache.length)return;for(const team of managementTeams){const mode=String(team.auto_assign_mode||"NONE").toUpperCase();if(!["ABOVE","RANGE"].includes(mode))continue;const min=Number(team.auto_assign_min_rank),max=Number(team.auto_assign_max_rank??255);if(!Number.isInteger(min)||min<1||min>255||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))continue;const matches=teamStaffCache.filter(m=>mode==="ABOVE"?Number(m.rank)>=min:Number(m.rank)>=min&&Number(m.rank)<=max);if(!matches.length)continue;const current=teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(team.id))).map(m=>String(m.id));const additions=matches.map(m=>String(m.id)).filter(id=>!current.includes(id));if(additions.length)await api("/api/management/teams/"+encodeURIComponent(team.id)+"/members",{method:"PUT",body:JSON.stringify({userIds:[...current,...additions]})});}const fresh=await api("/api/management/teams");teamAssignments=new Map();for(const x of(fresh.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}}
