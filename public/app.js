@@ -174,7 +174,7 @@ $("saveTeamMembers")?.addEventListener("click",async()=>{
   try{const userIds=[...teamMemberDraft];await api("/api/management/teams/"+encodeURIComponent(teamId)+"/members",{method:"PUT",body:JSON.stringify({userIds})});notice("Team assignments saved.","success");await loadTeamsSettings();}
   catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
-$("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRanks").selectedIndex=-1;$("createTeam").textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");});
+$("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRanks").selectedIndex=-1;$("cancelTeamEdit").classList.add("hidden");setTeamKind("TEAM");});
 $("teamDirectory")?.addEventListener("click",async event=>{
   const edit=event.target.closest("[data-team-edit]");
   if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;const kind=t.entity_type==="DEPARTMENT"?"DEPARTMENT":"TEAM";setTeamKind(kind);$("#teamEditId").value=t.id;$("#teamName").value=t.name;if(kind==="TEAM"){$("#teamDepartment").value=t.department==="General"?"":t.department;$("#teamDescription").value=t.description||"";$("#teamColor").value=t.color||"#f5c928";$("#teamGroupRoleRanks").value=(t.group_role_ranks||[]).map(String);}$("#createTeam").textContent="Save changes";$("#cancelTeamEdit").classList.remove("hidden");$("#teamName").focus();$("#teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
