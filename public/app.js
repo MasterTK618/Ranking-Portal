@@ -680,7 +680,7 @@ async function loadProfileTeamEditor(userId){
    choices.querySelectorAll("[data-profile-team]").forEach(input=>input.addEventListener("change",()=>{const id=String(input.dataset.profileTeam);if(input.checked)selected.add(id);else selected.delete(id);render();}));
   };
   render();
-  $("profileTeamSearch")?.addEventListener("input",render,{once:true});
+  $("profileTeamSearch")?.addEventListener("input",render);
   $("profileTeamClear")?.addEventListener("click",()=>{selected.clear();render();});
   save.onclick=async()=>{save.disabled=true;save.textContent="Saving…";try{await api("/api/management/teams/member/"+encodeURIComponent(userId),{method:"PUT",body:JSON.stringify({teamIds:[...selected]})});status.textContent="Team memberships saved.";status.className="success-text";const fresh=await api("/api/management/teams");managementTeams=fresh.teams||[];teamAssignments=new Map();for(const row of(fresh.members||[])){const id=String(row.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(row.team_id));}renderStaffDirectory();renderTeamDirectory();$("profileTeamCount").textContent=selected.size+" of "+teams.length+" assigned";}catch(err){status.textContent=err.message;status.className="error-text";}finally{save.disabled=false;save.textContent="Save team changes";}};
   save.disabled=false;
