@@ -394,7 +394,7 @@ $("leaveStatusFilter")?.addEventListener("change",()=>loadManagement("leaves"));
 $("refreshTasks")?.addEventListener("click",loadTasks);
 $("refreshTaskAudit")?.addEventListener("click",loadTaskAudit);
 $("taskSearch")?.addEventListener("input",loadTasks);
-$("taskStatusFilter")?.addEventListener("change",loadTasks);
+$("taskStatusFilter")?.addEventListener("change",loadTasks);$("taskTeamFilter")?.addEventListener("change",loadTasks);
 $("createTask")?.addEventListener("click",async()=>{
   const btn=$("createTask");btn.disabled=true;btn.textContent="Creating…";
   try{await api("/api/management/tasks",{method:"POST",body:JSON.stringify({title:$("taskTitle").value.trim(),description:$("taskDescription").value.trim(),assignedToId:$("taskAssignedTo").value,priority:$("taskPriority").value,dueDate:$("taskDueDate").value})});
@@ -558,7 +558,7 @@ document.addEventListener("click",async e=>{
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
 $("refreshSessions")?.addEventListener("click",loadSessions);
-$("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);
+$("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);$("sessionTeamFilter")?.addEventListener("change",loadSessions);
 $("createSession").addEventListener("click",async()=>{
  const resolveTyped=(inputId,selectId,optional=false)=>{const value=$(inputId).value.trim();if(!value&&optional){$(selectId).value="";return "";}const match=staffDirectory.find(m=>m.username.toLowerCase()===value.toLowerCase());if(!match)throw new Error("Select an exact staff username for "+inputId.replace("session","").replace("Search","")+".");$(selectId).value=match.id;return match.id;};
  let hostId,cohostId,promoterId;try{hostId=resolveTyped("sessionHostSearch","sessionHost");cohostId=resolveTyped("sessionCoHostSearch","sessionCoHost",true);promoterId=resolveTyped("sessionPromoterSearch","sessionPromoter",true);}catch(e){notice(e.message,"error");return;}
