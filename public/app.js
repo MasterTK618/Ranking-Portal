@@ -423,11 +423,17 @@ document.addEventListener("click",async e=>{
 let staffDirectory=[], calendarCursor=new Date(), staffMinRank=230, staffDiagnostics=null;
 function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
- const q=(search?.value||"").trim().toLowerCase();
- const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
+ const q=(search?.value||"").trim().toLowerCase(),teamFilter=$("directoryTeamFilter")?.value||"ALL";
+ const list=staffDirectory.filter(m=>{
+  const teamId=teamAssignments.get(String(m.id))||"";
+  const team=managementTeams.find(t=>String(t.id)===String(teamId));
+  const matchesSearch=!q||[m.username,m.displayName,m.role,team?.name,team?.department].some(v=>String(v||"").toLowerCase().includes(q));
+  const matchesTeam=teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!teamId:String(teamId)===teamFilter);
+  return matchesSearch&&matchesTeam;
+ }).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
  $("staffCount").textContent=staffDirectory.length+" staff members · Rank "+staffMinRank+"+";
- status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search.";
- result.innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("");
+ status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search or team filter.";
+ result.innerHTML=list.map(m=>{const teamId=teamAssignments.get(String(m.id)),team=managementTeams.find(t=>String(t.id)===String(teamId));return '<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small><small class="staff-team-label">'+(team?'<i style="background:'+escapeHtml(team.color)+'"></i>'+escapeHtml(team.department)+' · '+escapeHtml(team.name):'Unassigned')+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>';}).join("");
 }
 async function loadStaffDirectory(force=false){
  const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
@@ -436,6 +442,12 @@ async function loadStaffDirectory(force=false){
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
   const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=Number(d.minRank||d.diagnostics?.minRank||230);staffDiagnostics=d.diagnostics||null;
+  try{
+   const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map((teams.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
+   const filter=$("directoryTeamFilter");
+   if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
+  }catch{}
+
   renderStaffDirectory();if(!staffDirectory.length){const z=d.diagnostics||{};status.textContent="No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+". Check STAFF_MIN_RANK and the group ID."; }
   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
