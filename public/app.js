@@ -260,7 +260,6 @@ async function loadManagement(tab){
   }
 }
 $("refreshActivity").addEventListener("click",()=>loadManagement("activity"));
-$("leaveSearch")?.addEventListener("input",()=>{const q=$("leaveSearch").value.toLowerCase();document.querySelectorAll("#leaveTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("promotionSearch")?.addEventListener("input",()=>{const q=$("promotionSearch").value.toLowerCase();document.querySelectorAll("#promotionTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("punishmentSearch")?.addEventListener("input",()=>{const q=$("punishmentSearch").value.toLowerCase();document.querySelectorAll("#punishmentTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("activitySearch")?.addEventListener("input",()=>{const q=$("activitySearch").value.toLowerCase();document.querySelectorAll("#activityTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
@@ -310,6 +309,13 @@ async function loadTasks(){
   }catch(e){$("taskTable").textContent=e.message}
 }
 async function loadTaskAudit(){const el=$("taskAuditTable");if(!el)return;try{const d=await api("/api/management/tasks/audit");el.innerHTML=(d.items||[]).length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>ASSIGNED STAFF</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No task actions logged yet.</div>';}catch(e){el.textContent=e.message}}
+function setupLeaveDateLimits(){
+  const start=$("leaveStart"),end=$("leaveEnd");if(!start||!end)return;
+  const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10);};
+  start.min=today();end.min=start.value||today();
+  start.addEventListener("change",()=>{end.min=start.value||today();if(end.value&&end.value<end.min)end.value=end.min;});
+}
+setupLeaveDateLimits();
 $("refreshLeaves")?.addEventListener("click",()=>loadManagement("leaves"));
 $("refreshLeaveAudit")?.addEventListener("click",loadLeaveAudit);
 $("leaveSearch")?.addEventListener("input",()=>loadManagement("leaves"));
