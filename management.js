@@ -600,9 +600,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const team=await pool.query("SELECT id,name,color FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     const members=await pool.query("SELECT user_id FROM management_team_members WHERE team_id=$1",[req.params.id]),ids=members.rows.map(x=>x.user_id);
+    if(Number(who.rank)<245&&!ids.includes(String(req.session.user.id)))return res.status(403).json({error:"Only management or members of this team can view its dashboard."});
     const activity=ids.length?await pool.query("SELECT user_id,COALESCE(SUM(seconds),0)::BIGINT AS seconds,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=ANY($1::text[]) GROUP BY user_id",[ids]):{rows:[]};
     const tasks=ids.length?await pool.query("SELECT status,COUNT(*)::INTEGER AS count FROM management_tasks WHERE assigned_to_id=ANY($1::text[]) GROUP BY status",[ids]):{rows:[]};
-    const shifts=ids.length?await pool.query("SELECT COUNT(*)::INTEGER AS count FROM staff_shifts WHERE host_id=ANY($1::text[]) OR cohost_id=ANY($1::text[]) OR promoter_id=ANY($1::text[])",[ids]):{rows:[{count:0}]};
+    const shifts=ids.length?await pool.query("SELECT COUNT(DISTINCT id)::INTEGER AS count FROM staff_shifts WHERE host_id=ANY($1::text[]) OR cohost_id=ANY($1::text[]) OR promoter_id=ANY($1::text[]) OR attendee_ids && $1::text[] OR oversee_ids && $1::text[]",[ids]):{rows:[{count:0}]};
     res.json({team:team.rows[0],members:ids,activity:activity.rows,tasks:tasks.rows,sessionCount:Number(shifts.rows[0]?.count||0)});
   }catch(e){next(e);}});
   return router;
