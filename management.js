@@ -96,6 +96,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=Number((await settings()).session_delete_rank)}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
+    const allowed=await gate(req,res,"session_create_rank");if(!allowed)return;
     const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
     const attendeeIds=Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[];
     const overseeIds=Array.isArray(b.overseeIds)?b.overseeIds.map(String):(b.overseeId?[String(b.overseeId)]:[]);
