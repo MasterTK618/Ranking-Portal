@@ -359,8 +359,11 @@ $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendar
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
 $("sessionSearch")?.addEventListener("input",()=>{const q=$("sessionSearch").value.toLowerCase();document.querySelectorAll("#sessionList tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("createSession").addEventListener("click",async()=>{
+ const resolveTyped=(inputId,selectId,optional=false)=>{const value=$(inputId).value.trim();if(!value&&optional){$(selectId).value="";return "";}const match=staffDirectory.find(m=>m.username.toLowerCase()===value.toLowerCase());if(!match)throw new Error("Select an exact staff username for "+inputId.replace("session","").replace("Search","")+".");$(selectId).value=match.id;return match.id;};
+ let hostId,cohostId,promoterId;try{hostId=resolveTyped("sessionHostSearch","sessionHost");cohostId=resolveTyped("sessionCoHostSearch","sessionCoHost",true);promoterId=resolveTyped("sessionPromoterSearch","sessionPromoter",true);}catch(e){notice(e.message,"error");return;}
  const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
- const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeIds:[...$("sessionOversee").selectedOptions].map(o=>o.value).filter(Boolean),promoterId:$("sessionPromoter").value,attendeeIds:attendees};
+ const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId,cohostId,overseeIds:[...$("sessionOversee").selectedOptions].map(o=>o.value).filter(Boolean),promoterId,attendeeIds:attendees};
+ if(!body.title||!body.date||!body.time){notice("Enter a shift name, date, and time.","error");return;}
  const btn=$("createSession");btn.disabled=true;
  try{await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});notice("Shift created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
 });
