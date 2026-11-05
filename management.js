@@ -94,7 +94,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"A team with that name already exists. Choose a different name."});next(e);}});
   router.put("/teams/member/:userId",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
-    const userId=String(req.params.userId);if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
+    const userId=String(req.params.userId);if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
     const teamIds=Array.isArray(req.body?.teamIds)?[...new Set(req.body.teamIds.map(String))]:[];
     const valid=await pool.query("SELECT id FROM management_teams WHERE id=ANY($1::bigint[])",[teamIds]);if(valid.rowCount!==teamIds.length)return res.status(400).json({error:"One or more selected teams do not exist."});
     const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);for(const id of teamIds)await client.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,team_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[userId,id,String(req.session.user.id)]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
@@ -102,7 +102,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.put("/teams/:id/members",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
-    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\\d+$/.test(x)))]:[];
+    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\d+$/.test(x)))]:[];
     const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_team_members WHERE team_id=$1",[req.params.id]);for(const id of ids)await client.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,team_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[id,req.params.id,String(req.session.user.id)]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
     res.json({ok:true,assigned:ids.length});
@@ -164,7 +164,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}res.json({ok:true,item});
   }catch(e){next(e);}});
   router.delete("/tasks/:id",csrf,async(req,res,next)=>{let client;try{
-    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid task ID."});
+    if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid task ID."});
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const s=await settings();client=await pool.connect();await client.query("BEGIN");
     const found=await client.query("SELECT * FROM management_tasks WHERE id=$1 FOR UPDATE",[req.params.id]);
@@ -274,7 +274,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.post("/members/:id/notes",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<238)return res.status(403).json({error:"Rank 238 or higher is required to add staff notes."});
     const userId=String(req.params.id||""),body=String(req.body?.body||"").trim();
-    if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
+    if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
     if(body.length<2||body.length>2000)return res.status(400).json({error:"Notes must be between 2 and 2,000 characters."});
     const target=await getIdentity(userId);if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"Staff member not found."});
     const r=await pool.query("INSERT INTO management_member_notes(user_id,body,created_by,created_by_name) VALUES($1,$2,$3,$4) RETURNING *",[userId,body,String(req.session.user.id),String(req.session.user.name)]);
