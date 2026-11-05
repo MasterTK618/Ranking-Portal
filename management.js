@@ -26,26 +26,6 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     req.identity = who;
     return who;
   }
-  router.use(requireLogin);
-  router.get("/settings", async (req,res,next) => {
-    try {
-      const who=await identity(req);
-      if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can view management permissions."});
-      res.json({settings:await settings()});
-    } catch(e){next(e);}
-  });
-  router.put("/settings", csrf, async (req,res,next) => {
-    try {
-      const who=await identity(req);
-      if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can change management permissions."});
-      const values=columns.map(k=>Number(req.body?.[k]));
-      if(values.some(v=>!Number.isInteger(v)||v<1||v>255)) return res.status(400).json({error:"Every permission must be a whole rank from 1 to 255."});
-      const sets=columns.map((k,i)=>k+"=$"+(i+1)).join(",");
-      const result=await pool.query("UPDATE management_settings SET "+sets+",updated_at=NOW() WHERE id=1 RETURNING *",values);
-      res.json({ok:true,settings:result.rows[0]});
-    } catch(e){next(e);}
-  });
-
   router.post("/activity/event", requireGameSecret, async (req,res,next) => {
     try {
       const {event,userId,username,jobId}=req.body||{};
@@ -66,6 +46,26 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true});
     } catch(e){next(e);}
   });
+  router.use(requireLogin);
+  router.get("/settings", async (req,res,next) => {
+    try {
+      const who=await identity(req);
+      if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can view management permissions."});
+      res.json({settings:await settings()});
+    } catch(e){next(e);}
+  });
+  router.put("/settings", csrf, async (req,res,next) => {
+    try {
+      const who=await identity(req);
+      if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can change management permissions."});
+      const values=columns.map(k=>Number(req.body?.[k]));
+      if(values.some(v=>!Number.isInteger(v)||v<1||v>255)) return res.status(400).json({error:"Every permission must be a whole rank from 1 to 255."});
+      const sets=columns.map((k,i)=>k+"=$"+(i+1)).join(",");
+      const result=await pool.query("UPDATE management_settings SET "+sets+",updated_at=NOW() WHERE id=1 RETURNING *",values);
+      res.json({ok:true,settings:result.rows[0]});
+    } catch(e){next(e);}
+  });
+
   router.get("/activity", async (req,res,next) => {
     try {
       const who=await gate(req,res,"activity_view_rank"); if(!who)return;
