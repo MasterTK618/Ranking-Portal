@@ -102,7 +102,14 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{
       const userId=String(req.params.id||"");
       if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
-      const who=await getIdentity(userId);
+      let who;
+      try{who=await getIdentity(userId);}catch{}
+      if(!who?.inGroup||who.rank<230){
+        const groupResponse=await fetch("https://groups.roblox.com/v1/users/"+encodeURIComponent(userId)+"/groups/roles");
+        const groupData=await groupResponse.json().catch(()=>({}));
+        const groupRole=(groupData.data||[]).filter(item=>String(item.group?.id)===String(process.env.ROBLOX_GROUP_ID||"16597698")).map(item=>item.role||{}).sort((a,b)=>Number(b.rank||0)-Number(a.rank||0))[0];
+        who={inGroup:!!groupRole,rank:Number(groupRole?.rank||0),roleName:groupRole?.name||"Not in group"};
+      }
       if(!who.inGroup||who.rank<230)return res.status(404).json({error:"Staff member not found."});
       const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));
       const user=await profile.json().catch(()=>({}));
