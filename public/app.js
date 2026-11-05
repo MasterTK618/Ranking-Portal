@@ -199,7 +199,7 @@ async function loadManagement(tab){
         roster=(d.members||[]).map(person=>({...person,username:person.username||sessionData?.user?.name||"You",rank:person.rank??sessionData?.identity?.rank??"—",role:person.role||sessionData?.identity?.roleName||"—"}));
       }
       roster.sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.username).localeCompare(String(y.username)));
-      const rows=searchRows(roster,"activitySearch",["username","displayName","role","rank"]);
+      const rows=searchRows(roster,"activitySearch",["username","displayName","role","rank","shifts_attended","seconds"]);
       const scope=d.canViewAll?"All staff members":"Only your own activity is visible with your current permissions";
       $("activityTable").innerHTML='<div class="activity-table-heading"><span>'+escapeHtml(scope)+'</span><span>'+rows.length+' shown</span></div>'+
         (rows.length?'<table class="data-table activity-data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>SHIFTS ATTENDED</th><th>IN-GAME MINUTES</th><th>LAST ACTIVE</th></tr></thead><tbody>'+
