@@ -299,7 +299,7 @@ async function loadTasks(){
   $("taskTable").textContent="Loading staff tasks…";
   try{if(!staffDirectory.length)await loadStaffDirectory();
     const d=await api("/api/management/tasks"),items=d.items||[],filter=$("taskStatusFilter").value,q=($("taskSearch").value||"").toLowerCase();
-    const select=$("taskAssignedTo"),previous=select.value;select.innerHTML='<option value="">Choose a staff member…</option>'+staffDirectory.map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+'</option>').join("");if(previous)select.value=previous;
+    const select=$("taskAssignedTo"),previous=select.value;select.innerHTML='<option value="">Choose a staff member…</option>'+staffDirectory.filter(m=>Number(m.rank)>=Number(d.settings.task_view_rank)).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+'</option>').join("");if(previous)select.value=previous;
     const rows=items.filter(x=>(filter==="ALL"||x.status===filter)&&[x.title,x.description,x.assigned_to_name,x.created_by_name,x.priority,x.status].some(v=>String(v||"").toLowerCase().includes(q)));
     const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
     $("taskSummary").innerHTML=counts.map(x=>`<article class="session-stat"><span>✓</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
@@ -342,7 +342,7 @@ $("submitLeave").addEventListener("click",async()=>{
   const btn=$("submitLeave");btn.disabled=true;btn.textContent="Submitting…";
   try{
     const d=await api("/api/management/leaves",{method:"POST",body:JSON.stringify({discordUsername:$("leaveDiscord").value.trim(),robloxUsername:$("leaveRoblox").value.trim(),startDate:$("leaveStart").value,endDate:$("leaveEnd").value,reason:$("leaveReason").value.trim()})});
-    $("leaveReason").value="";$("leaveStart").value="";$("leaveEnd").value="";notice("Time-off request submitted. Last approved leave: "+dateOnly(d.item.last_leave_at)+".","success");await loadManagement("leaves");
+    $("leaveReason").value="";$("leaveStart").value="";$("leaveEnd").value="";$("leaveEnd").min=$("leaveStart").min;notice("Time-off request submitted. Last approved leave: "+dateOnly(d.item.last_leave_at)+".","success");await loadManagement("leaves");
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;btn.textContent="Submit request"}
 });
 document.addEventListener("click",async e=>{
