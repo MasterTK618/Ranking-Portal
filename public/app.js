@@ -341,7 +341,7 @@ document.addEventListener("click",async e=>{
 $("submitLeave").addEventListener("click",async()=>{
   const btn=$("submitLeave");btn.disabled=true;btn.textContent="Submitting…";
   try{
-    const d=await api("/api/management/leaves",{method:"POST",body:JSON.stringify({discordUsername:$("leaveDiscord").value.trim(),robloxUsername:$("leaveRoblox").value.trim(),startDate:$("leaveStart").value,endDate:$("leaveEnd").value,reason:$("leaveReason").value.trim()})});
+    const d=await api("/api/management/leaves",{method:"POST",body:JSON.stringify({discordUsername:$("leaveDiscord").value.trim(),robloxUsername:$("leaveRoblox").value.trim(),startDate:$("leaveStart").value,endDate:$("leaveEnd").value,reason:$("leaveReason").value.trim(),timezoneOffset:new Date().getTimezoneOffset()})});
     $("leaveReason").value="";$("leaveStart").value="";$("leaveEnd").value="";$("leaveEnd").min=$("leaveStart").min;notice("Time-off request submitted. Last approved leave: "+dateOnly(d.item.last_leave_at)+".","success");await loadManagement("leaves");
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;btn.textContent="Submit request"}
 });
