@@ -7,9 +7,12 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
 local PORTAL_URL = "https://ranking-portal.onrender.com"
+local GROUP_ID = 16597698
+local MIN_STAFF_RANK = 230
 local GAME_SECRET = "PASTE_THE_SAME_INGAME_API_SECRET_HERE"
 
 local function report(event, player)
+	if player:GetRankInGroup(GROUP_ID) < MIN_STAFF_RANK then return end
 	if GAME_SECRET == "" or GAME_SECRET == "PASTE_THE_SAME_INGAME_API_SECRET_HERE" then
 		warn("[Lemonz Activity] Set GAME_SECRET in this server Script.")
 		return
