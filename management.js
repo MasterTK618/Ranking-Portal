@@ -12,6 +12,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r = await pool.query("SELECT * FROM management_settings WHERE id=1");
     return r.rows[0] || defaults;
   }
+  async function writeAudit(action, item, actorId, actorName, details="") {
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES('PUNISHMENT',$1,$2,$3,$4,$5,$6)",
+      [action,String(item?.id||""),String(item?.username||""),String(details||"").slice(0,1000),String(actorId||""),String(actorName||"")]);
+  }
   async function identity(req) {
     if (!req.session.user) return null;
     return getIdentity(req.session.user.id);
@@ -182,6 +186,14 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=canViewAll?await pool.query("SELECT * FROM management_punishments ORDER BY created_at DESC LIMIT 250"):await pool.query("SELECT * FROM management_punishments WHERE created_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
     res.json({items:r.rows.map(x=>({...x,canDelete:String(x.created_by)===String(req.session.user.id)||who.rank>=Number(s.punishment_approve_rank)})),rank:who.rank,settings:s,canViewAll});
   }catch(e){next(e);}});
+  router.get("/punishments/audit",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const s=await settings(),all=who.rank>=Number(s.punishment_view_rank);
+    const r=all
+      ? await pool.query("SELECT * FROM management_audit_logs WHERE category='PUNISHMENT' ORDER BY created_at DESC LIMIT 300")
+      : await pool.query("SELECT * FROM management_audit_logs WHERE category='PUNISHMENT' AND actor_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
+    res.json({items:r.rows});
+  }catch(e){next(e);}});
   router.post("/punishments", csrf, async(req,res,next)=>{
     try{
       const s=await settings(), who=await identity(req); if(!who)return res.status(401).json({error:"Sign in first."});
@@ -194,6 +206,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const status=canAdd?"APPROVED":"PENDING";
       const r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name,decided_by,decided_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
         [userId,username,type,reason,String(b.duration||"").slice(0,80),status,req.session.user.id,req.session.user.name,canAdd?req.session.user.id:null,canAdd?req.session.user.name:null]);
+      await writeAudit(canAdd?"ISSUED":"REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,reason);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
@@ -203,6 +216,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const r=await pool.query("UPDATE management_punishments SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",
         [status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
       if(!r.rowCount)return res.status(404).json({error:"Pending punishment not found."});
+      await writeAudit(status,r.rows[0],req.session.user.id,req.session.user.name,req.body?.note||"");
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
@@ -269,7 +283,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
   router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM staff_shifts WHERE id=$1 AND (created_by=$2 OR $3>=$4) RETURNING id",[req.params.id,String(req.session.user.id),who.rank,Number((await settings()).session_delete_rank)]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or a member meeting the configured delete rank can delete this shift."});res.json({ok:true});}catch(e){next(e);}});
   for(const [path,table,ownerCol,rankField] of [["punishments","management_punishments","created_by","punishment_approve_rank"],["promotions","promotion_suggestions","suggested_by","promotion_approve_rank"],["leaves","leave_requests","user_id","leave_approve_rank"]]){
-    router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),canManage=who.rank>=Number(s[rankField]);const r=await pool.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) RETURNING id",[req.params.id,String(req.session.user.id),canManage]);if(!r.rowCount)return res.status(403).json({error:"You do not have permission to delete this request."});res.json({ok:true});}catch(e){next(e);}});
+    router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),canManage=who.rank>=Number(s[rankField]);const r=await pool.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);if(!r.rowCount)return res.status(403).json({error:"You do not have permission to delete this request."});if(path==="punishments")await writeAudit("DELETED",r.rows[0],req.session.user.id,req.session.user.name,"Record deleted");res.json({ok:true});}catch(e){next(e);}});
   }
   return router;
 }
@@ -313,6 +327,10 @@ async function ensureManagementSchema(pool) {
     id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,username TEXT NOT NULL,type TEXT NOT NULL,reason TEXT NOT NULL,duration TEXT,
     status TEXT NOT NULL,created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,decided_by TEXT,decided_by_name TEXT,
     decision_note TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),decided_at TIMESTAMPTZ)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS management_audit_logs (
+    id BIGSERIAL PRIMARY KEY,category TEXT NOT NULL,action TEXT NOT NULL,target_id TEXT,target_username TEXT,
+    details TEXT NOT NULL DEFAULT '',actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query("CREATE INDEX IF NOT EXISTS management_audit_category_created_idx ON management_audit_logs(category,created_at DESC)");
   await pool.query(`CREATE TABLE IF NOT EXISTS promotion_suggestions (
     id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,username TEXT NOT NULL,suggested_role TEXT NOT NULL,reason TEXT NOT NULL,
     status TEXT NOT NULL,suggested_by TEXT NOT NULL,suggested_by_name TEXT NOT NULL,decided_by TEXT,decided_by_name TEXT,
