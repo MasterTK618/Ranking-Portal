@@ -23,7 +23,7 @@ app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc:["'self'"], s
 app.use(express.json({ limit: "30kb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
-  store: new PgSession({ pool, tableName: "portal_sessions", createTableIfMissing: true }),
+  store: new PgSession({ pool, tableName: "web_sessions", createTableIfMissing: true }),
   name: "lemonz.sid", secret: process.env.SESSION_SECRET || "development-only-change-me",
   resave: false, saveUninitialized: false,
   cookie: { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 8 * 60 * 60 * 1000 }
