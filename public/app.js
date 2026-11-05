@@ -156,8 +156,11 @@ function renderTeamAssignmentMembers(){
   const teamId=$("teamAssignmentSelect")?.value,select=$("teamMembersSelect");if(!select)return;
   const q=($("teamMemberSearch")?.value||"").trim().toLowerCase();
   const selected=teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(teamId||""));
-  const pool=teamStaffCache.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)));
-  select.innerHTML=pool.map(m=>'<option value="'+escapeHtml(m.id)+'"'+(selected.some(x=>String(x.id)===String(m.id))?' selected':'')+'>'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+(teamAssignments.has(String(m.id))&&String(teamAssignments.get(String(m.id)))!==String(teamId)?' · assigned elsewhere':'')+'</option>').join("");
+  select.innerHTML=teamStaffCache.map(m=>{
+    const match=!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q));
+    const elsewhere=teamAssignments.has(String(m.id))&&String(teamAssignments.get(String(m.id)))!==String(teamId);
+    return '<option value="'+escapeHtml(m.id)+'"'+(selected.some(x=>String(x.id)===String(m.id))?' selected':'')+(!match?' hidden':'')+'>'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+(elsewhere?' · assigned elsewhere':'')+'</option>';
+  }).join("");
   $("teamAssignmentHelp").textContent=teamId?selected.length+" staff currently assigned. Select the members who should belong to this team.":"Select a team to load its current members.";
 }
 $("createTeam")?.addEventListener("click",async()=>{
