@@ -67,37 +67,28 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
 
 
-  router.get("/sessions", async(req,res,next)=>{
-    try{
-      const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date,session_time");
-      res.json({sessions:result.rows});
-    }catch(e){next(e);}
-  });
-  router.post("/sessions", csrf, async(req,res,next)=>{
-    try{
-      const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
-      const attendeeIds=Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[];
-      const ids=[b.hostId,b.cohostId,b.overseeId,b.promoterId,...attendeeIds].filter(Boolean).map(String);
-      if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)
-        return res.status(400).json({error:"Enter a session name, date, time, and host."});
-      if(new Set(ids).size!==ids.length)
-        return res.status(400).json({error:"A staff member can only be assigned one role per session."});
-      const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-      if(identities.some(x=>!x.who.inGroup))return res.status(400).json({error:"Every selected person must be a current Lemonz member."});
-      const ranks=new Map(identities.map(x=>[x.id,x.who.rank]));
-      if(b.overseeId&&ranks.get(String(b.overseeId))<245)return res.status(400).json({error:"Oversee must be rank 245 or higher."});
-      if(b.promoterId&&ranks.get(String(b.promoterId))<245)return res.status(400).json({error:"Promoter must be rank 245 or higher."});
-      const names=await Promise.all(ids.map(async id=>{
-        const response=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));
-        const user=await response.json().catch(()=>({}));return [id,user.name||id];
-      }));
-      const nameMap=Object.fromEntries(names),host=String(b.hostId),cohost=b.cohostId?String(b.cohostId):null,oversee=b.overseeId?String(b.overseeId):null,promoter=b.promoterId?String(b.promoterId):null;
-      const result=await pool.query("INSERT INTO portal_sessions(title,session_date,session_time,host_id,host_name,cohost_id,cohost_name,oversee_id,oversee_name,promoter_id,promoter_name,attendee_ids,attendee_names,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *",
-        [title,date,time,host,nameMap[host],cohost,cohost?nameMap[cohost]:null,oversee,oversee?nameMap[oversee]:null,promoter,promoter?nameMap[promoter]:null,attendeeIds,attendeeIds.map(id=>nameMap[id]),req.session.user.id]);
-      res.json({ok:true,session:result.rows[0]});
-    }catch(e){next(e);}
-  });
-
+  router.get("/sessions",async(req,res,next)=>{try{
+    const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
+    res.json({sessions:result.rows});
+  }catch(e){next(e);}});
+  router.post("/sessions",csrf,async(req,res,next)=>{try{
+    const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
+    const attendeeIds=Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[];
+    const overseeIds=Array.isArray(b.overseeIds)?b.overseeIds.map(String):(b.overseeId?[String(b.overseeId)]:[]);
+    const ids=[b.hostId,b.cohostId,b.promoterId,...overseeIds,...attendeeIds].filter(Boolean).map(String);
+    if(!title||title.length>100||!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a shift name, date, time, and host."});
+    if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
+    const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
+    if(identities.some(x=>!x.who.inGroup))return res.status(400).json({error:"Every selected person must be a current Lemonz member."});
+    const ranks=new Map(identities.map(x=>[x.id,x.who.rank]));
+    if(overseeIds.some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Every Oversee must be rank 245 or higher."});
+    if(b.promoterId&&Number(ranks.get(String(b.promoterId))||0)<245)return res.status(400).json({error:"Promoter must be rank 245 or higher."});
+    const names=await Promise.all(ids.map(async id=>{const response=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const user=await response.json().catch(()=>({}));return [id,user.name||id];}));
+    const nameMap=Object.fromEntries(names),host=String(b.hostId),cohost=b.cohostId?String(b.cohostId):null,promoter=b.promoterId?String(b.promoterId):null;
+    const result=await pool.query("INSERT INTO portal_sessions(title,session_date,session_time,host_id,host_name,cohost_id,cohost_name,oversee_id,oversee_name,oversee_ids,oversee_names,promoter_id,promoter_name,attendee_ids,attendee_names,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *",
+      [title,date,time,host,nameMap[host],cohost,cohost?nameMap[cohost]:null,overseeIds[0]||null,overseeIds.map(id=>nameMap[id]).join(", ")||null,overseeIds,overseeIds.map(id=>nameMap[id]),promoter,promoter?nameMap[promoter]:null,attendeeIds,attendeeIds.map(id=>nameMap[id]),req.session.user.id]);
+    res.json({ok:true,session:result.rows[0]});
+  }catch(e){next(e);}});
   router.get("/members/:id", async(req,res,next)=>{
     try{
       const userId=String(req.params.id||"");
@@ -116,23 +107,24 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const thumb=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+encodeURIComponent(userId)+"&size=150x150&format=Png&isCircular=true");
       const thumbData=await thumb.json().catch(()=>({}));
       const avatarUrl=thumbData.data?.[0]?.imageUrl||"";
-      const sessions=await pool.query("SELECT * FROM portal_sessions WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 ORDER BY session_date DESC,session_time DESC",[userId]);
+      const sessions=await pool.query("SELECT * FROM portal_sessions WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
       const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const activity=await pool.query("SELECT COALESCE(SUM(seconds),0)::BIGINT AS seconds,COUNT(*)::INTEGER AS sessions,MAX(ended_at) AS last_seen FROM activity_sessions WHERE user_id=$1 AND ended_at IS NOT NULL",[userId]);
-      res.json({member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":s.oversee_id===userId?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]});
+      res.json({member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]});
     }catch(e){next(e);}
   });
 
-  router.get("/activity", async (req,res,next) => {
-    try {
-      const who=await gate(req,res,"activity_view_rank"); if(!who)return;
-      const r=await pool.query(
-        "SELECT user_id,username,SUM(seconds)::BIGINT AS seconds,MAX(started_at) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE ended_at IS NOT NULL GROUP BY user_id,username ORDER BY SUM(seconds) DESC LIMIT 250"
-      );
-      const adjustments=await pool.query("SELECT user_id,username,minutes,reason,actor_name,created_at FROM activity_adjustments ORDER BY created_at DESC LIMIT 100");
-      res.json({members:r.rows,adjustments:adjustments.rows,canEdit:who.rank >= (await settings()).activity_edit_rank});
-    } catch(e){next(e);}
-  });
+  router.get("/activity",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const s=await settings(),canViewAll=who.rank>=Number(s.activity_view_rank);
+    const sql=canViewAll
+      ? "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT AS seconds,MAX(COALESCE(ended_at,started_at)) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions GROUP BY user_id,username ORDER BY SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END) DESC LIMIT 500"
+      : "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT AS seconds,MAX(COALESCE(ended_at,started_at)) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=$1 GROUP BY user_id,username";
+    const r=await pool.query(sql,canViewAll?[]:[String(req.session.user.id)]);
+    const members=await Promise.all(r.rows.map(async row=>{let rank=0,role="—";try{const i=await getIdentity(row.user_id);rank=i.rank||0;role=i.roleName||"—";}catch{}return {...row,rank,role};}));
+    const adjustments=canViewAll?await pool.query("SELECT user_id,username,minutes,reason,actor_name,created_at FROM activity_adjustments ORDER BY created_at DESC LIMIT 100"):{rows:[]};
+    res.json({members,adjustments:adjustments.rows,canEdit:who.rank>=Number(s.activity_edit_rank),canViewAll});
+  }catch(e){next(e);}});
   router.post("/activity/adjust", csrf, async (req,res,next) => {
     try {
       const who=await gate(req,res,"activity_edit_rank"); if(!who)return;
@@ -237,6 +229,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
+  router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM portal_sessions WHERE id=$1 AND (created_by=$2 OR $3>=255) RETURNING id",[req.params.id,String(req.session.user.id),who.rank]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or group owner can delete this shift."});res.json({ok:true});}catch(e){next(e);}});
+  for(const [path,table,ownerCol,rankField] of [["punishments","management_punishments","created_by","punishment_approve_rank"],["promotions","promotion_suggestions","suggested_by","promotion_approve_rank"],["leaves","leave_requests","user_id","leave_approve_rank"]]){
+    router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),canManage=who.rank>=Number(s[rankField]);const r=await pool.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) RETURNING id",[req.params.id,String(req.session.user.id),canManage]);if(!r.rowCount)return res.status(403).json({error:"You do not have permission to delete this request."});res.json({ok:true});}catch(e){next(e);}});
+  }
   return router;
 }
 
@@ -249,7 +245,9 @@ async function ensureManagementSchema(pool) {
     promotion_suggest_rank INTEGER NOT NULL DEFAULT 238, promotion_approve_rank INTEGER NOT NULL DEFAULT 249,
     leave_approve_rank INTEGER NOT NULL DEFAULT 245, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query("INSERT INTO management_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING");
-  await pool.query("CREATE TABLE IF NOT EXISTS portal_sessions (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,session_date DATE NOT NULL,session_time TIME NOT NULL,host_id TEXT NOT NULL,host_name TEXT NOT NULL,cohost_id TEXT,cohost_name TEXT,oversee_id TEXT,oversee_name TEXT,promoter_id TEXT,promoter_name TEXT,attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await pool.query("CREATE TABLE IF NOT EXISTS portal_sessions (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL DEFAULT 'Shift',session_date DATE,session_time TIME,host_id TEXT,host_name TEXT,cohost_id TEXT,cohost_name TEXT,oversee_id TEXT,oversee_name TEXT,oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],promoter_id TEXT,promoter_name TEXT,attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],created_by TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await pool.query("ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS title TEXT DEFAULT 'Shift', ADD COLUMN IF NOT EXISTS session_date DATE, ADD COLUMN IF NOT EXISTS session_time TIME, ADD COLUMN IF NOT EXISTS host_id TEXT, ADD COLUMN IF NOT EXISTS host_name TEXT, ADD COLUMN IF NOT EXISTS cohost_id TEXT, ADD COLUMN IF NOT EXISTS cohost_name TEXT, ADD COLUMN IF NOT EXISTS oversee_id TEXT, ADD COLUMN IF NOT EXISTS oversee_name TEXT, ADD COLUMN IF NOT EXISTS oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS promoter_id TEXT, ADD COLUMN IF NOT EXISTS promoter_name TEXT, ADD COLUMN IF NOT EXISTS attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS created_by TEXT, ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await pool.query("UPDATE portal_sessions SET session_date=COALESCE(session_date,created_at::date,CURRENT_DATE),session_time=COALESCE(session_time,TIME '00:00'),title=COALESCE(NULLIF(title,''),'Shift'),oversee_ids=CASE WHEN cardinality(oversee_ids)=0 AND oversee_id IS NOT NULL THEN ARRAY[oversee_id]::TEXT[] ELSE oversee_ids END,oversee_names=CASE WHEN cardinality(oversee_names)=0 AND oversee_name IS NOT NULL THEN ARRAY[oversee_name]::TEXT[] ELSE oversee_names END");
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_sessions (
     id BIGSERIAL PRIMARY KEY, session_key TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, username TEXT NOT NULL,
     started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ, seconds INTEGER NOT NULL DEFAULT 0)`);
