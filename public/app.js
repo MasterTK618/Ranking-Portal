@@ -427,7 +427,7 @@ function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).p
 function drawSessionsCalendar(items){
   const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=first.getDay(),days=new Date(y,m+1,0).getDate(),cells=[];
   for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside"></div>');
-  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day"><b>'+day+'</b>'+events.map(s=>'<div class="calendar-event">'+escapeHtml(s.title)+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+'</div>').join("")+'</div>');}
+  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day"><b>'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'"><b>'+escapeHtml(s.title)+'</b><small>'+sessionTypeLabel(s.session_type)+' · '+sessionStatusLabel(s.status||"PLANNED")+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+'</small></div>').join("")+'</div>');}
   $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
 function sessionTypeLabel(v){return v==="RECRUITMENT"?"Recruitment":v==="MINI_GAMES"?"Mini-Games":"Promotional";}
