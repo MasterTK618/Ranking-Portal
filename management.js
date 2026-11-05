@@ -93,14 +93,14 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.get("/sessions",async(req,res,next)=>{try{
     let who=null;try{who=await identity(req);}catch{}const result=await pool.query("SELECT * FROM staff_shifts ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
-    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=255}))});
+    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=Number((await settings()).session_delete_rank)}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
     const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
     const attendeeIds=Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[];
     const overseeIds=Array.isArray(b.overseeIds)?b.overseeIds.map(String):(b.overseeId?[String(b.overseeId)]:[]);
     const ids=[b.hostId,b.cohostId,b.promoterId,...overseeIds,...attendeeIds].filter(Boolean).map(String);
-    if(!title||title.length>100||!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a shift name, date, time, and host."});
+    if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a shift name, date, time, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
     if(identities.some(x=>!x.who.inGroup))return res.status(400).json({error:"Every selected person must be a current Lemonz member."});
@@ -266,7 +266,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
-  router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM staff_shifts WHERE id=$1 AND (created_by=$2 OR $3>=255) RETURNING id",[req.params.id,String(req.session.user.id),who.rank]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or group owner can delete this shift."});res.json({ok:true});}catch(e){next(e);}});
+  router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM staff_shifts WHERE id=$1 AND (created_by=$2 OR $3>=$4) RETURNING id",[req.params.id,String(req.session.user.id),who.rank,Number((await settings()).session_delete_rank)]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or group owner can delete this shift."});res.json({ok:true});}catch(e){next(e);}});
   for(const [path,table,ownerCol,rankField] of [["punishments","management_punishments","created_by","punishment_approve_rank"],["promotions","promotion_suggestions","suggested_by","promotion_approve_rank"],["leaves","leave_requests","user_id","leave_approve_rank"]]){
     router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),canManage=who.rank>=Number(s[rankField]);const r=await pool.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) RETURNING id",[req.params.id,String(req.session.user.id),canManage]);if(!r.rowCount)return res.status(403).json({error:"You do not have permission to delete this request."});res.json({ok:true});}catch(e){next(e);}});
   }
