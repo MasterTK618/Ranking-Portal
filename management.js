@@ -377,10 +377,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!["Strike","Demotion","Termination","Ban","Suspension","Other"].includes(type)||!reason)
         return res.status(400).json({error:"Complete the member, punishment type, and reason."});
-      const status=canAdd?"APPROVED":"PENDING";
+      const status="PENDING"; // Every punishment must be approved by a reviewer.
       const r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name,decided_by,decided_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
-        [userId,username,type,reason,String(b.duration||"").slice(0,80),status,req.session.user.id,req.session.user.name,canAdd?req.session.user.id:null,canAdd?req.session.user.name:null]);
-      await writeAudit(canAdd?"ISSUED":"REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,reason);
+        [userId,username,type,reason,String(b.duration||"").slice(0,80),status,req.session.user.id,req.session.user.name,null,null]);
+      await writeAudit("REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,reason);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
