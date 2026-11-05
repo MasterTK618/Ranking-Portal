@@ -464,9 +464,9 @@ function renderStaffDirectory(){
  $("staffCount").textContent=staffDirectory.length+" staff members · Rank "+staffMinRank+"+";
  status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search or team filter.";
  result.innerHTML=list.map(m=>{
-  const teamId=teamAssignments.get(String(m.id)),team=managementTeams.find(t=>String(t.id)===String(teamId));
-  const picker=Number(sessionData?.identity?.rank)>=255?'<select class="staff-team-picker" data-member-team="'+escapeHtml(m.id)+'" aria-label="Assign '+escapeHtml(m.username)+' to a team"><option value="">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'"'+(String(t.id)===String(teamId)?" selected":"")+'>'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("")+'</select>':"";
-  return '<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small><small class="staff-team-label">'+(team?'<i style="background:'+escapeHtml(team.color)+'"></i>'+escapeHtml(team.department)+' · '+escapeHtml(team.name):'Unassigned')+'</small></span><span class="staff-card-side"><span class="rank-pill">R'+m.rank+'</span>'+picker+'</span></article>';
+  const teamIds=teamAssignments.get(String(m.id))||new Set(),teams=managementTeams.filter(t=>teamIds.has(String(t.id)));
+  const picker=Number(sessionData?.identity?.rank)>=255?'<button class="quiet-btn" type="button" data-member-teams="'+escapeHtml(m.id)+'">Manage teams</button>':"";
+  return '<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small><small class="staff-team-label">'+(teams.length?teams.map(t=>'<i style="background:'+escapeHtml(t.color)+'"></i>'+escapeHtml(t.department)+' · '+escapeHtml(t.name)).join(" · "):'Unassigned')+'</small></span><span class="staff-card-side"><span class="rank-pill">R'+m.rank+'</span>'+picker+'</span></article>';
  }).join("");
 }
 async function loadStaffDirectory(force=false){
