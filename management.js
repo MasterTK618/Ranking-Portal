@@ -528,6 +528,41 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   }
 
+  router.get("/audit",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const cfg=await settings();if(Number(who.rank)<Number(cfg.task_manage_rank||245))return res.status(403).json({error:"Your role cannot view the management audit log."});
+    const limit=Math.min(300,Math.max(1,Number(req.query.limit)||150));
+    const category=String(req.query.category||"").trim().toUpperCase(),actor=String(req.query.actor||"").trim(),target=String(req.query.target||"").trim();
+    const values=[limit],where=[];
+    if(category){values.push(category);where.push("category=$"+values.length);}
+    if(actor){values.push("%"+actor+"%");where.push("(actor_name ILIKE $"+values.length+" OR actor_id ILIKE $"+values.length+")");}
+    if(target){values.push("%"+target+"%");where.push("(target_username ILIKE $"+values.length+" OR target_id ILIKE $"+values.length+")");}
+    const sql="SELECT id,category,action,target_id,target_username,details,actor_id,actor_name,created_at FROM management_audit_logs "+(where.length?"WHERE "+where.join(" AND "):"")+" ORDER BY created_at DESC LIMIT $1";
+    const result=await pool.query(sql,values);res.json({items:result.rows});
+  }catch(e){next(e);}});
+  router.get("/quota-progress",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const cfg=await settings();if(Number(who.rank)<Number(cfg.analytics_view_rank||238))return res.status(403).json({error:"Your role cannot view quota progress."});
+    const week=await pool.query("SELECT date_trunc('week',NOW()) AS starts,date_trunc('week',NOW())+INTERVAL '1 week' AS ends");
+    const [activity,hosted,tasks,teams]=await Promise.all([
+      pool.query("SELECT user_id,username,COALESCE(SUM(seconds),0)::BIGINT AS seconds FROM activity_sessions WHERE started_at>=date_trunc('week',NOW()) GROUP BY user_id,username"),
+      pool.query("SELECT person.user_id,COUNT(*)::INTEGER AS sessions FROM (SELECT host_id AS user_id FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED' UNION ALL SELECT cohost_id FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED' UNION ALL SELECT unnest(attendee_ids) FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED' UNION ALL SELECT unnest(oversee_ids) FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED') person WHERE person.user_id IS NOT NULL GROUP BY person.user_id"),
+      pool.query("SELECT assigned_to_id AS user_id,COUNT(*) FILTER(WHERE status='COMPLETED')::INTEGER AS completed FROM management_tasks WHERE created_at>=date_trunc('week',NOW()) GROUP BY assigned_to_id"),
+      pool.query("SELECT user_id,team_id FROM management_team_members")
+    ]);
+    const activityMap=new Map(activity.rows.map(x=>[String(x.user_id),x])),sessionMap=new Map(hosted.rows.map(x=>[String(x.user_id),Number(x.sessions)])),taskMap=new Map(tasks.rows.map(x=>[String(x.user_id),Number(x.completed)])),teamMap=new Map();
+    for(const t of teams.rows){if(!teamMap.has(String(t.user_id)))teamMap.set(String(t.user_id),[]);teamMap.get(String(t.user_id)).push(String(t.team_id));}
+    const ids=new Set([...activityMap.keys(),...sessionMap.keys(),...taskMap.keys(),...teamMap.keys()]);
+    const members=[...ids].map(id=>{const a=activityMap.get(id)||{};return {userId:id,username:a.username||("User "+id),hours:Number(a.seconds||0)/3600,sessions:sessionMap.get(id)||0,tasks:taskMap.get(id)||0,teamIds:teamMap.get(id)||[]};});
+    res.json({week:week.rows[0],defaults:{hours:Number(cfg.quota_hours_week),sessions:Number(cfg.quota_sessions_week),tasks:Number(cfg.quota_tasks_week)},members});
+  }catch(e){next(e);}});
+  router.post("/notifications/read",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave)-\\d+$/.test(x)))]:[];
+    if(ids.length>100)return res.status(400).json({error:"You can update up to 100 notifications at once."});
+    if(ids.length)await pool.query("INSERT INTO management_notification_reads(user_id,notification_key,read_at) SELECT $1,x,NOW() FROM unnest($2::text[]) x ON CONFLICT(user_id,notification_key) DO UPDATE SET read_at=EXCLUDED.read_at",[String(req.session.user.id),ids]);
+    res.json({ok:true,updated:ids.length});
+  }catch(e){next(e);}});
   router.get("/notifications",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings();if(who.rank<Number(cfg.notification_view_rank))return res.status(403).json({error:"Your rank cannot access notifications."});
     const id=String(req.session.user.id),items=[];
@@ -543,7 +578,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     for(const x of promotions.rows)items.push({id:"promotion-"+x.id,title:"Promotion "+x.status.toLowerCase(),body:x.username+" · "+x.suggested_role,kind:"APPROVAL",href:"promotions",created_at:x.created_at});
     for(const x of punishments.rows)items.push({id:"punishment-"+x.id,title:"Discipline "+x.status.toLowerCase(),body:x.username+" · "+x.type,kind:"APPROVAL",href:"punishments",created_at:x.created_at});
     for(const x of leaves.rows)items.push({id:"leave-"+x.id,title:"Leave "+x.status.toLowerCase(),body:x.roblox_username+" · "+String(x.start_date).slice(0,10)+" to "+String(x.end_date).slice(0,10),kind:"APPROVAL",href:"leaves",created_at:x.created_at});
-    items.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));res.json({items:items.slice(0,100),enabled:Number(cfg.notifications_enabled)!==0});
+    const reads=await pool.query("SELECT notification_key FROM management_notification_reads WHERE user_id=$1",[id]);const readSet=new Set(reads.rows.map(x=>x.notification_key));
+    items.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));res.json({items:items.slice(0,100).map(x=>({...x,read:readSet.has(String(x.id))})),enabled:Number(cfg.notifications_enabled)!==0});
   }catch(e){next(e);}});
   router.get("/approvals",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),rank=Number(who.rank),items=[];
@@ -645,6 +681,7 @@ async function ensureManagementSchema(pool) {
     id BIGSERIAL PRIMARY KEY,category TEXT NOT NULL,action TEXT NOT NULL,target_id TEXT,target_username TEXT,
     details TEXT NOT NULL DEFAULT '',actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query("CREATE INDEX IF NOT EXISTS management_audit_category_created_idx ON management_audit_logs(category,created_at DESC)");
+  await pool.query("CREATE TABLE IF NOT EXISTS management_notification_reads(user_id TEXT NOT NULL,notification_key TEXT NOT NULL,read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,notification_key))");
   await pool.query("CREATE TABLE IF NOT EXISTS management_tasks (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',assigned_to_id TEXT NOT NULL,assigned_to_name TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',status TEXT NOT NULL DEFAULT 'OPEN',due_date DATE,created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),completed_at TIMESTAMPTZ)");
   await pool.query("CREATE INDEX IF NOT EXISTS management_tasks_status_due_idx ON management_tasks(status,due_date)");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_member_notes (
