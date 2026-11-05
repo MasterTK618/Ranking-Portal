@@ -280,6 +280,15 @@ async function loadPunishmentAudit(){
   }catch(e){el.textContent=e.message}
 }
 $("refreshPunishmentAudit")?.addEventListener("click",loadPunishmentAudit);
+
+async function loadPromotionAudit(){
+ const el=$("promotionAuditTable");if(!el)return;el.textContent="Loading promotion history…";
+ try{const d=await api("/api/management/promotions/audit"),items=d.items||[];
+  el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No promotion history recorded yet.</div>';
+ }catch(e){el.textContent=e.message;}
+}
+$("refreshPromotionAudit")?.addEventListener("click",loadPromotionAudit);
+
 $("submitPunishment").addEventListener("click",async()=>{
   try{
     const d=await api("/api/management/punishments",{method:"POST",body:JSON.stringify({userId:$("punishUserId").value.trim(),username:$("punishUsername").value.trim(),type:$("punishType").value,duration:$("punishDuration").value.trim(),reason:$("punishReason").value.trim()})});
@@ -290,7 +299,7 @@ $("submitPunishment").addEventListener("click",async()=>{
 $("submitPromotion").addEventListener("click",async()=>{
   try{
     await api("/api/management/promotions",{method:"POST",body:JSON.stringify({userId:$("promotionUserId").value.trim(),username:$("promotionUsername").value.trim(),suggestedRole:$("promotionRole").value.trim(),reason:$("promotionReason").value.trim()})});
-    notice("Promotion suggestion submitted.","success");loadManagement("promotions");
+    notice("Promotion request submitted and logged.","success");$("promotionUsername").value="";$("promotionUserId").value="";$("promotionReason").value="";loadManagement("promotions");
   }catch(e){notice(e.message,"error")}
 });
 async function loadLeaveAudit(){
@@ -353,7 +362,7 @@ document.addEventListener("click",async e=>{
   const decision=e.target.closest("[data-decision]");
   if(decision){
     const type=decision.dataset.decision,id=decision.dataset.id,status=decision.dataset.status,route=type==="punishment"?"punishments":type==="promotion"?"promotions":"leaves";
-    try{const note=(type==="punishment"||type==="leave")?(prompt(status==="REJECTED"?"Enter the reason for rejecting this request:":"Add an optional review note:")||""):"";if(type==="leave"&&status==="REJECTED"&&!note){notice("A rejection reason is required.","error");return;}await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status,note})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
+    try{const note=(prompt(status==="REJECTED"?"Enter the reason for rejecting this request:":"Add an optional review note:")||"");if(status==="REJECTED"&&!note.trim()){notice("A rejection reason is required.","error");return;}await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status,note})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
     catch(err){notice(err.message,"error")}return;
   }
   const remove=e.target.closest("[data-delete]");if(!remove)return;
