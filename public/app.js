@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set();
-const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
+const pageNames = {overview:"Overview",views:"Views & Insights",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
@@ -24,6 +24,7 @@ function showPage(page,view) {
   clearNotice();
   if(page==="logs")loadLogs();
   if(page==="rank")loadRoles();
+  if(page==="views")loadViews();
   if(page==="settings")loadGameSettings();
   if(page==="sessions"){if(!staffDirectory.length)loadStaffDirectory();if(selectedView==="requests")loadSessionRequests();else loadSessions();}
   if(page==="members")loadStaffDirectory();
@@ -139,9 +140,10 @@ async function loadTeamsSettings(){
   const box=$("teamDirectory");if(!box)return;
   box.innerHTML='<div class="empty-state">Loading teams…</div>';
   try{
-    const d=await api("/api/management/teams");managementTeams=d.teams||[];teamAssignments=new Map();for(const x of (d.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}
-    if(!teamStaffCache.length){const staff=await api("/api/staff");teamStaffCache=staff.members||[];}
-    await syncTeamsByGroupRole();
+    const d=await api("/api/management/teams");managementTeams=Array.isArray(d.teams)?d.teams:[];teamAssignments=new Map();for(const x of (d.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}
+    renderTeamDirectory();
+    if(!teamStaffCache.length){try{const staff=await api("/api/staff");teamStaffCache=staff.members||[];}catch(staffError){$("teamMembersSelect").innerHTML='<div class="empty-state error-state">Teams loaded, but staff could not load: '+escapeHtml(staffError.message)+'</div>';}}
+    
     const ranks=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].sort((x,y)=>x.rank-y.rank);for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),prev=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===prev))el.value=prev;}
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
     teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
@@ -278,6 +280,21 @@ function actionButtons(type,item,rank,settings){
   return '<div class="table-actions">'+decision+remove+'</div>';
 }
 function searchRows(items,id,fields){const q=($(id)?.value||"").trim().toLowerCase();return !q?items:items.filter(x=>fields.some(k=>String(x[k]??"").toLowerCase().includes(q)));}
+async function loadViews(){
+ const stats=$("viewsStats"),teams=$("viewsTeams"),sessions=$("viewsSessions"),leader=$("viewsLeaderboard");
+ try{
+  const results=await Promise.allSettled([api("/api/staff"),api("/api/management/activity"),api("/api/management/sessions"),api("/api/management/teams")]);
+  const staff=results[0].status==="fulfilled"?(results[0].value.members||[]):[],activity=results[1].status==="fulfilled"?(results[1].value.members||[]):[],allSessions=results[2].status==="fulfilled"?(results[2].value.sessions||[]):[],allTeams=results[3].status==="fulfilled"?(results[3].value.teams||[]):[];
+  const active=activity.filter(x=>x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000).length,hours=(activity.reduce((n,x)=>n+Number(x.seconds||0),0)/3600).toFixed(1),upcoming=allSessions.filter(x=>["PLANNED","DELAYED"].includes(x.status)&&new Date(String(x.session_date).slice(0,10)+"T"+String(x.session_time||"00:00").slice(0,5)+":00")>=new Date()).length;
+  stats.innerHTML=[["STAFF MEMBERS",staff.length],["ACTIVE STAFF",active],["IN-GAME HOURS",hours],["UPCOMING SESSIONS",upcoming]].map(x=>'<article class="views-stat"><small>'+x[0]+'</small><b>'+x[1]+'</b><span>Live portal data</span></article>').join("");
+  teams.innerHTML=allTeams.length?allTeams.map(t=>'<div class="views-team-row"><span class="views-team-dot" style="background:'+escapeHtml(t.color||"#f5c928")+'"></span><div><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Lemonz team")+'</small></div><strong>'+Number(t.member_count||0)+'</strong></div>').join(""):'<div class="empty-state">No teams found or team data is unavailable.</div>';
+  const counts=[["Planned","PLANNED"],["On-going","ONGOING"],["Delayed","DELAYED"],["Completed","COMPLETED"],["Canceled","CANCELED"]].map(([label,status])=>[label,allSessions.filter(x=>x.status===status).length]),max=Math.max(1,...counts.map(x=>x[1]));
+  sessions.innerHTML=counts.map(x=>'<div class="views-pipeline-row"><span>'+x[0]+'</span><div><i style="width:'+Math.round(x[1]/max*100)+'%"></i></div><b>'+x[1]+'</b></div>').join("");
+  const top=[...activity].sort((x,y)=>Number(y.seconds||0)-Number(x.seconds||0)).slice(0,8);
+  leader.innerHTML=top.length?top.map((x,i)=>'<div class="views-leader-row"><span class="views-leader-rank">'+(i+1)+'</span><div><b>'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small></div><strong>'+(Number(x.seconds||0)/3600).toFixed(1)+'h</strong></div>').join(""):'<div class="empty-state">No activity records are available.</div>';
+ }catch(e){stats.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+$("refreshViews")?.addEventListener("click",loadViews);
 async function loadManagement(tab){
   if(!staffDirectory.length){try{await loadStaffDirectory();}catch{}}
   if(tab==="activity"){
@@ -488,7 +505,7 @@ async function loadStaffDirectory(force=false){
   renderStaffDirectory();if(!staffDirectory.length){const z=d.diagnostics||{};status.textContent="No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+". Check STAFF_MIN_RANK and the group ID."; }
   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
-  ["punishUsername","promotionUsername","activityUsername","sessionHostSearch","sessionCoHostSearch","sessionPromoterSearch","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
+  ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
   const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionPromoter","Choose promoter…",true]];
   [[ "sessionRequestHost","Choose host…" ],[ "sessionRequestCoHost","No co-host" ],[ "editSessionHost","Choose host…" ],[ "editSessionCoHost","No co-host" ]].forEach(([id,placeholder])=>{const el=$(id);if(el)el.innerHTML='<option value="">'+placeholder+'</option>'+staffDirectory.map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+'</option>').join("");});
 
@@ -611,8 +628,8 @@ $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendar
 $("refreshSessions")?.addEventListener("click",loadSessions);
 $("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);$("sessionTeamFilter")?.addEventListener("change",loadSessions);
 $("createSession").addEventListener("click",async()=>{
- const resolveTyped=(inputId,selectId,optional=false)=>{const value=$(inputId).value.trim();if(!value&&optional){$(selectId).value="";return "";}const match=staffDirectory.find(m=>m.username.toLowerCase()===value.toLowerCase());if(!match)throw new Error("Select an exact staff username for "+inputId.replace("session","").replace("Search","")+".");$(selectId).value=match.id;return match.id;};
- let hostId,cohostId,promoterId;try{hostId=resolveTyped("sessionHostSearch","sessionHost");cohostId=resolveTyped("sessionCoHostSearch","sessionCoHost",true);promoterId=resolveTyped("sessionPromoterSearch","sessionPromoter",true);}catch(e){notice(e.message,"error");return;}
+ const hostId=$("sessionHost").value,cohostId=$("sessionCoHost").value,promoterId=$("sessionPromoter").value;
+ if(!hostId){notice("Choose a host from the dropdown.","error");return;}
  const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
  const body={title:$("sessionTitle").value.trim(),sessionType:$("sessionType").value,date:$("sessionDate").value,time:$("sessionTime").value,hostId,cohostId,overseeIds:[...$("sessionOversee").selectedOptions].map(o=>o.value).filter(Boolean),promoterId,attendeeIds:attendees};
  if(!body.title||!body.date||!body.time){notice("Enter a shift name, date, and time.","error");return;}
@@ -627,7 +644,7 @@ function connectShiftSearch(inputId,selectId){
   const resolve=()=>{const match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase());select.value=match?match.id:"";if(!match&&input.value.trim())notice("Choose an exact staff username from the suggestions.","error");};
   input.addEventListener("change",resolve);input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();resolve();}});
 }
-connectShiftSearch("sessionHostSearch","sessionHost");connectShiftSearch("sessionCoHostSearch","sessionCoHost");connectShiftSearch("sessionPromoterSearch","sessionPromoter");
+
 $("addSessionAttendee")?.addEventListener("click",()=>{
   const input=$("sessionAttendeeSearch"),select=$("sessionAttendees"),match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase());
   if(!match){notice("Choose an exact staff username from the suggestions.","error");return;}
