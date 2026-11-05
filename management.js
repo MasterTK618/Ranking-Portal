@@ -130,7 +130,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.post("/session-requests",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||"");
     if(!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(type)||title.length<3||title.length>100||details.length<10||details.length>2000)return res.status(400).json({error:"Choose a session type, enter a clear title, and provide at least 10 characters of details."});
-    if(date&&!/^\d{4}-\d{2}-\d{2}$/.test(date))return res.status(400).json({error:"Choose a valid preferred date."});if(time&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid preferred time."});
+    const parsedPreferredDate=date?new Date(date+"T00:00:00.000Z"):null;if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedPreferredDate.getTime())||parsedPreferredDate.toISOString().slice(0,10)!==date))return res.status(400).json({error:"Choose a valid preferred date."});if(time&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid preferred time."});
     const result=await pool.query("INSERT INTO session_requests(session_type,title,details,preferred_date,preferred_time,requested_by,requested_by_name) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[type,title,details,date||null,time||null,String(req.session.user.id),String(req.session.user.name)]);
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUESTED",String(req.session.user.id),String(req.session.user.name),"Request #"+result.rows[0].id+" | "+type+" | "+title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:result.rows[0]});
   }catch(e){next(e);}});
@@ -155,7 +155,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const attendeeIds=Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[];
     const overseeIds=Array.isArray(b.overseeIds)?b.overseeIds.map(String):(b.overseeId?[String(b.overseeId)]:[]);
     const ids=[b.hostId,b.cohostId,b.promoterId,...overseeIds,...attendeeIds].filter(Boolean).map(String);
-    if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a shift name, date, time, and host."});
+    const parsedSessionDate=new Date(date+"T00:00:00.000Z");if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedSessionDate.getTime())||parsedSessionDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a valid session name, date, time, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
     if(identities.some(x=>!x.who.inGroup))return res.status(400).json({error:"Every selected person must be a current Lemonz member."});
@@ -279,7 +279,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
   router.get("/promotions/audit",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),all=Number(who.rank)>=Number(s.promotion_approve_rank);
-    const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' AND actor_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);res.json({items:r.rows});
+    const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' AND (actor_id=$1 OR target_id=$1) ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);res.json({items:r.rows});
   }catch(e){next(e);}});
   router.post("/promotions",csrf,async(req,res,next)=>{
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
@@ -297,7 +297,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const r=await pool.query("UPDATE promotion_suggestions SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",
         [status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
       if(!r.rowCount)return res.status(404).json({error:"Pending promotion suggestion not found."});
-      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",status,String(r.rows[0].user_id),r.rows[0].username,"Suggestion #"+r.rows[0].id+" | "+r.rows[0].suggested_role+(r.rows[0].decision_note?" | "+r.rows[0].decision_note:""),String(req.session.user.id),String(req.session.user.name)]);
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",status,String(r.rows[0].suggested_by),r.rows[0].suggested_by_name,"Suggestion #"+r.rows[0].id+" for "+r.rows[0].username+" | "+r.rows[0].suggested_role+(r.rows[0].decision_note?" | "+r.rows[0].decision_note:""),String(req.session.user.id),String(req.session.user.name)]);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
@@ -343,7 +343,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){next(e);}
   });
 
-  router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM staff_shifts WHERE id=$1 AND (created_by=$2 OR $3>=$4) RETURNING id",[req.params.id,String(req.session.user.id),who.rank,Number((await settings()).session_delete_rank)]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or a member meeting the configured delete rank can delete this shift."});res.json({ok:true});}catch(e){next(e);}});
+  router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM staff_shifts WHERE id=$1 AND (created_by=$2 OR $3>=$4) RETURNING id,title,host_id,host_name",[req.params.id,String(req.session.user.id),who.rank,Number((await settings()).session_delete_rank)]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or a member meeting the configured delete rank can delete this shift."});await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","DELETED",String(r.rows[0].id),r.rows[0].title,"Session #"+r.rows[0].id+" | "+r.rows[0].title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true});}catch(e){next(e);}});
   for(const [path,table,ownerCol,rankField] of [["punishments","management_punishments","created_by","punishment_approve_rank"],["promotions","promotion_suggestions","suggested_by","promotion_approve_rank"],["leaves","leave_requests","user_id","leave_approve_rank"]]){
     router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),canManage=who.rank>=Number(s[rankField]);const r=await pool.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) AND ($4 IS NULL OR status=$4 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage,path==="leaves"?"PENDING":null]);if(!r.rowCount)return res.status(403).json({error:"You do not have permission to delete this request."});if(path==="punishments")await writeAudit("DELETED",r.rows[0],req.session.user.id,req.session.user.name,"Record deleted");if(path==="leaves")await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE","CANCELLED",String(r.rows[0].user_id),r.rows[0].roblox_username,"Request #"+r.rows[0].id+" cancelled or removed",String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true});}catch(e){next(e);}});
   }
