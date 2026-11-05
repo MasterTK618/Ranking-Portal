@@ -141,11 +141,25 @@ async function loadTeamsSettings(){
   try{
     const d=await api("/api/management/teams");managementTeams=d.teams||[];teamAssignments=new Map((d.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
     if(!teamStaffCache.length){const staff=await api("/api/staff");teamStaffCache=staff.members||[];}
+    await syncTeamsByGroupRole();
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
     teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
     if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
     renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
   }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+async function syncTeamsByGroupRole(){
+  if(!teamStaffCache.length||!managementTeams.some(t=>Number(t.group_role_rank)>0))return;
+  const automatic=managementTeams.filter(t=>Number(t.group_role_rank)>0),desired=new Map();
+  for(const team of automatic)for(const member of teamStaffCache)if(Number(member.rank)===Number(team.group_role_rank))desired.set(String(member.id),String(team.id));
+  const byTeam=new Map(automatic.map(t=>[String(t.id),[]]));
+  for(const [userId,teamId] of desired)byTeam.get(teamId).push(userId);
+  let changed=false;
+  for(const [userId,teamId] of desired)if(teamAssignments.get(userId)!==teamId)changed=true;
+  for(const team of automatic){const ids=byTeam.get(String(team.id))||[],existing=teamStaffCache.filter(member=>teamAssignments.get(String(member.id))===String(team.id)).map(member=>String(member.id));if(ids.length!==existing.length||ids.some(id=>!existing.includes(id)))changed=true;}
+  if(!changed)return;
+  for(const team of automatic)await api("/api/management/teams/"+encodeURIComponent(team.id)+"/members",{method:"PUT",body:JSON.stringify({userIds:byTeam.get(String(team.id))||[]})});
+  const refreshed=await api("/api/management/teams");teamAssignments=new Map((refreshed.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
 }
 function renderTeamDirectory(){
   const box=$("teamDirectory");if(!box)return;
@@ -166,8 +180,8 @@ function renderTeamAssignmentMembers(){
 }
 $("createTeam")?.addEventListener("click",async()=>{
   const btn=$("createTeam");btn.disabled=true;
-  try{const id=$("teamEditId").value;const payload={name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
-    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";btn.textContent="＋ Create team";notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
+  try{const id=$("teamEditId").value;const payload={name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value,groupRoleRank:$("teamGroupRoleRank").value===""?null:Number($("teamGroupRoleRank").value)};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
+    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRank").value="";btn.textContent="＋ Create team";notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
 $("teamAssignmentSelect")?.addEventListener("change",renderTeamAssignmentMembers);
@@ -180,7 +194,7 @@ $("saveTeamMembers")?.addEventListener("click",async()=>{
 });
 $("teamDirectory")?.addEventListener("click",async event=>{
   const edit=event.target.closest("[data-team-edit]");
-  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("createTeam").textContent="Save team changes";$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
+  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamGroupRoleRank").value=t.group_role_rank??"";$("createTeam").textContent="Save team changes";$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const btn=event.target.closest("[data-team-delete]");if(!btn)return;
   if(!confirm("Delete this team? Its staff assignments will be cleared."))return;
   try{await api("/api/management/teams/"+encodeURIComponent(btn.dataset.teamDelete),{method:"DELETE"});notice("Team deleted.","success");await loadTeamsSettings();}
@@ -309,10 +323,10 @@ async function loadManagement(tab){
     $("leaveTable").textContent="Loading leave requests…";
     try{
       const d=await api("/api/management/leaves"),all=d.items||[],q=($("leaveSearch").value||"").toLowerCase(),filter=$("leaveStatusFilter").value;
-      const rows=all.filter(i=>(filter==="ALL"||i.status===filter)&&[i.discord_username,i.roblox_username,i.start_date,i.end_date,i.reason,i.status,i.created_by_name,i.decided_by_name,i.decision_note].some(v=>String(v||"").toLowerCase().includes(q)));
+      const rows=all.filter(i=>(filter==="ALL"||i.status===filter)&&[i.roblox_username,i.start_date,i.end_date,i.reason,i.status,i.created_by_name,i.decided_by_name,i.decision_note].some(v=>String(v||"").toLowerCase().includes(q)));
       const pending=all.filter(x=>x.status==="PENDING").length,approved=all.filter(x=>x.status==="APPROVED").length,rejected=all.filter(x=>x.status==="REJECTED").length;
       $("leaveSummary").innerHTML=[["PENDING",pending,"Awaiting a decision"],["APPROVED",approved,"Approved requests"],["REJECTED",rejected,"Declined requests"]].map(x=>`<article class="session-stat"><span>▤</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
-      $("leaveTable").innerHTML=rows.length?'<table class="data-table leave-data-table"><thead><tr><th>STAFF MEMBER</th><th>DISCORD</th><th>DATES</th><th>REASON / HANDOVER</th><th>LAST APPROVED LEAVE</th><th>STATUS</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr data-leave-status="'+escapeHtml(i.status)+'"><td><b>'+escapeHtml(i.roblox_username)+'</b><small class="table-subtext">Submitted '+escapeHtml(formatDate(i.created_at))+'</small></td><td>'+escapeHtml(i.discord_username)+'</td><td><b>'+dateOnly(i.start_date)+'</b><small class="table-subtext">through '+dateOnly(i.end_date)+'</small></td><td class="reason-cell">'+escapeHtml(i.reason)+'</td><td>'+dateOnly(i.last_leave_at)+'</td><td><span class="status-pill status-'+escapeHtml(String(i.status).toLowerCase())+'">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td class="reason-cell">'+escapeHtml(i.decision_note||"—")+(i.decided_at?'<small class="table-subtext">'+escapeHtml(formatDate(i.decided_at))+'</small>':"")+'</td><td>'+actionButtons("leave",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave requests match this filter.</div>';
+      $("leaveTable").innerHTML=rows.length?'<table class="data-table leave-data-table"><thead><tr><th>STAFF MEMBER</th><th>DISCORD</th><th>DATES</th><th>REASON / HANDOVER</th><th>LAST APPROVED LEAVE</th><th>STATUS</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr data-leave-status="'+escapeHtml(i.status)+'"><td><b>'+escapeHtml(i.roblox_username)+'</b><small class="table-subtext">Submitted '+escapeHtml(formatDate(i.created_at))+'</small></td><td><b>'+dateOnly(i.start_date)+'</b><small class="table-subtext">through '+dateOnly(i.end_date)+'</small></td><td class="reason-cell">'+escapeHtml(i.reason)+'</td><td>'+dateOnly(i.last_leave_at)+'</td><td><span class="status-pill status-'+escapeHtml(String(i.status).toLowerCase())+'">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td class="reason-cell">'+escapeHtml(i.decision_note||"—")+(i.decided_at?'<small class="table-subtext">'+escapeHtml(formatDate(i.decided_at))+'</small>':"")+'</td><td>'+actionButtons("leave",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave requests match this filter.</div>';
       await loadLeaveAudit();
     }catch(e){$("leaveTable").textContent=e.message}
   }
@@ -414,7 +428,7 @@ document.addEventListener("click",async e=>{
 $("submitLeave").addEventListener("click",async()=>{
   const btn=$("submitLeave");btn.disabled=true;btn.textContent="Submitting…";
   try{
-    const d=await api("/api/management/leaves",{method:"POST",body:JSON.stringify({discordUsername:$("leaveDiscord").value.trim(),robloxUsername:$("leaveRoblox").value.trim(),startDate:$("leaveStart").value,endDate:$("leaveEnd").value,reason:$("leaveReason").value.trim(),timezoneOffset:new Date().getTimezoneOffset()})});
+    const d=await api("/api/management/leaves",{method:"POST",body:JSON.stringify({robloxUsername:$("leaveRoblox").value.trim(),startDate:$("leaveStart").value,endDate:$("leaveEnd").value,reason:$("leaveReason").value.trim(),timezoneOffset:new Date().getTimezoneOffset()})});
     $("leaveReason").value="";$("leaveStart").value="";$("leaveEnd").value="";$("leaveEnd").min=$("leaveStart").min;notice("Time-off request submitted. Last approved leave: "+dateOnly(d.item.last_leave_at)+".","success");await loadManagement("leaves");
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;btn.textContent="Submit request"}
 });
