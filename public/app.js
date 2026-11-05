@@ -144,6 +144,7 @@ async function loadTeamsSettings(){
     renderTeamDirectory();
     if(!teamStaffCache.length){try{const staff=await api("/api/staff");teamStaffCache=staff.members||[];}catch(staffError){$("teamMembersSelect").innerHTML='<div class="empty-state error-state">Teams loaded, but staff could not load: '+escapeHtml(staffError.message)+'</div>';}}
     
+    if(teamStaffCache.length){try{await syncTeamsByGroupRole();}catch(syncError){console.warn("Team auto-assignment sync failed:",syncError);}}
     const ranks=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].sort((x,y)=>x.rank-y.rank);for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),prev=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===prev))el.value=prev;}
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
     teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
