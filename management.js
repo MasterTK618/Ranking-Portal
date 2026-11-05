@@ -499,11 +499,11 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS auto_assign_max_rank INTEGER");
   await pool.query("UPDATE management_teams SET entity_type='TEAM',department='General' WHERE entity_type='DEPARTMENT'");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_team_members (user_id TEXT NOT NULL,team_id BIGINT NOT NULL REFERENCES management_teams(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,team_id))`);
-  await pool.query(`DO $ DECLARE pk_name TEXT; cols name[]; BEGIN
+  await pool.query(`DO $migration$ DECLARE pk_name TEXT; cols name[]; BEGIN
     SELECT conname, ARRAY(SELECT a.attname::name FROM pg_attribute a WHERE a.attrelid='management_team_members'::regclass AND a.attnum=ANY(conkey)) INTO pk_name,cols FROM pg_constraint WHERE conrelid='management_team_members'::regclass AND contype='p';
     IF pk_name IS NOT NULL AND cols=ARRAY['user_id']::name[] THEN EXECUTE format('ALTER TABLE management_team_members DROP CONSTRAINT %I',pk_name); END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='management_team_members'::regclass AND contype='p') THEN ALTER TABLE management_team_members ADD PRIMARY KEY(user_id,team_id); END IF;
-  END $`);
+  END; $migration$`);
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS group_role_rank INTEGER");
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS group_role_ranks INTEGER[] NOT NULL DEFAULT ARRAY[]::INTEGER[]");
   await pool.query("UPDATE management_teams SET group_role_ranks=ARRAY[group_role_rank] WHERE group_role_rank IS NOT NULL AND cardinality(group_role_ranks)=0");
