@@ -554,7 +554,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const [activity,hosted,tasks,teams]=await Promise.all([
       pool.query("SELECT user_id,username,COALESCE(SUM(seconds),0)::BIGINT AS seconds FROM activity_sessions WHERE started_at>=date_trunc('week',NOW()) GROUP BY user_id,username"),
       pool.query("SELECT person.user_id,COUNT(*)::INTEGER AS sessions FROM (SELECT host_id AS user_id FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED' UNION ALL SELECT cohost_id FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED' UNION ALL SELECT unnest(attendee_ids) FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED' UNION ALL SELECT unnest(oversee_ids) FROM staff_shifts WHERE session_date>=date_trunc('week',NOW())::date AND status='COMPLETED') person WHERE person.user_id IS NOT NULL GROUP BY person.user_id"),
-      pool.query("SELECT assigned_to_id AS user_id,COUNT(*) FILTER(WHERE status='COMPLETED')::INTEGER AS completed FROM management_tasks WHERE created_at>=date_trunc('week',NOW()) GROUP BY assigned_to_id"),
+      pool.query("SELECT assigned_to_id AS user_id,COUNT(*)::INTEGER AS completed FROM management_tasks WHERE status='COMPLETED' AND completed_at>=date_trunc('week',NOW()) GROUP BY assigned_to_id"),
       pool.query("SELECT user_id,team_id FROM management_team_members")
     ]);
     const activityMap=new Map(activity.rows.map(x=>[String(x.user_id),x])),sessionMap=new Map(hosted.rows.map(x=>[String(x.user_id),Number(x.sessions)])),taskMap=new Map(tasks.rows.map(x=>[String(x.user_id),Number(x.completed)])),teamMap=new Map();
@@ -565,7 +565,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.post("/notifications/read",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-    const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave)-\\d+$/.test(x)))]:[];
+    const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave)-\d+$/.test(x)))]:[];
     if(ids.length>100)return res.status(400).json({error:"You can update up to 100 notifications at once."});
     if(ids.length)await pool.query("INSERT INTO management_notification_reads(user_id,notification_key,read_at) SELECT $1,x,NOW() FROM unnest($2::text[]) x ON CONFLICT(user_id,notification_key) DO UPDATE SET read_at=EXCLUDED.read_at",[String(req.session.user.id),ids]);
     res.json({ok:true,updated:ids.length});
