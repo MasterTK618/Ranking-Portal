@@ -21,7 +21,8 @@ $("createCode").addEventListener("click",async()=>{
   }catch(e){showMessage(e.message)}
   finally{$("createCode").disabled=false;$("createCode").textContent="Get emoji sequence";}
 });
-$("copyCode").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("verificationCode").textContent);$("copyCode").textContent="Copied!";setTimeout(()=>$("copyCode").textContent="Copy emojis",1600);}catch{showMessage("Select the emojis and copy them manually.");}});\n$("verifyCode").addEventListener("click",async()=>{
+$("copyCode").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("verificationCode").textContent);$("copyCode").textContent="Copied!";setTimeout(()=>$("copyCode").textContent="Copy emojis",1600);}catch{showMessage("Select the emojis and copy them manually.");}});
+$("verifyCode").addEventListener("click",async()=>{
   if(!challengeActive)return;
   $("verifyCode").disabled=true;$("verifyCode").textContent="Checking profile…";
   try{
