@@ -86,10 +86,12 @@ async function loadLogs(){
     const d=await api("/api/logs");
     $("recentCount").textContent=d.logs.length;
     if(!d.logs.length){$("logsTable").textContent="No ranking actions have been recorded yet.";return}
-    $("logsTable").innerHTML=`<table class="data-table"><thead><tr><th>DATE</th><th>RANKED BY</th><th>MEMBER</th><th>CHANGE</th><th>ACTION</th><th>STATUS</th></tr></thead><tbody>${d.logs.map(l=>`<tr><td>${escapeHtml(formatDate(l.created_at))}</td><td>${escapeHtml(l.actor_name)}</td><td>${escapeHtml(l.target_name)}</td><td>${escapeHtml(l.previous_role||"—")} → ${escapeHtml(l.new_role||"—")}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.status)}</td></tr>`).join("")}</tbody></table>`;
+    const logs=searchRows(d.logs,"logsSearch",["actor_name","target_name","previous_role","new_role","action","status","reason"]);
+    $("logsTable").innerHTML=logs.length?`<table class="data-table"><thead><tr><th>DATE</th><th>RANKED BY</th><th>MEMBER</th><th>CHANGE</th><th>ACTION</th><th>STATUS</th></tr></thead><tbody>${logs.map(l=>`<tr><td>${escapeHtml(formatDate(l.created_at))}</td><td>${escapeHtml(l.actor_name)}</td><td>${escapeHtml(l.target_name)}</td><td>${escapeHtml(l.previous_role||"—")} → ${escapeHtml(l.new_role||"—")}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.status)}</td></tr>`).join("")}</tbody></table>`:"No ranking logs match your search.";
   }catch(e){$("logsTable").textContent=e.message}
 }
 $("refreshLogs").addEventListener("click",loadLogs);
+$("logsSearch")?.addEventListener("input",()=>loadLogs());
 
 async function loadManagementSettings(){
   try{
@@ -323,11 +325,13 @@ async function loadSessions(){
     if(!staffDirectory.length)await loadStaffDirectory();
     const d=await api("/api/management/sessions"),all=d.sessions||[],items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
     $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
-    $("sessionList").innerHTML=all.length?'<table class="data-table"><thead><tr><th>DATE</th><th>SHIFT</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th><th></th></tr></thead><tbody>'+all.map(s=>'<tr><td>'+escapeHtml(String(s.session_date||"").slice(0,10))+'</td><td><b>'+escapeHtml(s.title)+'</b></td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name||"—")+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml((s.oversee_names||[]).join(", ")||s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td><td>'+(s.canDelete?'<button class="danger-btn" data-delete="session" data-id="'+s.id+'">Delete</button>':"")+'</td></tr>').join("")+'</tbody></table>':'No shifts scheduled yet.';
+    const q=($("sessionSearch")?.value||"").trim().toLowerCase(),visible=all.filter(s=>!q||[s.title,s.session_date,s.session_time,s.host_name,s.cohost_name,s.oversee_name,(s.oversee_names||[]).join(" "),s.promoter_name,(s.attendee_names||[]).join(" ")].some(v=>String(v||"").toLowerCase().includes(q)));
+    $("sessionList").innerHTML=visible.length?'<table class="data-table"><thead><tr><th>DATE</th><th>SHIFT</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th><th></th></tr></thead><tbody>'+visible.map(s=>'<tr><td>'+escapeHtml(String(s.session_date||"").slice(0,10))+'</td><td><b>'+escapeHtml(s.title)+'</b></td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name||"—")+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml((s.oversee_names||[]).join(", ")||s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td><td>'+(s.canDelete?'<button class="danger-btn" data-delete="session" data-id="'+s.id+'">Delete</button>':"")+'</td></tr>').join("")+'</tbody></table>':(all.length?"No shifts match your search.":"No shifts scheduled yet.");
   }catch(e){$("sessionList").textContent=e.message;}
 }
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
+$("sessionSearch")?.addEventListener("input",()=>loadSessions());
 $("createSession").addEventListener("click",async()=>{
  const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
  const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeIds:[...$("sessionOversee").selectedOptions].map(o=>o.value).filter(Boolean),promoterId:$("sessionPromoter").value,attendeeIds:attendees};
