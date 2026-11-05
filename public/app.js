@@ -196,7 +196,7 @@ async function loadManagement(tab){
     try{
       const d=await api("/api/management/activity");$("activityAdjustCard").classList.toggle("hidden",!d.canEdit);
       const rows=searchRows(d.members,"activitySearch",["username","role","rank"]);
-      $("activityTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>IN-GAME TIME</th><th>SESSIONS</th><th>LAST ACTIVE</th></tr></thead><tbody>'+rows.map(m=>'<tr><td><b>'+escapeHtml(m.username)+'</b></td><td>'+escapeHtml(m.role)+' · '+m.rank+'</td><td>'+Math.floor(Number(m.seconds)/60)+' min</td><td>'+m.sessions+'</td><td>'+escapeHtml(formatDate(m.last_seen))+'</td></tr>').join("")+'</tbody></table>':(d.canViewAll?"No recorded staff activity yet.":"No activity has been recorded for your account yet.");
+      $("activityTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>IN-GAME TIME</th><th>SHIFTS ATTENDED</th><th>LAST ACTIVE</th></tr></thead><tbody>'+rows.map(m=>'<tr><td><b>'+escapeHtml(m.username)+'</b></td><td>'+escapeHtml(m.role)+' · '+m.rank+'</td><td>'+Math.floor(Number(m.seconds)/60)+' min</td><td>'+m.sessions+'</td><td>'+escapeHtml(formatDate(m.last_seen))+'</td></tr>').join("")+'</tbody></table>':(d.canViewAll?"No recorded staff activity yet.":"No activity has been recorded for your account yet.");
       if(!d.canViewAll)$("activityTable").insertAdjacentHTML("afterbegin",'<p class="muted">You can only view your own activity with your current permissions.</p>');
     }catch(e){$("activityTable").textContent=e.message}
   }
