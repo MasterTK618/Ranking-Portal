@@ -416,3 +416,5 @@ body.dark .data-table tbody tr:hover{background:rgba(245,201,40,.055)}
  .staff-card-side{margin-left:auto;min-width:115px}
  .staff-team-picker{max-width:145px}
 }
+
+.field-help{display:block;margin-top:7px;color:var(--muted);font-size:10px;line-height:1.5;max-width:420px}
