@@ -461,3 +461,5 @@ body.dark .data-table tbody tr:hover{background:rgba(245,201,40,.055)}
 .calendar-day{border-radius:8px;border-color:var(--line);background:transparent}.calendar-event{display:flex;flex-direction:column;gap:3px;border-left:3px solid var(--yellow);border-radius:5px;padding:7px 8px;background:var(--panel2);font-size:10px}
 .calendar-event small{font-size:9px;color:var(--muted)}
 @media(max-width:650px){.session-agenda-row{grid-template-columns:54px minmax(0,1fr);gap:11px;padding:12px}.session-date-block{padding-right:9px}.session-date-block b{font-size:21px}.session-agenda-title{flex-direction:column}.session-role-line{gap:14px}.session-agenda-actions{align-items:flex-start}.session-roles-dialog{padding:17px}}
+
+#teamGroupRoleRanks{min-height:132px;height:auto;padding:9px 12px}#teamGroupRoleRanks option{padding:7px 9px;border-radius:6px}.team-member-current{max-width:100px;line-height:1.4}.staff-team-label{flex-wrap:wrap;line-height:1.6}.staff-team-label i{margin-left:3px}
