@@ -61,3 +61,30 @@ body.dark .error-state{color:#ffb4aa}
 .directory-toolbar .table-actions{margin-left:auto}
 @media(max-width:850px){.activity-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.activity-summary{grid-template-columns:1fr 1fr}.activity-stat{padding:12px}.activity-stat b{font-size:19px}}
+
+
+/* Knowledge Hub and configurable workspace */
+.knowledge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-top:16px}
+.knowledge-card{border:1px solid var(--line);background:var(--panel2);border-radius:15px;padding:18px;min-width:0}
+.knowledge-card h3{font-size:15px;margin:13px 0 5px;overflow-wrap:anywhere}
+.knowledge-card>small{font-size:10px;color:var(--muted)}
+.knowledge-card>p{font-size:12px;line-height:1.6;color:var(--muted);overflow-wrap:anywhere}
+.knowledge-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.knowledge-kind,.knowledge-rank{font-size:9px;font-weight:800;letter-spacing:.7px;color:var(--muted)}
+.knowledge-rank{background:#fff2bd;color:#725800;border-radius:20px;padding:5px 8px}
+.knowledge-open{display:inline-flex;margin:6px 0;color:#987500;font-size:11px;font-weight:800;text-decoration:none}
+.knowledge-open:hover{text-decoration:underline}
+.knowledge-card details{font-size:11px;margin:10px 0}
+.knowledge-card summary{cursor:pointer;font-weight:800}
+.knowledge-document{font-size:12px;line-height:1.75;padding:12px 0;overflow-wrap:anywhere}
+.knowledge-actions{display:flex;gap:7px;margin-top:12px}
+.knowledge-card .danger-btn{margin-top:12px}
+.session-list-toolbar{display:flex;gap:12px;align-items:center}
+.session-list-toolbar .table-search{flex:1}
+.session-filter{max-width:170px}
+.appearance-settings{border-style:dashed}
+body.compact-layout .content-card{padding:15px;margin-bottom:12px}
+body.compact-layout .data-table td{padding-top:8px;padding-bottom:8px}
+body.compact-layout .staff-card{min-height:58px;padding:9px}
+body.compact-layout .page{padding-top:18px}
+@media(max-width:650px){.session-list-toolbar{align-items:stretch;flex-direction:column}.session-filter{max-width:none}.knowledge-grid{grid-template-columns:1fr}}
