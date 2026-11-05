@@ -91,7 +91,7 @@ async function loadLogs(){
   }catch(e){$("logsTable").textContent=e.message}
 }
 $("refreshLogs").addEventListener("click",loadLogs);
-$("logsSearch")?.addEventListener("input",()=>loadLogs());
+$("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toLowerCase();document.querySelectorAll("#logsTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 
 async function loadManagementSettings(){
   try{
@@ -331,7 +331,7 @@ async function loadSessions(){
 }
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
-$("sessionSearch")?.addEventListener("input",()=>loadSessions());
+$("sessionSearch")?.addEventListener("input",()=>{const q=$("sessionSearch").value.toLowerCase();document.querySelectorAll("#sessionList tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("createSession").addEventListener("click",async()=>{
  const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
  const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeIds:[...$("sessionOversee").selectedOptions].map(o=>o.value).filter(Boolean),promoterId:$("sessionPromoter").value,attendeeIds:attendees};
