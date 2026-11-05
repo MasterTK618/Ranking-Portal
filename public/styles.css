@@ -785,3 +785,5 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .team-dashboard-inline{margin-top:14px;padding:14px;border:1px solid var(--stroke-soft);border-radius:12px;background:rgba(0,0,0,.16)}.team-dashboard-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.team-dashboard-stats span{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:9px;background:var(--panel2)}.team-dashboard-stats b{font-size:18px}.team-dashboard-stats small,.team-dashboard-task-list{font-size:10px;color:var(--muted)}.team-dashboard-task-list{margin-top:10px}@media(max-width:560px){.team-dashboard-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .quota-rule-manager{margin-top:16px}.quota-rule-list{display:grid;gap:8px;margin-top:16px}.quota-rule-row{display:flex;justify-content:space-between;gap:14px;padding:12px;border:1px solid var(--stroke-soft);border-radius:10px;background:var(--panel2)}.quota-rule-row span{color:var(--muted);font-size:12px}@media(max-width:600px){.quota-rule-row{flex-direction:column}}
+
+.activity-data-table td:last-child{white-space:nowrap;color:var(--muted);font-size:11px}
