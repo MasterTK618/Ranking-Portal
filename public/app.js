@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
-let sessionData = null, selectedMember = null, roles = [];\nlet managementTeams=[],teamAssignments=new Map(),teamStaffCache=[];
+let sessionData = null, selectedMember = null, roles = [];
+let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[];
 const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
