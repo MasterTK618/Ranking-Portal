@@ -511,12 +511,12 @@ async function loadSessions(){
  try{
   if(!staffDirectory.length)await loadStaffDirectory();
   const d=await api("/api/management/sessions"),all=d.sessions||[];$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);
-  const now=new Date(),upcoming=all.filter(s=>s.status==="PLANNED"||s.status==="DELAYED").filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;
+  const now=new Date(),upcoming=all.filter(s=>s.status==="PLANNED"||s.status==="DELAYED").filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;const teamFilter=fillTeamFilter("sessionTeamFilter");
   const counts=[["TOTAL SESSIONS",all.length,"All recorded events"],["UPCOMING",upcoming,"Planned or delayed"],["ON-GOING",all.filter(s=>s.status==="ONGOING").length,"Currently running"],["COMPLETED",all.filter(s=>s.status==="COMPLETED").length,"Successfully delivered"]];
   $("sessionSummary").innerHTML=counts.map(x=>'<article class="session-stat"><span>▦</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
-  const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
+  const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!s.host_team_name:String(s.host_team_id||"")===teamFilter)));
   $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
-  const q=$("sessionSearch")?.value||"",filter=$("sessionFilter")?.value||"all",teamFilter=fillTeamFilter("sessionTeamFilter");
+  const q=$("sessionSearch")?.value||"",filter=$("sessionFilter")?.value||"all";
   const visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now;const teamMatch=teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!s.host_team_name:String(s.host_team_id||"")===teamFilter);return teamMatch&&(filter==="all"||(filter==="upcoming"&&future&&["PLANNED","DELAYED"].includes(s.status))||(filter==="past"&&(!future||["CANCELED","COMPLETED"].includes(s.status))));});
   renderSessionTable(visible,$("sessionList"),q);
   const historyFilter=$("sessionHistoryFilter")?.value||"all",historyQ=$("sessionHistorySearch")?.value||"";
