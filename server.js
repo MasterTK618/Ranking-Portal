@@ -326,10 +326,10 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     const avatars = new Map(thumbs.map(t => [String(t.targetId),t.imageUrl || ""]));
     const members = base.map(m => ({
       id:m.id,rank:m.rank,role:m.role,
-      username:byId.get(m.id)?.name || m.username || "",
+      username:byId.get(m.id)?.name || m.username || ("User " + m.id),
       displayName:byId.get(m.id)?.displayName || m.displayName || "",
       avatarUrl:avatars.get(m.id) || ""
-    })).filter(m => m.username).sort((x,y) =>
+    })).sort((x,y) =>
       y.rank-x.rank || x.role.localeCompare(y.role) || x.username.localeCompare(y.username)
     );
 
