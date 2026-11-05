@@ -36,6 +36,10 @@ $("themeToggle").addEventListener("click",()=>{
   try{localStorage.setItem("lemonz-theme",dark?"dark":"light")}catch{}
 });
 try { if(localStorage.getItem("lemonz-theme")==="dark"){document.body.classList.add("dark");$("themeIcon").textContent="☀";$("themeText").textContent="Light mode";}}catch{}
+const accentPalette={yellow:["#f5c928","#ffdf58"],orange:["#f59e0b","#fbbf24"],blue:["#60a5fa","#93c5fd"],pink:["#f472b6","#f9a8d4"]};
+function applyAppearance(){try{const a=localStorage.getItem("lemonz-accent")||"yellow",d=localStorage.getItem("lemonz-density")||"comfortable";const colors=accentPalette[a]||accentPalette.yellow;document.documentElement.style.setProperty("--yellow",colors[0]);document.documentElement.style.setProperty("--yellow2",colors[1]);document.body.classList.toggle("compact-layout",d==="compact");if($("accentChoice"))$("accentChoice").value=a;if($("densityChoice"))$("densityChoice").value=d;}catch{}}
+applyAppearance();
+$("saveAppearance")?.addEventListener("click",()=>{try{localStorage.setItem("lemonz-accent",$("accentChoice").value);localStorage.setItem("lemonz-density",$("densityChoice").value);applyAppearance();notice("Appearance preferences saved on this browser.","success");}catch(e){notice("Could not save appearance preferences.","error");}});
 function login(){location.href="/auth/login";}
 $("loginButton").addEventListener("click",login); $("loginHero").addEventListener("click",login);
 $("logoutButton").addEventListener("click",async()=>{try{await api("/auth/logout",{method:"POST",body:"{}"});location.reload()}catch(e){notice(e.message,"error")}});
