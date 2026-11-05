@@ -67,6 +67,30 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
 
 
+  router.get("/knowledge",async(req,res,next)=>{try{
+    const who=await identity(req);const r=await pool.query("SELECT id,title,kind,url,content,min_rank,category,created_by_name,updated_by_name,created_at,updated_at FROM knowledge_hub_items WHERE min_rank <= $1 ORDER BY category,title",[who?.rank||0]);
+    res.json({items:r.rows,rank:who?.rank||0,canManage:(who?.rank||0)>=Number((await settings()).knowledge_manage_rank)});
+  }catch(e){next(e);}});
+  router.post("/knowledge",csrf,async(req,res,next)=>{try{
+    const who=await gate(req,res,"knowledge_manage_rank");if(!who)return;
+    const b=req.body||{},title=String(b.title||"").trim(),kind=String(b.kind||"document"),category=String(b.category||"General").trim().slice(0,50),content=String(b.content||"").trim(),url=String(b.url||"").trim(),minRank=Number(b.minRank||1);
+    if(!title||title.length>120||!["link","document"].includes(kind)||!Number.isInteger(minRank)||minRank<1||minRank>255||!content||content.length>30000)return res.status(400).json({error:"Enter a title, valid type, content, and rank between 1 and 255."});
+    if(kind==="link"){try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Enter a valid http or https link."});}}
+    const r=await pool.query("INSERT INTO knowledge_hub_items(title,kind,url,content,min_rank,category,created_by,created_by_name,updated_by,updated_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$7,$8) RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,String(req.session.user.id),req.session.user.name]);
+    res.json({ok:true,item:r.rows[0]});
+  }catch(e){next(e);}});
+  router.put("/knowledge/:id",csrf,async(req,res,next)=>{try{
+    const who=await gate(req,res,"knowledge_manage_rank");if(!who)return;
+    const b=req.body||{},title=String(b.title||"").trim(),kind=String(b.kind||"document"),category=String(b.category||"General").trim().slice(0,50),content=String(b.content||"").trim(),url=String(b.url||"").trim(),minRank=Number(b.minRank||1);
+    if(!title||title.length>120||!["link","document"].includes(kind)||!Number.isInteger(minRank)||minRank<1||minRank>255||!content||content.length>30000)return res.status(400).json({error:"Enter a title, valid type, content, and rank between 1 and 255."});
+    if(kind==="link"){try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Enter a valid http or https link."});}}
+    const r=await pool.query("UPDATE knowledge_hub_items SET title=$1,kind=$2,url=$3,content=$4,min_rank=$5,category=$6,updated_by=$7,updated_by_name=$8,updated_at=NOW() WHERE id=$9 RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,String(req.session.user.id),req.session.user.name,req.params.id]);
+    if(!r.rowCount)return res.status(404).json({error:"Knowledge item not found."});res.json({ok:true,item:r.rows[0]});
+  }catch(e){next(e);}});
+  router.delete("/knowledge/:id",csrf,async(req,res,next)=>{try{
+    const who=await gate(req,res,"knowledge_manage_rank");if(!who)return;
+    const r=await pool.query("DELETE FROM knowledge_hub_items WHERE id=$1 RETURNING id",[req.params.id]);if(!r.rowCount)return res.status(404).json({error:"Knowledge item not found."});res.json({ok:true});
+  }catch(e){next(e);}});
   router.get("/sessions",async(req,res,next)=>{try{
     let who=null;try{who=await identity(req);}catch{}const result=await pool.query("SELECT * FROM staff_shifts ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
     res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=255}))});
