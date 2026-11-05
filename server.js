@@ -213,27 +213,15 @@ app.get("/api/me", requireLogin, async (req,res) => {
 });
 
 app.get("/api/staff", requireLogin, async (req,res,next)=>{
-  try{
-    const roles=await getRoles(), memberships=[];let token="";
-    do{
-      const query=new URLSearchParams({maxPageSize:"100"});if(token)query.set("pageToken",token);
-      const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+query.toString());
-      memberships.push(...(page.groupMemberships||[]));token=page.nextPageToken||"";
-    }while(token);
-    const base=memberships.map(m=>{
-      const id=String(m.user||"").split("/").pop();
-      const paths=m.roles&&m.roles.length?m.roles:m.role?[m.role]:[];
-      const role=paths.map(p=>roles.find(r=>r.path===p)).filter(Boolean).sort((a,b)=>b.rank-a.rank)[0];
-      return {id,rank:role?role.rank:0,role:role?role.name:"Member"};
-    }).filter(m=>/^\d+$/.test(m.id)&&m.rank>=230);
-    const profiles=[];
-    for(let i=0;i<base.length;i+=100){
-      const response=await fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:base.slice(i,i+100).map(m=>Number(m.id)),excludeBannedUsers:false})});
-      const data=await response.json().catch(()=>({}));if(response.ok)profiles.push(...(data.data||[]));
-    }
-    const byId=new Map(profiles.map(p=>[String(p.id),p]));
-    res.json({members:base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.id,displayName:byId.get(m.id)?.displayName||""})).sort((a,b)=>a.username.localeCompare(b.username)),roles:roles.map(r=>({id:r.id,name:r.name,rank:r.rank}))});
-  }catch(e){next(e);}
+ try{
+  const roles=await getRoles(),memberships=[];let token="",pages=0;
+  do{const q=new URLSearchParams({maxPageSize:"100"});if(token)q.set("pageToken",token);const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+q.toString());memberships.push(...(page.groupMemberships||[]));token=page.nextPageToken||"";if(++pages>200)throw new Error("Staff directory exceeded pagination safety limit.");}while(token);
+  const base=memberships.map(m=>{const id=String(m.user||"").split("/").pop();const paths=m.roles&&m.roles.length?m.roles:m.role?[m.role]:[];const role=paths.map(p=>roles.find(r=>r.path===p||r.id===String(p).split("/").pop())).filter(Boolean).sort((a,b)=>b.rank-a.rank)[0];return{id,rank:role?role.rank:0,role:role?role.name:"Member"};}).filter(m=>/^\d+$/.test(m.id)&&m.rank>=230);
+  const profiles=[],thumbs=[];
+  for(let i=0;i<base.length;i+=100){const ids=base.slice(i,i+100).map(m=>Number(m.id));const pr=await fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false})});const pd=await pr.json().catch(()=>({}));if(!pr.ok)throw new Error("Roblox user lookup failed ("+pr.status+").");profiles.push(...(pd.data||[]));const tr=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true");const td=await tr.json().catch(()=>({}));if(tr.ok)thumbs.push(...(td.data||[]));}
+  const byId=new Map(profiles.map(p=>[String(p.id),p])),av=new Map(thumbs.map(t=>[String(t.targetId),t.imageUrl||""]));
+  res.set("Cache-Control","private, max-age=60");res.json({members:base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||"Unknown user",displayName:byId.get(m.id)?.displayName||"",avatarUrl:av.get(m.id)||""})).filter(m=>m.username!=="Unknown user").sort((a,b)=>a.username.localeCompare(b.username)),roles:roles.map(r=>({id:r.id,name:r.name,rank:r.rank}))});
+ }catch(e){next(e);}
 });
 
 app.get("/api/roles", requireLogin, requireRanker, async (req,res,next) => {
