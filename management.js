@@ -98,7 +98,16 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const userId=String(req.params.userId);if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
     const teamIds=Array.isArray(req.body?.teamIds)?[...new Set(req.body.teamIds.map(String))]:[];
     const valid=await pool.query("SELECT id FROM management_teams WHERE id=ANY($1::bigint[])",[teamIds]);if(valid.rowCount!==teamIds.length)return res.status(400).json({error:"One or more selected teams do not exist."});
-    const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);for(const id of teamIds)await client.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,team_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[userId,id,String(req.session.user.id)]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+    const previous=await pool.query("SELECT tm.team_id,t.name FROM management_team_members tm JOIN management_teams t ON t.id=tm.team_id WHERE tm.user_id=$1",[userId]);
+    const oldIds=new Set(previous.rows.map(x=>String(x.team_id))),newIds=new Set(teamIds),added=teamIds.filter(id=>!oldIds.has(id)),removed=previous.rows.filter(x=>!newIds.has(String(x.team_id)));
+    const nameRows=await pool.query("SELECT id,name FROM management_teams WHERE id=ANY($1::bigint[])",[teamIds]);
+    const names=new Map(nameRows.rows.map(x=>[String(x.id),x.name]));
+    const actorName=String(req.session.user.username||"Group owner");
+    const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);
+      for(const id of teamIds)await client.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,team_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[userId,id,String(req.session.user.id)]);
+      for(const id of added)await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TEAM","ASSIGNED",userId,userId,"Added to "+(names.get(id)||("Team "+id)),String(req.session.user.id),actorName]);
+      for(const row of removed)await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TEAM","REMOVED",userId,userId,"Removed from "+row.name,String(req.session.user.id),actorName]);
+      await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
     res.json({ok:true,userId,teamIds});
   }catch(e){next(e);}});
   router.put("/teams/:id/members",csrf,async(req,res,next)=>{try{
