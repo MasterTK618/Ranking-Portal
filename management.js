@@ -80,18 +80,18 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.post("/teams",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams."});
-    const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),mode=String(b.autoAssignMode||"NONE").toUpperCase(),min=b.autoAssignMinRank==null?null:Number(b.autoAssignMinRank),max=b.autoAssignMaxRank==null?null:Number(b.autoAssignMaxRank);
-    if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||!["NONE","ABOVE","RANGE"].includes(mode)||(mode!=="NONE"&&(!Number.isInteger(min)||min<1||min>255))||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))return res.status(400).json({error:"Enter a team name and valid rank assignment rule."});
+    const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),mode=String(b.autoAssignMode||"NONE").toUpperCase(),min=mode==="NONE"?null:(b.autoAssignMinRank==null?NaN:Number(b.autoAssignMinRank)),max=mode==="RANGE"?(b.autoAssignMaxRank==null?NaN:Number(b.autoAssignMaxRank)):null;
+    if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||!["NONE","ABOVE","RANGE"].includes(mode)||(mode!=="NONE"&&(!Number.isInteger(min)||min<1||min>255))||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))return res.status(400).json({error:"Enter a team name (2–60 characters), a valid color, and a valid rank assignment rule."});
     const row=await pool.query("INSERT INTO management_teams(name,department,description,color,group_role_ranks,entity_type,created_by,auto_assign_mode,auto_assign_min_rank,auto_assign_max_rank) VALUES($1,'General',$2,$3,ARRAY[]::INTEGER[],'TEAM',$4,$5,$6,$7) RETURNING *",[name,description,color,String(req.session.user.id),mode,min,max]);
-    res.json({ok:true,team:row.rows[0]});
-  }catch(e){if(e.code==="23505")return res.status(409).json({error:"A team with that name already exists."});next(e);}});
+    res.status(201).json({ok:true,team:row.rows[0]});
+  }catch(e){if(e.code==="23505")return res.status(409).json({error:"A team with that name already exists. Choose a different name."});next(e);}});
   router.put("/teams/:id",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams."});
-    const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),mode=String(b.autoAssignMode||"NONE").toUpperCase(),min=b.autoAssignMinRank==null?null:Number(b.autoAssignMinRank),max=b.autoAssignMaxRank==null?null:Number(b.autoAssignMaxRank);
-    if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||!["NONE","ABOVE","RANGE"].includes(mode)||(mode!=="NONE"&&(!Number.isInteger(min)||min<1||min>255))||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))return res.status(400).json({error:"Enter a team name and valid rank assignment rule."});
+    const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),mode=String(b.autoAssignMode||"NONE").toUpperCase(),min=mode==="NONE"?null:(b.autoAssignMinRank==null?NaN:Number(b.autoAssignMinRank)),max=mode==="RANGE"?(b.autoAssignMaxRank==null?NaN:Number(b.autoAssignMaxRank)):null;
+    if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||!["NONE","ABOVE","RANGE"].includes(mode)||(mode!=="NONE"&&(!Number.isInteger(min)||min<1||min>255))||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))return res.status(400).json({error:"Enter a team name (2–60 characters), a valid color, and a valid rank assignment rule."});
     const row=await pool.query("UPDATE management_teams SET name=$1,department='General',description=$2,color=$3,group_role_ranks=ARRAY[]::INTEGER[],entity_type='TEAM',auto_assign_mode=$4,auto_assign_min_rank=$5,auto_assign_max_rank=$6,updated_at=NOW() WHERE id=$7 RETURNING *",[name,description,color,mode,min,max,req.params.id]);
     if(!row.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true,team:row.rows[0]});
-  }catch(e){if(e.code==="23505")return res.status(409).json({error:"A team with that name already exists."});next(e);}});
+  }catch(e){if(e.code==="23505")return res.status(409).json({error:"A team with that name already exists. Choose a different name."});next(e);}});
   router.put("/teams/member/:userId",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
     const userId=String(req.params.userId);if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
