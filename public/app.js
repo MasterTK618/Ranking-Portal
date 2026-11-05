@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Shifts",activity:"Staff Activity",punishments:"Discipline Records",promotions:"Promotion Reviews",leaves:"Leave Requests",knowledge:"Knowledge Hub",settings:"Settings"};
+const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Shifts",activity:"Staff Activity",punishments:"Discipline Records",promotions:"Promotion Reviews",leaves:"Leave Requests",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
@@ -26,6 +26,7 @@ function showPage(page) {
   if(page==="punishments") loadManagement("punishments");
   if(page==="promotions") loadManagement("promotions");
   if(page==="leaves") loadManagement("leaves");
+  if(page==="tasks") loadTasks();
   if(page==="knowledge") loadKnowledge();
 }
 document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
@@ -101,7 +102,7 @@ $("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toL
 async function loadManagementSettings(){
   try{
     const d=await api("/api/management/settings");
-    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank"};
+    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank"};
     Object.entries(map).forEach(([key,id])=>$(id).value=d.settings[key]);
   }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
 }
@@ -246,9 +247,15 @@ async function loadManagement(tab){
     }catch(e){$("promotionTable").textContent=e.message}
   }
   if(tab==="leaves"){
-    $("leaveRoblox").value=sessionData?.user?.name||"";$("leaveTable").textContent="Loading requests…";
-    try{const d=await api("/api/management/leaves"),rows=searchRows(d.items,"leaveSearch",["discord_username","roblox_username","start_date","end_date","reason","status"]);
-      $("leaveTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>DISCORD</th><th>ROBLOX</th><th>START</th><th>END</th><th>REASON</th><th>LAST LEAVE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>'+escapeHtml(i.discord_username)+'</td><td>'+escapeHtml(i.roblox_username)+'</td><td>'+dateOnly(i.start_date)+'</td><td>'+dateOnly(i.end_date)+'</td><td>'+escapeHtml(i.reason)+'</td><td>'+dateOnly(i.last_leave_at)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+actionButtons("leave",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching time-off requests.";
+    if(!$("leaveRoblox").value.trim())$("leaveRoblox").value=sessionData?.user?.name||"";
+    $("leaveTable").textContent="Loading leave requests…";
+    try{
+      const d=await api("/api/management/leaves"),all=d.items||[],q=($("leaveSearch").value||"").toLowerCase(),filter=$("leaveStatusFilter").value;
+      const rows=all.filter(i=>(filter==="ALL"||i.status===filter)&&[i.discord_username,i.roblox_username,i.start_date,i.end_date,i.reason,i.status,i.created_by_name,i.decided_by_name,i.decision_note].some(v=>String(v||"").toLowerCase().includes(q)));
+      const pending=all.filter(x=>x.status==="PENDING").length,approved=all.filter(x=>x.status==="APPROVED").length,rejected=all.filter(x=>x.status==="REJECTED").length;
+      $("leaveSummary").innerHTML=[["PENDING",pending,"Awaiting a decision"],["APPROVED",approved,"Approved requests"],["REJECTED",rejected,"Declined requests"]].map(x=>`<article class="session-stat"><span>▤</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
+      $("leaveTable").innerHTML=rows.length?'<table class="data-table leave-data-table"><thead><tr><th>STAFF MEMBER</th><th>DISCORD</th><th>DATES</th><th>REASON / HANDOVER</th><th>LAST APPROVED LEAVE</th><th>STATUS</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr data-leave-status="'+escapeHtml(i.status)+'"><td><b>'+escapeHtml(i.roblox_username)+'</b><small class="table-subtext">Submitted '+escapeHtml(formatDate(i.created_at))+'</small></td><td>'+escapeHtml(i.discord_username)+'</td><td><b>'+dateOnly(i.start_date)+'</b><small class="table-subtext">through '+dateOnly(i.end_date)+'</small></td><td class="reason-cell">'+escapeHtml(i.reason)+'</td><td>'+dateOnly(i.last_leave_at)+'</td><td><span class="status-pill status-'+escapeHtml(String(i.status).toLowerCase())+'">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td class="reason-cell">'+escapeHtml(i.decision_note||"—")+(i.decided_at?'<small class="table-subtext">'+escapeHtml(formatDate(i.decided_at))+'</small>':"")+'</td><td>'+actionButtons("leave",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave requests match this filter.</div>';
+      await loadLeaveAudit();
     }catch(e){$("leaveTable").textContent=e.message}
   }
 }
@@ -283,17 +290,60 @@ $("submitPromotion").addEventListener("click",async()=>{
     notice("Promotion suggestion submitted.","success");loadManagement("promotions");
   }catch(e){notice(e.message,"error")}
 });
+async function loadLeaveAudit(){
+  const el=$("leaveAuditTable");if(!el)return;el.textContent="Loading leave activity…";
+  try{const d=await api("/api/management/leaves/audit"),items=d.items||[];
+    el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>STAFF MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td class="reason-cell">'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave activity has been recorded yet.</div>';
+  }catch(e){el.textContent=e.message}
+}
+async function loadTasks(){
+  $("taskTable").textContent="Loading staff tasks…";
+  try{if(!staffDirectory.length)await loadStaffDirectory();
+    const d=await api("/api/management/tasks"),items=d.items||[],filter=$("taskStatusFilter").value,q=($("taskSearch").value||"").toLowerCase();
+    const select=$("taskAssignedTo"),previous=select.value;select.innerHTML='<option value="">Choose a staff member…</option>'+staffDirectory.map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+'</option>').join("");if(previous)select.value=previous;
+    const rows=items.filter(x=>(filter==="ALL"||x.status===filter)&&[x.title,x.description,x.assigned_to_name,x.created_by_name,x.priority,x.status].some(v=>String(v||"").toLowerCase().includes(q)));
+    const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
+    $("taskSummary").innerHTML=counts.map(x=>`<article class="session-stat"><span>✓</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
+    $("taskAuditCard").classList.toggle("hidden",!d.canManage);
+    $("taskTable").innerHTML=rows.length?'<table class="data-table task-data-table"><thead><tr><th>TASK</th><th>ASSIGNED TO</th><th>PRIORITY</th><th>DUE DATE</th><th>CREATED BY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><b>'+escapeHtml(x.title)+'</b><small class="table-subtext">'+escapeHtml(x.description||"No extra details") +'</small></td><td>'+escapeHtml(x.assigned_to_name)+'</td><td><span class="priority-pill priority-'+escapeHtml(String(x.priority).toLowerCase())+'">'+escapeHtml(x.priority)+'</span></td><td>'+dateOnly(x.due_date)+'</td><td>'+escapeHtml(x.created_by_name)+'</td><td>'+(x.canUpdate?'<select class="task-status-select" data-task-status="'+escapeHtml(x.id)+'"><option value="OPEN"'+(x.status==="OPEN"?" selected":"")+ '>Open</option><option value="IN_PROGRESS"'+(x.status==="IN_PROGRESS"?" selected":"")+ '>In progress</option><option value="BLOCKED"'+(x.status==="BLOCKED"?" selected":"")+ '>Blocked</option><option value="COMPLETED"'+(x.status==="COMPLETED"?" selected":"")+ '>Completed</option></select>':'<span class="status-pill">'+escapeHtml(x.status)+'</span>')+'</td><td>'+(x.canDelete?'<button class="danger-btn" data-task-delete="'+escapeHtml(x.id)+'">Delete</button>':"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No tasks match this filter.</div>';
+    if(d.canManage)await loadTaskAudit();
+  }catch(e){$("taskTable").textContent=e.message}
+}
+async function loadTaskAudit(){const el=$("taskAuditTable");if(!el)return;try{const d=await api("/api/management/tasks/audit");el.innerHTML=(d.items||[]).length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>ASSIGNED STAFF</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No task actions logged yet.</div>';}catch(e){el.textContent=e.message}}
+$("refreshLeaves")?.addEventListener("click",()=>loadManagement("leaves"));
+$("refreshLeaveAudit")?.addEventListener("click",loadLeaveAudit);
+$("leaveSearch")?.addEventListener("input",()=>loadManagement("leaves"));
+$("leaveStatusFilter")?.addEventListener("change",()=>loadManagement("leaves"));
+$("refreshTasks")?.addEventListener("click",loadTasks);
+$("refreshTaskAudit")?.addEventListener("click",loadTaskAudit);
+$("taskSearch")?.addEventListener("input",loadTasks);
+$("taskStatusFilter")?.addEventListener("change",loadTasks);
+$("createTask")?.addEventListener("click",async()=>{
+  const btn=$("createTask");btn.disabled=true;btn.textContent="Creating…";
+  try{await api("/api/management/tasks",{method:"POST",body:JSON.stringify({title:$("taskTitle").value.trim(),description:$("taskDescription").value.trim(),assignedToId:$("taskAssignedTo").value,priority:$("taskPriority").value,dueDate:$("taskDueDate").value})});
+    ["taskTitle","taskDescription","taskDueDate"].forEach(id=>$(id).value="");$("taskAssignedTo").value="";$("taskPriority").value="NORMAL";notice("Staff task created and logged.","success");await loadTasks();
+  }catch(e){notice(e.message,"error")}finally{btn.disabled=false;btn.textContent="Create task"}
+});
+document.addEventListener("change",async e=>{
+  const status=e.target.closest("[data-task-status]");if(status){status.disabled=true;try{await api("/api/management/tasks/"+encodeURIComponent(status.dataset.taskStatus)+"/status",{method:"PATCH",body:JSON.stringify({status:status.value})});notice("Task status updated and logged.","success");await loadTasks();}catch(err){notice(err.message,"error");await loadTasks();}return;}
+});
+document.addEventListener("click",async e=>{
+  const del=e.target.closest("[data-task-delete]");if(!del)return;if(!confirm("Delete this staff task? Its audit history will remain."))return;
+  try{await api("/api/management/tasks/"+encodeURIComponent(del.dataset.taskDelete),{method:"DELETE"});notice("Task deleted and logged.","success");await loadTasks();}catch(err){notice(err.message,"error")}
+});
+
 $("submitLeave").addEventListener("click",async()=>{
+  const btn=$("submitLeave");btn.disabled=true;btn.textContent="Submitting…";
   try{
     const d=await api("/api/management/leaves",{method:"POST",body:JSON.stringify({discordUsername:$("leaveDiscord").value.trim(),robloxUsername:$("leaveRoblox").value.trim(),startDate:$("leaveStart").value,endDate:$("leaveEnd").value,reason:$("leaveReason").value.trim()})});
-    notice("Time-off request submitted. Last approved leave: "+dateOnly(d.item.last_leave_at)+".","success");loadManagement("leaves");
-  }catch(e){notice(e.message,"error")}
+    $("leaveReason").value="";$("leaveStart").value="";$("leaveEnd").value="";notice("Time-off request submitted. Last approved leave: "+dateOnly(d.item.last_leave_at)+".","success");await loadManagement("leaves");
+  }catch(e){notice(e.message,"error")}finally{btn.disabled=false;btn.textContent="Submit request"}
 });
 document.addEventListener("click",async e=>{
   const decision=e.target.closest("[data-decision]");
   if(decision){
     const type=decision.dataset.decision,id=decision.dataset.id,status=decision.dataset.status,route=type==="punishment"?"punishments":type==="promotion"?"promotions":"leaves";
-    try{const note=type==="punishment"?(prompt("Add an optional review note (leave blank if none):")||""):"";await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status,note})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
+    try{const note=(type==="punishment"||type==="leave")?(prompt(status==="REJECTED"?"Enter the reason for rejecting this request:":"Add an optional review note:")||""):"";if(type==="leave"&&status==="REJECTED"&&!note){notice("A rejection reason is required.","error");return;}await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status,note})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
     catch(err){notice(err.message,"error")}return;
   }
   const remove=e.target.closest("[data-delete]");if(!remove)return;
