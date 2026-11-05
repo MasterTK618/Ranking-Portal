@@ -222,7 +222,7 @@ app.get("/api/staff",requireLogin,async(req,res,next)=>{try{
       if(!response.ok)throw new Error("Public group API returned HTTP "+response.status);
       for(const item of data.data||[]){
         const id=String(item.user?.userId||item.user?.id||""),rank=Number(item.role?.rank||0),role=String(item.role?.name||"Member");
-        if(/^\\d+$/.test(id)&&rank>=230)base.push({id,rank,role});
+        if(/^\\d+$/.test(id)&&rank>=230)base.push({id,rank,role,username:String(item.user?.username||""),displayName:String(item.user?.displayName||"")});
         if(item.role?.id&&!roles.some(r=>String(r.id)===String(item.role.id)))roles.push({id:String(item.role.id),name:role,rank});
       }
       cursor=data.nextPageCursor||"";if(++pages>200)throw new Error("Group directory exceeded 20,000 members.");
@@ -248,13 +248,12 @@ app.get("/api/staff",requireLogin,async(req,res,next)=>{try{
   for(let i=0;i<base.length;i+=100){
     const ids=base.slice(i,i+100).map(m=>Number(m.id));
     const pr=await fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false})});
-    const pd=await pr.json().catch(()=>({}));if(!pr.ok)throw new Error("Roblox profile lookup returned HTTP "+pr.status);
-    profiles.push(...(pd.data||[]));
+    const pd=await pr.json().catch(()=>({}));if(pr.ok)profiles.push(...(pd.data||[]));
     const tr=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true");
     const td=await tr.json().catch(()=>({}));if(tr.ok)thumbs.push(...(td.data||[]));
   }
   const byId=new Map(profiles.map(p=>[String(p.id),p])),av=new Map(thumbs.map(t=>[String(t.targetId),t.imageUrl||""]));
-  const members=base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||"Unknown user",displayName:byId.get(m.id)?.displayName||"",avatarUrl:av.get(m.id)||""}))
+  const members=base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.username||"Unknown user",displayName:byId.get(m.id)?.displayName||m.displayName||"",avatarUrl:av.get(m.id)||""}))
     .filter(m=>m.username!=="Unknown user").sort((x,y)=>y.rank-x.rank||x.role.localeCompare(y.role)||x.username.localeCompare(y.username));
   res.set("Cache-Control","private, max-age=60");
   res.json({members,roles:roles.sort((x,y)=>y.rank-x.rank),count:members.length,source:publicError?"open-cloud-fallback":"roblox-group-api"});
