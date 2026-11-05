@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Shifts",activity:"Staff Activity",punishments:"Discipline Records",promotions:"Promotion Reviews",leaves:"Leave Requests",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
+const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
+const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
@@ -12,24 +13,27 @@ async function api(url,options={}) {
   if (!response.ok) throw new Error(data.error || "Request failed.");
   return data;
 }
-function showPage(page) {
+function showPage(page,view) {
+  const selectedView=view||defaultViews[page]||"";
   Object.keys(pageNames).forEach(k=>$(`${k}Page`).classList.toggle("hidden",k!==page));
-  document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===page));
-  $("pageTitle").textContent=pageNames[page]; $("crumb").textContent=page.toUpperCase();
+  document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===page&&(b.dataset.view||defaultViews[page]||"")===(selectedView||"")));
+  const pageEl=$(`${page}Page`);
+  if(pageEl?.querySelector("[data-workspace-panel]"))pageEl.querySelectorAll("[data-workspace-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.workspacePanel!==selectedView));
+  $("pageTitle").textContent=pageNames[page]||"Workspace";$("crumb").textContent=(selectedView?selectedView+" / ":"")+page.toUpperCase();
   clearNotice();
-  if(page==="logs") loadLogs();
-  if(page==="rank") loadRoles();
-  if(page==="settings") loadGameSettings();
-  if(page==="sessions") loadSessions();
-  if(page==="members") loadStaffDirectory();
-  if(page==="activity") loadManagement("activity");
-  if(page==="punishments") loadManagement("punishments");
-  if(page==="promotions") loadManagement("promotions");
-  if(page==="leaves") loadManagement("leaves");
-  if(page==="tasks") loadTasks();
-  if(page==="knowledge") loadKnowledge();
+  if(page==="logs")loadLogs();
+  if(page==="rank")loadRoles();
+  if(page==="settings")loadGameSettings();
+  if(page==="sessions"){if(selectedView==="requests")loadSessionRequests();else loadSessions();}
+  if(page==="members")loadStaffDirectory();
+  if(page==="activity")loadManagement("activity");
+  if(page==="punishments"){loadManagement("punishments");if(selectedView==="audit")loadPunishmentAudit();}
+  if(page==="promotions"){loadManagement("promotions");if(selectedView==="history")loadPromotionAudit();}
+  if(page==="leaves")loadManagement("leaves");
+  if(page==="tasks")loadTasks();
+  if(page==="knowledge")loadKnowledge();
 }
-document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
+document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page,b.dataset.view)));
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go)));
 $("themeToggle").addEventListener("click",()=>{
   const dark=document.body.classList.toggle("dark");
