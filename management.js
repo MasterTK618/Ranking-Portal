@@ -191,7 +191,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const s=await settings(),all=who.rank>=Number(s.punishment_view_rank);
     const r=all
       ? await pool.query("SELECT * FROM management_audit_logs WHERE category='PUNISHMENT' ORDER BY created_at DESC LIMIT 300")
-      : await pool.query("SELECT * FROM management_audit_logs WHERE category='PUNISHMENT' AND actor_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
+      : await pool.query("SELECT * FROM management_audit_logs WHERE category='PUNISHMENT' AND (actor_id=$1 OR target_id IN (SELECT id::TEXT FROM management_punishments WHERE created_by=$1)) ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
     res.json({items:r.rows});
   }catch(e){next(e);}});
   router.post("/punishments", csrf, async(req,res,next)=>{
