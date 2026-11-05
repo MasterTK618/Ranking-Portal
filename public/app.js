@@ -79,16 +79,6 @@ $("submitRank").addEventListener("click",async()=>{
   }catch(e){notice(e.message,"error")}
   finally{btn.disabled=false;btn.textContent="Confirm ranking";}
 });
-async function directorySearch(){
-  const name=$("directorySearch").value.trim();if(!name)return;
-  $("directoryButton").disabled=true;
-  try{
-    const d=await api("/api/member/"+encodeURIComponent(name));
-    $("directoryResult").innerHTML=`<table class="data-table"><thead><tr><th>USERNAME</th><th>DISPLAY NAME</th><th>GROUP ROLE</th><th>RANK</th></tr></thead><tbody><tr><td>${escapeHtml(d.user.name)}</td><td>${escapeHtml(d.user.displayName)}</td><td>${escapeHtml(d.role?.name||"—")}</td><td>${d.role?.rank??"—"}</td></tr></tbody></table>`;
-  }catch(e){$("directoryResult").textContent=e.message}
-  finally{$("directoryButton").disabled=false}
-}
-$("directoryButton").addEventListener("click",()=>loadStaffDirectory().catch(e=>notice(e.message,"error")));$("directorySearch").addEventListener("input",()=>{if(staffDirectory.length)loadStaffDirectory().catch(()=>{});});
 function formatDate(s){try{return new Date(s).toLocaleString()}catch{return s||"—"}}
 async function loadLogs(){
   $("logsTable").textContent="Loading logs…";
@@ -192,13 +182,28 @@ function searchRows(items,id,fields){const q=($(id)?.value||"").trim().toLowerCa
 async function loadManagement(tab){
   if(!staffDirectory.length){try{await loadStaffDirectory();}catch{}}
   if(tab==="activity"){
-    $("activityTable").textContent="Loading activity…";
+    $("activityTable").textContent="Loading staff activity…";
     try{
-      const d=await api("/api/management/activity");$("activityAdjustCard").classList.toggle("hidden",!d.canEdit);
-      const rows=searchRows(d.members,"activitySearch",["username","role","rank"]);
-      $("activityTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>IN-GAME TIME</th><th>SHIFTS ATTENDED</th><th>LAST ACTIVE</th></tr></thead><tbody>'+rows.map(m=>'<tr><td><b>'+escapeHtml(m.username)+'</b></td><td>'+escapeHtml(m.role)+' · '+m.rank+'</td><td>'+Math.floor(Number(m.seconds)/60)+' min</td><td>'+m.sessions+'</td><td>'+escapeHtml(formatDate(m.last_seen))+'</td></tr>').join("")+'</tbody></table>':(d.canViewAll?"No recorded staff activity yet.":"No activity has been recorded for your account yet.");
-      if(!d.canViewAll)$("activityTable").insertAdjacentHTML("afterbegin",'<p class="muted">You can only view your own activity with your current permissions.</p>');
-    }catch(e){$("activityTable").textContent=e.message}
+      const d=await api("/api/management/activity");
+      $("activityAdjustCard").classList.toggle("hidden",!d.canEdit);
+      const stats=new Map((d.members||[]).map(m=>[String(m.user_id),m]));
+      let roster;
+      if(d.canViewAll&&staffDirectory.length){
+        roster=staffDirectory.map(person=>{
+          const data=stats.get(String(person.id))||{};
+          return {...person,user_id:String(person.id),username:person.username,seconds:Number(data.seconds||0),shifts_attended:Number(data.shifts_attended||0),last_seen:data.last_seen||null};
+        });
+      }else{
+        roster=(d.members||[]).map(person=>({...person,username:person.username||sessionData?.user?.name||"You",rank:person.rank??sessionData?.identity?.rank??"—",role:person.role||sessionData?.identity?.roleName||"—"}));
+      }
+      roster.sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.username).localeCompare(String(y.username)));
+      const rows=searchRows(roster,"activitySearch",["username","displayName","role","rank"]);
+      const scope=d.canViewAll?"All staff members":"Only your own activity is visible with your current permissions";
+      $("activityTable").innerHTML='<div class="activity-table-heading"><span>'+escapeHtml(scope)+'</span><span>'+rows.length+' shown</span></div>'+
+        (rows.length?'<table class="data-table activity-data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>SHIFTS ATTENDED</th><th>IN-GAME MINUTES</th><th>LAST ACTIVE</th></tr></thead><tbody>'+
+        rows.map(person=>'<tr><td><div class="activity-person">'+(person.avatarUrl?'<img src="'+escapeHtml(person.avatarUrl)+'" alt="" loading="lazy">':'<span class="activity-avatar-fallback">'+escapeHtml(String(person.username||"?").slice(0,1).toUpperCase())+'</span>')+'<span><b>'+escapeHtml(person.username)+'</b>'+(person.displayName&&person.displayName!==person.username?'<small>'+escapeHtml(person.displayName)+'</small>':"")+'</span></div></td><td><span class="activity-role">'+escapeHtml(person.role||"—")+'</span><small class="activity-rank">Rank '+escapeHtml(person.rank??"—")+'</small></td><td><b>'+Number(person.shifts_attended||0).toLocaleString()+'</b></td><td><b>'+Math.floor(Number(person.seconds||0)/60).toLocaleString()+'</b> min</td><td>'+escapeHtml(person.last_seen?formatDate(person.last_seen):"—")+'</td></tr>').join("")+
+        '</tbody></table>':'<div class="empty-state">No staff members match your search.</div>');
+    }catch(e){$("activityTable").innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>'}
   }
   if(tab==="punishments"){
     $("punishmentTable").textContent="Loading records…";
@@ -267,7 +272,7 @@ let staffDirectory=[], calendarCursor=new Date();
 function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
  const q=(search?.value||"").trim().toLowerCase();
- const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)));
+ const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
  $("staffCount").textContent=staffDirectory.length+" staff members · Rank 230+";
  status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search.";
  result.innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("");
