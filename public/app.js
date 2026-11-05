@@ -274,8 +274,8 @@ async function loadStaffDirectory(force=false){
   renderStaffDirectory();if(!staffDirectory.length)status.textContent="No staff returned. Check the group API connection and rank filter.";
   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
-  ["punishUsername","promotionUsername","activityUsername","sessionHostSearch","sessionCoHostSearch","sessionOverseeSearch","sessionPromoterSearch","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
-  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true]];
+  ["punishUsername","promotionUsername","activityUsername","sessionHostSearch","sessionCoHostSearch","sessionPromoterSearch","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
+  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionPromoter","Choose promoter…",true]];
   configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(el)el.innerHTML='<option value="">'+placeholder+'</option>'+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+'</option>').join("");});
  }catch(e){
   if(status)status.textContent="Could not load staff: "+e.message;
@@ -311,7 +311,7 @@ $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendar
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
 $("createSession").addEventListener("click",async()=>{
  const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
- const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeId:$("sessionOversee").value,promoterId:$("sessionPromoter").value,attendeeIds:attendees};
+ const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeIds:[...$("sessionOversee").selectedOptions].map(o=>o.value).filter(Boolean),promoterId:$("sessionPromoter").value,attendeeIds:attendees};
  const btn=$("createSession");btn.disabled=true;
  try{await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});notice("Shift created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
 });
