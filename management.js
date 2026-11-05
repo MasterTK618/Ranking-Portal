@@ -94,7 +94,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
   router.put("/teams/:id/members",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
-    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\\d+$/.test(x)))]:[];
+    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\d+$/.test(x)))]:[];
     const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     await pool.query("DELETE FROM management_team_members WHERE team_id=$1",[req.params.id]);
     for(const id of ids)await pool.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id) DO UPDATE SET team_id=EXCLUDED.team_id,assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[id,req.params.id,String(req.session.user.id)]);
