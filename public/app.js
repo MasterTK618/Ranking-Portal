@@ -216,7 +216,26 @@ $("saveGameSettings").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="Save settings"}
 });
 
-async function refreshOverview(){
+
+async function loadOverviewInsights(){
+ const metrics=$("overviewMetrics"),chart=$("overviewActivityChart"),upcomingBox=$("overviewUpcoming");if(!metrics)return;
+ metrics.innerHTML='<div class="overview-metric"><small>STAFF MEMBERS</small><b>—</b><span>Loading</span></div>'.repeat(4);
+ const results=await Promise.allSettled([api("/api/management/activity"),api("/api/management/sessions"),api("/api/staff")]);
+ const activity=results[0].status==="fulfilled"?results[0].value:null,sessions=results[1].status==="fulfilled"?results[1].value.sessions||[]:[],staff=results[2].status==="fulfilled"?results[2].value.members||[]:[];
+ const roster=activity?.members||[],active=roster.filter(x=>x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000).length;
+ const hours=roster.reduce((n,x)=>n+Number(x.seconds||0),0)/3600;
+ const next=sessions.filter(x=>["PLANNED","DELAYED"].includes(x.status)&&new Date(String(x.session_date).slice(0,10)+"T"+String(x.session_time||"00:00").slice(0,5)+":00")>=new Date()).sort((a,b)=>String(a.session_date+a.session_time).localeCompare(String(b.session_date+b.session_time)));
+ const values=[[staff.length||"—","Group staff"],[activity?active:"—","Active in last 7 days"],[activity?hours.toFixed(1)+"h":"—","Tracked playtime"],[results[1].status==="fulfilled"?next.length:"—","Planned or delayed"]];
+ metrics.innerHTML=values.map((x,i)=>'<div class="overview-metric"><small>'+["STAFF MEMBERS","ACTIVE STAFF","IN-GAME HOURS","UPCOMING SESSIONS"][i]+'</small><b>'+x[0]+'</b><span>'+x[1]+'</span></div>').join("");
+ if(activity&&roster.length){
+  const buckets=Array.from({length:7},(_,i)=>{const day=new Date();day.setDate(day.getDate()-(6-i));day.setHours(0,0,0,0);return {label:day.toLocaleDateString(undefined,{weekday:"short"}),count:roster.filter(x=>x.last_seen&&new Date(x.last_seen)>=day&&new Date(x.last_seen)<new Date(day.getTime()+86400000)).length};});
+  const max=Math.max(1,...buckets.map(x=>x.count));
+  chart.innerHTML=buckets.map(x=>'<div class="chart-column" title="'+x.count+' active staff"><div class="chart-bar" style="height:'+Math.max(3,x.count/max*100)+'%"></div><small>'+x.label+'</small></div>').join("");
+ }else chart.innerHTML='<div class="chart-empty">No activity data is available for your account.</div>';
+ upcomingBox.innerHTML=next.length?next.slice(0,4).map(x=>{const date=new Date(String(x.session_date).slice(0,10)+"T00:00:00");return '<div class="overview-session"><div class="overview-date">'+date.toLocaleDateString(undefined,{month:"short"}).toUpperCase()+'<b>'+date.getDate()+'</b></div><div><strong>'+escapeHtml(x.title)+'</strong><small>'+escapeHtml(String(x.session_time||"").slice(0,5))+' · '+escapeHtml(x.host_name||"Host pending")+'</small></div><span class="status-pill">'+escapeHtml(x.status)+'</span></div>';}).join(""):'<div class="chart-empty">No upcoming sessions are scheduled.</div>';
+}
+$("refreshOverviewInsights")?.addEventListener("click",()=>loadOverviewInsights().catch(e=>notice(e.message,"error")));
+\nasync function refreshOverview(){
   const data=await api("/api/me");sessionData=data;
   $("welcomeName").textContent=data.user.name;
   $("myRole").textContent=data.identity.roleName;
@@ -236,7 +255,7 @@ async function refreshOverview(){
     document.querySelectorAll(".nav-item").forEach(b=>b.classList.remove("hidden"));
     $("settingsNav").classList.toggle("hidden",data.identity.rank<255);
     $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
-    try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}
+    try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}\n    loadOverviewInsights().catch(()=>{});
   }
   $("loginButton").classList.add("hidden");$("logoutButton").classList.remove("hidden");$("userBox").classList.remove("hidden");
 }
