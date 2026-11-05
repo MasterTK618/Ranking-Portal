@@ -6,6 +6,7 @@ const { Pool } = require("pg");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const crypto = require("node:crypto");
+const { createManagementRouter, ensureManagementSchema } = require("./management");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -334,6 +335,7 @@ app.get("/api/logs", requireLogin, requireRanker, async (req,res,next) => {
   } catch(e) { next(e); }
 });
 
+app.use("/api/management", createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret }));
 app.use(express.static("public", { extensions:["html"] }));
 app.get("*", (req,res) => res.sendFile(require("node:path").join(process.cwd(),"public","index.html")));
 app.use((err,req,res,next) => {
@@ -341,7 +343,7 @@ app.use((err,req,res,next) => {
   const status = err.status && err.status < 500 ? err.status : 500;
   res.status(status).json({error:status===500?"Something went wrong while contacting Roblox or the database. Check the backend logs for details.":err.message});
 });
-ensureSchema().then(() => {
+ensureSchema().then(() => ensureManagementSchema(pool)).then(() => {
   app.listen(PORT, () => console.log(`Lemonz Ranking Portal listening on ${PORT}`));
 }).catch(err => {
   console.error("Database setup failed:",err);
