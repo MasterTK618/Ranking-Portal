@@ -239,14 +239,14 @@ async function loadManagement(tab){
   }
   if(tab==="punishments"){
     $("punishmentTable").textContent="Loading records…";
-    try{const d=await api("/api/management/punishments"),rows=searchRows(d.items,"punishmentSearch",["username","type","reason","status","created_by_name","decision_note"]);
+    try{const d=await api("/api/management/punishments"),all=d.items||[],rows=searchRows(all,"punishmentSearch",["username","type","reason","status","created_by_name","decision_note"]);$("punishmentSummary").innerHTML=[["PENDING",all.filter(x=>x.status==="PENDING").length,"Awaiting review"],["APPROVED",all.filter(x=>x.status==="APPROVED").length,"Approved actions"],["REJECTED",all.filter(x=>x.status==="REJECTED").length,"Declined requests"],["TOTAL",all.length,"Records and requests"]].map(x=>'<article class="session-stat"><span>⚑</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
       $("punishmentTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>ACTION</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td><b>'+escapeHtml(i.username)+'</b></td><td>'+escapeHtml(i.type)+' '+escapeHtml(i.duration||"")+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.created_by_name)+'</td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td>'+escapeHtml(i.decision_note||"—")+'</td><td>'+actionButtons("punishment",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching punishment records.";
       await loadPunishmentAudit();
     }catch(e){$("punishmentTable").textContent=e.message}
   }
   if(tab==="promotions"){
     $("promotionTable").textContent="Loading suggestions…";
-    try{const d=await api("/api/management/promotions"),rows=searchRows(d.items,"promotionSearch",["username","suggested_role","reason","status","suggested_by_name"]);
+    try{const d=await api("/api/management/promotions"),all=d.items||[],rows=searchRows(all,"promotionSearch",["username","suggested_role","reason","status","suggested_by_name"]);$("promotionSummary").innerHTML=[["PENDING",all.filter(x=>x.status==="PENDING").length,"Awaiting review"],["APPROVED",all.filter(x=>x.status==="APPROVED").length,"Approved suggestions"],["REJECTED",all.filter(x=>x.status==="REJECTED").length,"Declined suggestions"],["TOTAL",all.length,"All recommendations"]].map(x=>'<article class="session-stat"><span>★</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
       $("promotionTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>SUGGESTED ROLE</th><th>REASON</th><th>STATUS</th><th>SUGGESTED BY</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>'+escapeHtml(i.username)+'</td><td>'+escapeHtml(i.suggested_role)+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.suggested_by_name)+'</td><td>'+actionButtons("promotion",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching promotion suggestions.";
     }catch(e){$("promotionTable").textContent=e.message}
   }
