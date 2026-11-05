@@ -186,6 +186,7 @@ function actionButtons(type,item,rank,settings){
   return `<button class="quiet-btn" data-decision="${type}" data-id="${item.id}" data-status="APPROVED">Approve</button> <button class="quiet-btn" data-decision="${type}" data-id="${item.id}" data-status="REJECTED">Reject</button>`;
 }
 async function loadManagement(tab){
+  if(!staffDirectory.length){try{await loadStaffDirectory();}catch{}}
   if(tab==="activity"){
     $("activityTable").textContent="Loading activity…";
     try{
@@ -256,6 +257,7 @@ document.addEventListener("click",async e=>{
 let staffDirectory=[], calendarCursor=new Date();
 async function loadStaffDirectory(){
   const d=await api("/api/staff");staffDirectory=d.members||[];
+  const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true],["sessionAttendees","",false]];
   configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(!el)return;el.innerHTML=(placeholder?'<option value="">'+placeholder+'</option>':'')+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+' (Rank '+m.rank+')</option>').join("");});
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
