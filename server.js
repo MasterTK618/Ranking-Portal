@@ -219,7 +219,7 @@ app.get("/api/staff", requireLogin, async (req,res,next)=>{
       const query=new URLSearchParams({maxPageSize:"100"});if(token)query.set("pageToken",token);
       const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+query.toString());
       memberships.push(...(page.groupMemberships||[]));token=page.nextPageToken||"";
-    }while(token&&memberships.length<1000);
+    }while(token);
     const base=memberships.map(m=>{
       const id=String(m.user||"").split("/").pop();
       const paths=m.roles&&m.roles.length?m.roles:m.role?[m.role]:[];
