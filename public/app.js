@@ -144,7 +144,7 @@ async function loadTeamsSettings(){
     await syncTeamsByGroupRole();
     const roleSelect=$("teamGroupRoleRanks");if(roleSelect){const roles=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].sort((a,b)=>a.rank-b.rank);const selected=[...roleSelect.selectedOptions].map(o=>o.value);roleSelect.innerHTML=roles.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");for(const o of roleSelect.options)o.selected=selected.includes(o.value);}
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
-    teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
+    teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.filter(t=>t.entity_type!=="DEPARTMENT").map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
     if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
     teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
     renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
