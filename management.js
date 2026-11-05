@@ -63,7 +63,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const who=await identity(req);
       if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can change management permissions."});
       const values=columns.map(k=>Number(req.body?.[k]));
-      if(values.some(v=>!Number.isInteger(v)||v<1||v>255)) return res.status(400).json({error:"Every permission must be a whole rank from 1 to 255."});
+      const invalid=columns.some((k,i)=>k.endsWith("_rank")?(!Number.isInteger(values[i])||values[i]<1||values[i]>255):k==="quota_hours_week"?(!Number.isFinite(values[i])||values[i]<0||values[i]>168):k==="quota_start_day"?( !Number.isInteger(values[i])||values[i]<0||values[i]>6):k.endsWith("_enabled")?(![0,1].includes(values[i])):(!Number.isInteger(values[i])||values[i]<0||values[i]>100)); if(invalid)return res.status(400).json({error:"Check rank permissions, weekly quota targets, and feature toggles."});
       const sets=columns.map((k,i)=>k+"=$"+(i+1)).join(",");
       const result=await pool.query("UPDATE management_settings SET "+sets+",updated_at=NOW() WHERE id=1 RETURNING *",values);
       res.json({ok:true,settings:result.rows[0]});
