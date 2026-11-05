@@ -172,17 +172,42 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({items:result.rows.map(x=>({...x,canCancel:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview)})),canReview,rank:Number(who.rank),settings:cfg});
   }catch(e){next(e);}});
   router.post("/session-requests",csrf,async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||"");
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||""),hostId=String(b.hostId||""),cohostId=String(b.cohostId||"");
     if(!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(type)||title.length<3||title.length>100||details.length<10||details.length>2000)return res.status(400).json({error:"Choose a session type, enter a clear title, and provide at least 10 characters of details."});
-    const parsedPreferredDate=date?new Date(date+"T00:00:00.000Z"):null;if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedPreferredDate.getTime())||parsedPreferredDate.toISOString().slice(0,10)!==date))return res.status(400).json({error:"Choose a valid preferred date."});if(time&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid preferred time."});
-    const result=await pool.query("INSERT INTO session_requests(session_type,title,details,preferred_date,preferred_time,requested_by,requested_by_name) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[type,title,details,date||null,time||null,String(req.session.user.id),String(req.session.user.name)]);
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUESTED",String(req.session.user.id),String(req.session.user.name),"Request #"+result.rows[0].id+" | "+type+" | "+title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:result.rows[0]});
+    const parsedDate=new Date(date+"T00:00:00.000Z");if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==date||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
+    if(!/^\\d+$/.test(hostId)||cohostId&&!/^\\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
+    const staff=await Promise.all([hostId,...(cohostId?[cohostId]:[])].map(async id=>({id,who:await getIdentity(id)})));
+    if(staff.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"The host and co-host must be current Lemonz staff members."});
+    const userNames=await Promise.all(staff.map(async x=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,u.name||x.id];}));
+    const names=Object.fromEntries(userNames);
+    const result=await pool.query("INSERT INTO session_requests(session_type,title,details,preferred_date,preferred_time,host_id,host_name,cohost_id,cohost_name,requested_by,requested_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *",[type,title,details,date,time,hostId,names[hostId],cohostId||null,cohostId?names[cohostId]:null,String(req.session.user.id),String(req.session.user.name)]);
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUESTED",String(req.session.user.id),String(req.session.user.name),"Request #"+result.rows[0].id+" | "+type+" | "+title,String(req.session.user.id),String(req.session.user.name)]);
+    res.json({ok:true,item:result.rows[0]});
   }catch(e){next(e);}});
-  router.post("/session-requests/:id/decision",csrf,async(req,res,next)=>{try{
-    const who=await gate(req,res,"session_approve_rank");if(!who)return;const status=String(req.body?.status||""),note=String(req.body?.note||"").trim().slice(0,500);if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});if(status==="REJECTED"&&!note)return res.status(400).json({error:"Add a reason when declining a session request."});
-    const result=await pool.query("UPDATE session_requests SET status=$1,reviewed_by=$2,reviewed_by_name=$3,review_note=$4,reviewed_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",[status,String(req.session.user.id),String(req.session.user.name),note,req.params.id]);if(!result.rowCount)return res.status(404).json({error:"Pending session request not found."});
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",status,String(result.rows[0].requested_by),result.rows[0].requested_by_name,"Request #"+result.rows[0].id+" | "+result.rows[0].session_type+" | "+result.rows[0].title+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:result.rows[0]});
-  }catch(e){next(e);}});
+  router.post("/session-requests/:id/decision",csrf,async(req,res,next)=>{let client;try{
+    const who=await gate(req,res,"session_approve_rank");if(!who)return;
+    const status=String(req.body?.status||""),note=String(req.body?.note||"").trim().slice(0,500);
+    if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});
+    if(status==="REJECTED"&&!note)return res.status(400).json({error:"Add a reason when declining a session request."});
+    client=await pool.connect();await client.query("BEGIN");
+    const found=await client.query("SELECT * FROM session_requests WHERE id=$1 AND status='PENDING' FOR UPDATE",[req.params.id]);
+    if(!found.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Pending session request not found."});}
+    const request=found.rows[0];let scheduled=null;
+    if(status==="APPROVED"){
+      if(!request.host_id||!request.preferred_date||!request.preferred_time){await client.query("ROLLBACK");return res.status(400).json({error:"This request is missing a host, date, or time. Ask the requester to submit it again with those details."});}
+      const ids=[request.host_id,request.cohost_id].filter(Boolean);
+      if(new Set(ids).size!==ids.length){await client.query("ROLLBACK");return res.status(400).json({error:"Host and co-host must be different people."});}
+      const checks=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
+      if(checks.some(x=>!x.who?.inGroup)){await client.query("ROLLBACK");return res.status(400).json({error:"The proposed host or co-host is no longer in the group. Update the request before approving."});}
+      const names=Object.fromEntries([[request.host_id,request.host_name],[request.cohost_id,request.cohost_name]].filter(x=>x[0]));
+      const ins=await client.query("INSERT INTO staff_shifts(title,session_date,session_time,host_id,host_name,cohost_id,cohost_name,created_by,session_type,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'PLANNED') RETURNING *",[request.title,request.preferred_date,request.preferred_time,request.host_id,names[request.host_id]||request.host_id,request.cohost_id||null,request.cohost_id?(names[request.cohost_id]||request.cohost_id):null,String(req.session.user.id),request.session_type]);
+      scheduled=ins.rows[0];
+    }
+    const updated=await client.query("UPDATE session_requests SET status=$1,reviewed_by=$2,reviewed_by_name=$3,review_note=$4,reviewed_at=NOW(),scheduled_session_id=$5 WHERE id=$6 RETURNING *",[status,String(req.session.user.id),String(req.session.user.name),note,scheduled?.id||null,request.id]);
+    await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",status,String(request.requested_by),request.requested_by_name,"Request #"+request.id+" | "+request.session_type+" | "+request.title+(scheduled?" | Scheduled session #"+scheduled.id:"")+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);
+    await client.query("COMMIT");res.json({ok:true,item:updated.rows[0],session:scheduled});
+  }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   router.delete("/session-requests/:id",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canManage=Number(who.rank)>=Number(cfg.session_approve_rank);
     const result=await pool.query("DELETE FROM session_requests WHERE id=$1 AND status='PENDING' AND (requested_by=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
@@ -190,6 +215,19 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUEST_CANCELED",String(result.rows[0].requested_by),result.rows[0].requested_by_name,"Request #"+result.rows[0].id+" | "+result.rows[0].title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true});
   }catch(e){next(e);}});
   router.get("/session-requests/audit",async(req,res,next)=>{try{const who=await gate(req,res,"session_approve_rank");if(!who)return;const result=await pool.query("SELECT * FROM management_audit_logs WHERE category='SESSION' ORDER BY created_at DESC LIMIT 300");res.json({items:result.rows});}catch(e){next(e);}});
+  router.patch("/sessions/:id/roles",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const cfg=await settings(),found=await pool.query("SELECT * FROM staff_shifts WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Session not found."});
+    if(String(found.rows[0].created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(cfg.session_status_rank))return res.status(403).json({error:"You cannot edit this session's roles."});
+    const hostId=String(req.body?.hostId||""),cohostId=String(req.body?.cohostId||"");
+    if(!/^\\d+$/.test(hostId)||cohostId&&!/^\\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
+    const ids=[hostId,...(cohostId?[cohostId]:[])],checks=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
+    if(checks.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"Host and co-host must be current Lemonz staff members."});
+    const names=await Promise.all(ids.map(async id=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];})),map=Object.fromEntries(names);
+    const result=await pool.query("UPDATE staff_shifts SET host_id=$1,host_name=$2,cohost_id=$3,cohost_name=$4,updated_at=NOW() WHERE id=$5 RETURNING *",[hostId,map[hostId],cohostId||null,cohostId?map[cohostId]:null,req.params.id]);
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","ROLES_UPDATED",String(req.params.id),result.rows[0].title,"Host: "+map[hostId]+" | Co-host: "+(cohostId?map[cohostId]:"None"),String(req.session.user.id),String(req.session.user.name)]);
+    res.json({ok:true,session:result.rows[0]});
+  }catch(e){next(e);}});
   router.patch("/sessions/:id/status",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const status=String(req.body?.status||""),note=String(req.body?.note||"").trim().slice(0,500);if(!["PLANNED","ONGOING","DELAYED","CANCELED","COMPLETED"].includes(status))return res.status(400).json({error:"Choose a valid session status."});
     const cfg=await settings(),found=await pool.query("SELECT * FROM staff_shifts WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Session not found."});const current=found.rows[0];if(String(current.created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(cfg.session_status_rank))return res.status(403).json({error:"You cannot update this session."});
@@ -443,6 +481,12 @@ async function ensureManagementSchema(pool) {
   await pool.query("CREATE INDEX IF NOT EXISTS staff_shifts_status_date_idx ON staff_shifts(status,session_date)");
   await pool.query("CREATE TABLE IF NOT EXISTS session_requests (id BIGSERIAL PRIMARY KEY,session_type TEXT NOT NULL,title TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',preferred_date DATE,preferred_time TIME,requested_by TEXT NOT NULL,requested_by_name TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',reviewed_by TEXT,reviewed_by_name TEXT,review_note TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),reviewed_at TIMESTAMPTZ)");
   await pool.query("CREATE INDEX IF NOT EXISTS session_requests_status_created_idx ON session_requests(status,created_at DESC)");
+  await pool.query("ALTER TABLE session_requests ADD COLUMN IF NOT EXISTS host_id TEXT");
+  await pool.query("ALTER TABLE session_requests ADD COLUMN IF NOT EXISTS host_name TEXT");
+  await pool.query("ALTER TABLE session_requests ADD COLUMN IF NOT EXISTS cohost_id TEXT");
+  await pool.query("ALTER TABLE session_requests ADD COLUMN IF NOT EXISTS cohost_name TEXT");
+  await pool.query("ALTER TABLE session_requests ADD COLUMN IF NOT EXISTS scheduled_session_id BIGINT REFERENCES staff_shifts(id) ON DELETE SET NULL");
+
   await pool.query(`CREATE TABLE IF NOT EXISTS knowledge_hub_items (
     id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,kind TEXT NOT NULL,url TEXT,content TEXT NOT NULL DEFAULT '',
     min_rank INTEGER NOT NULL DEFAULT 1,category TEXT NOT NULL DEFAULT 'General',team_id BIGINT REFERENCES management_teams(id) ON DELETE SET NULL,
