@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5c928">
-  <title>Lemonz Ranking Portal</title>
+  <title>Lemonz Staff Management</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,11 +13,11 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="brand" href="#"><span class="brand-mark">L</span><span>lemonz<span class="brand-sub">RANKING PORTAL</span></span></a>
+      <a class="brand" href="#"><span class="brand-mark">L</span><span>lemonz<span class="brand-sub">STAFF MANAGEMENT</span></span></a>
       <div class="side-label">HOME</div><button class="nav-item active" data-page="overview">▦ Overview</button>
 <div class="side-label nav-section-label">PEOPLE</div><button class="nav-item" data-page="members">♙ Staff directory</button>
-<div class="side-label nav-section-label">RANKING</div><button class="nav-item" data-page="rank">↗ Rank members</button><button class="nav-item" data-page="logs">☷ Ranking history</button>
-<div class="side-label nav-section-label">MANAGEMENT</div><button class="nav-item" data-page="sessions">▦ Shifts</button><button class="nav-item" data-page="activity">◷ Staff activity</button><button class="nav-item" data-page="punishments">⚑ Punishments</button><button class="nav-item" data-page="promotions">★ Promotion suggestions</button><button class="nav-item" data-page="leaves">▤ Time off</button>
+<div class="side-label nav-section-label">STAFF WORKSPACE</div><button class="nav-item" data-page="members">♙ Staff directory</button><button class="nav-item" data-page="activity">◷ Staff activity</button><button class="nav-item" data-page="sessions">▦ Sessions &amp; shifts</button><button class="nav-item" data-page="knowledge">▤ Knowledge hub</button><div class="side-label nav-section-label">GROUP ADMINISTRATION</div><button class="nav-item" data-page="rank">↗ Rank members</button><button class="nav-item" data-page="logs">☷ Ranking history</button>
+<div class="side-label nav-section-label">STAFF CARE</div><button class="nav-item" data-page="punishments">⚑ Discipline records</button><button class="nav-item" data-page="promotions">★ Promotion reviews</button><button class="nav-item" data-page="leaves">▤ Leave requests</button>
 <div class="side-label nav-section-label">RESOURCES</div><button class="nav-item" data-page="knowledge">▤ Knowledge Hub</button>
 <div class="side-label nav-section-label">ADMINISTRATION</div><button class="nav-item hidden" id="settingsNav" data-page="settings">⚙ Settings</button>
       <div class="sidebar-bottom">
@@ -30,12 +30,12 @@
       <header class="topbar"><div><div class="eyebrow">LEMONZ / <span id="crumb">OVERVIEW</span></div><h1 id="pageTitle">Overview</h1></div><div class="top-actions"><span class="live-pill"><i></i> Group connected</span><button id="loginButton" class="primary-btn">Verify with Roblox</button><button id="logoutButton" class="quiet-btn hidden">Log out</button></div></header>
       <section id="notice" class="notice hidden"></section>
       <section id="loginPanel" class="login-panel">
-        <div class="login-copy"><div class="lemon-icon">✳</div><div class="eyebrow">STAFF ACCESS</div><h2>Welcome to the<br><span>Lemonz portal.</span></h2><p>Verify that you control your Roblox account to access Lemonz group ranking tools.</p><button class="primary-btn large" id="loginHero">Verify my Roblox account <span>→</span></button><small>Only verified Lemonz staff with rank 245 or higher can rank members.</small></div>
+        <div class="login-copy"><div class="lemon-icon">✳</div><div class="eyebrow">STAFF ACCESS</div><h2>Welcome to<br><span>Lemonz Staff Management.</span></h2><p>Your central workspace for staff activity, sessions, resources, member records, and group administration.</p><button class="primary-btn large" id="loginHero">Verify my Roblox account <span>→</span></button><small>Only verified Lemonz staff with rank 245 or higher can rank members.</small></div>
         <div class="login-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="lemon-graphic">🍋</div><div class="art-caption">LEMONZ<br><b>RANKING PORTAL</b></div></div>
       </section>
       <div id="portal" class="hidden">
         <section id="overviewPage" class="page">
-          <div class="welcome-row"><div><div class="eyebrow">YOUR WORKSPACE</div><h2>Good to see you, <span id="welcomeName">staff</span>.</h2><p>Manage Lemonz group roles from one place.</p></div><div class="rank-chip" id="myRank">Checking rank…</div></div>
+          <div class="welcome-row"><div><div class="eyebrow">YOUR WORKSPACE</div><h2>Good to see you, <span id="welcomeName">staff</span>.</h2><p>Manage your staff team, review activity, organize sessions, and handle group administration.</p></div><div class="rank-chip" id="myRank">Checking rank…</div></div>
           <div class="stat-grid"><article class="stat-card"><span class="stat-icon">♙</span><span class="stat-label">YOUR GROUP ROLE</span><strong id="myRole">—</strong><small>Your checked Roblox group role</small></article><article class="stat-card"><span class="stat-icon">↗</span><span class="stat-label">RANKING ACCESS</span><strong id="accessStatus">—</strong><small>Rank 245+ requirement</small></article><article class="stat-card"><span class="stat-icon">☷</span><span class="stat-label">RECENT ACTIONS</span><strong id="recentCount">0</strong><small>Saved ranking records</small></article></div>
           <div class="content-card"><div class="card-heading"><div><h3>Quick actions</h3><p>Jump into the tools you use most.</p></div></div><div class="quick-grid"><button class="quick-action" data-go="rank"><span>↗</span><b>Rank a member</b><small>Promote, demote, or set a role</small></button><button class="quick-action" data-go="members"><span>♙</span><b>Find a member</b><small>Search Lemonz group members</small></button><button class="quick-action" data-go="logs"><span>☷</span><b>View ranking logs</b><small>Review previous ranking activity</small></button></div></div>
         </section>
@@ -66,7 +66,7 @@
         <section id="leavesPage" class="page hidden"><div class="page-intro"><div><h2>Time Off</h2><p>Submit and review time-off requests.</p></div></div><div class="content-card"><div class="form-grid"><input id="leaveDiscord" placeholder="Discord username"><input id="leaveRoblox" placeholder="Roblox username"><div><label>START DATE</label><input id="leaveStart" type="date"></div><div><label>END DATE</label><input id="leaveEnd" type="date"></div></div><textarea id="leaveReason" rows="3" placeholder="Reason"></textarea><button id="submitLeave" class="primary-btn">Request time off</button><input id="leaveSearch" class="table-search" placeholder="Search requests by username, date, or status…"><div id="leaveTable" class="table-wrap"></div></div></section>
         <section id="logsPage" class="page hidden"><div class="page-intro"><div><h2>Ranking logs</h2><p>A record of role changes made through the portal and the in-game Ranking Stick.</p></div><button id="refreshLogs" class="quiet-btn">↻ Refresh</button></div><div class="content-card"><input id="logsSearch" class="table-search" placeholder="Search member, ranked by, role, action, or status…"><div id="logsTable" class="table-wrap"></div></div></section>
       </div>
-      <footer>LEMONZ RANKING PORTAL <span>•</span> SECURE STAFF TOOLS</footer>
+      <footer>LEMONZ STAFF MANAGEMENT <span>•</span> SECURE STAFF TOOLS</footer>
     </main>
   </div>
   <script src="/app.js" defer></script>
