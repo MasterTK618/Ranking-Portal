@@ -19,16 +19,16 @@ $("createCode").addEventListener("click",async()=>{
     $("stepOne").classList.add("hidden");$("stepTwo").classList.remove("hidden");
     $("authMessage").classList.add("hidden");challengeActive=true;
   }catch(e){showMessage(e.message)}
-  finally{$("createCode").disabled=false;$("createCode").textContent="Get verification code";}
+  finally{$("createCode").disabled=false;$("createCode").textContent="Get emoji sequence";}
 });
-$("verifyCode").addEventListener("click",async()=>{
+$("copyCode").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("verificationCode").textContent);$("copyCode").textContent="Copied!";setTimeout(()=>$("copyCode").textContent="Copy emojis",1600);}catch{showMessage("Select the emojis and copy them manually.");}});\n$("verifyCode").addEventListener("click",async()=>{
   if(!challengeActive)return;
   $("verifyCode").disabled=true;$("verifyCode").textContent="Checking profile…";
   try{
     await post("/auth/verify",{});
     location.href="/";
   }catch(e){showMessage(e.message)}
-  finally{$("verifyCode").disabled=false;$("verifyCode").textContent="I've added the code — verify me";}
+  finally{$("verifyCode").disabled=false;$("verifyCode").textContent="I've added the emojis — verify me";}
 });
 $("startOver").addEventListener("click",()=>{
   challengeActive=false;$("stepTwo").classList.add("hidden");$("stepOne").classList.remove("hidden");$("authMessage").classList.add("hidden");
