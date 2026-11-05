@@ -193,6 +193,7 @@ async function loadGameSettings(){
     if(!d.canConfigure){$("settingsNav").classList.add("hidden");notice("Only the group owner can configure in-game ranking.","error");return}
     const s=d.settings;
     await loadManagementSettings();
+    await loadTeamsSettings();
     const gameMinActorRankElement=$("gameMinActorRank");
     $("gameMinActorRank").value=s.min_actor_rank;
     $("gameMinTargetRank").value=s.min_target_rank;
