@@ -781,3 +781,5 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .session-assignment-avatar{width:34px;height:34px;flex:0 0 auto;border-radius:50%;object-fit:cover;background:#343530;border:1px solid rgba(255,255,255,.12)}.session-avatar-empty{display:grid;place-items:center;color:var(--muted);font-size:12px;font-weight:800}
 
 .audit-filters{display:grid;grid-template-columns:minmax(160px,.7fr) repeat(2,minmax(180px,1fr));gap:10px;margin:14px 0}@media(max-width:650px){.audit-filters{grid-template-columns:1fr}}
+
+.team-dashboard-inline{margin-top:14px;padding:14px;border:1px solid var(--stroke-soft);border-radius:12px;background:rgba(0,0,0,.16)}.team-dashboard-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.team-dashboard-stats span{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:9px;background:var(--panel2)}.team-dashboard-stats b{font-size:18px}.team-dashboard-stats small,.team-dashboard-task-list{font-size:10px;color:var(--muted)}.team-dashboard-task-list{margin-top:10px}@media(max-width:560px){.team-dashboard-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
