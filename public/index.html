@@ -19,6 +19,7 @@
       <button class="nav-item" data-page="rank"><span>↗</span> Rank members</button>
       <button class="nav-item" data-page="members"><span>♙</span> Members</button>
       <button class="nav-item" data-page="logs"><span>☷</span> Ranking logs</button>
+      <button class="nav-item" data-page="management"><span>▤</span> Management</button>
       <button class="nav-item hidden" id="settingsNav" data-page="settings"><span>⚙</span> Settings</button>
       <div class="sidebar-bottom">
         <div class="group-pill"><span class="status-dot"></span><span><b>Lemonz</b><small>Group #16597698</small></span></div>
@@ -56,6 +57,31 @@
             <div class="form-footer"><span>Only the group owner (rank 255) can save these settings.</span><button id="saveGameSettings" class="primary-btn">Save settings</button></div>
             <p class="muted">The target-rank requirement checks the member's current rank before the action. Roblox hierarchy rules still prevent staff from assigning roles equal to or above their own rank.</p>
           </div>
+        </section>
+        <section id="managementPage" class="page hidden">
+          <div class="page-intro"><div><h2>Management</h2><p>Track staff activity, record punishments, review promotion suggestions, and manage time-off requests.</p></div></div>
+          <div class="management-tabs">
+            <button class="quiet-btn active" data-mtab="activity">Activity</button>
+            <button class="quiet-btn" data-mtab="punishments">Punishments</button>
+            <button class="quiet-btn" data-mtab="promotions">Promotion suggestions</button>
+            <button class="quiet-btn" data-mtab="leaves">Time off</button>
+          </div>
+          <section id="mActivity" class="management-panel">
+            <div class="content-card"><div class="card-heading"><h3>Staff activity</h3><p>Recorded playtime from the Roblox Activity Tracker script.</p></div><button id="refreshActivity" class="quiet-btn">↻ Refresh activity</button><div id="activityTable" class="table-wrap"></div></div>
+            <div id="activityAdjustCard" class="content-card hidden"><h3>Adjust activity</h3><p class="muted">Use positive or negative minutes and include a reason.</p><div class="form-grid"><input id="activityUserId" placeholder="Roblox user ID"><input id="activityUsername" placeholder="Roblox username"><input id="activityMinutes" type="number" placeholder="Minutes (+/-)"><input id="activityReason" placeholder="Reason"></div><button id="saveActivityAdjust" class="primary-btn">Save adjustment</button></div>
+          </section>
+          <section id="mPunishments" class="management-panel hidden">
+            <div class="content-card"><h3>Submit a punishment</h3><p class="muted">Authorized ranks can issue records directly. Other permitted staff can submit requests for approval.</p><div class="form-grid"><input id="punishUserId" placeholder="Roblox user ID"><input id="punishUsername" placeholder="Roblox username"><select id="punishType"><option>Strike</option><option>Demotion</option><option>Termination</option><option>Ban</option><option>Suspension</option><option>Other</option></select><input id="punishDuration" placeholder="Duration (optional)"></div><textarea id="punishReason" rows="3" placeholder="Reason / evidence summary"></textarea><button id="submitPunishment" class="primary-btn">Submit punishment</button></div>
+            <div class="content-card"><h3>Punishment records & requests</h3><div id="punishmentTable" class="table-wrap"></div></div>
+          </section>
+          <section id="mPromotions" class="management-panel hidden">
+            <div class="content-card"><h3>Suggest a promotion</h3><div class="form-grid"><input id="promotionUserId" placeholder="Roblox user ID"><input id="promotionUsername" placeholder="Roblox username"><input id="promotionRole" placeholder="Suggested role"><input id="promotionReason" placeholder="Reason"></div><button id="submitPromotion" class="primary-btn">Submit suggestion</button></div>
+            <div class="content-card"><h3>Promotion suggestions</h3><div id="promotionTable" class="table-wrap"></div></div>
+          </section>
+          <section id="mLeaves" class="management-panel hidden">
+            <div class="content-card"><h3>Request time off</h3><p class="muted">Requests may be up to 30 days. Your Roblox username is matched to the account you verified.</p><div class="form-grid"><input id="leaveDiscord" placeholder="Discord username"><input id="leaveRoblox" placeholder="Roblox username"><div><label for="leaveStart">START DATE</label><input id="leaveStart" type="date"></div><div><label for="leaveEnd">END DATE</label><input id="leaveEnd" type="date"></div></div><textarea id="leaveReason" rows="3" placeholder="Reason for time off"></textarea><button id="submitLeave" class="primary-btn">Request time off</button></div>
+            <div class="content-card"><h3>Time-off requests</h3><div id="leaveTable" class="table-wrap"></div></div>
+          </section>
         </section>
         <section id="logsPage" class="page hidden"><div class="page-intro"><div><h2>Ranking logs</h2><p>A record of role changes made through the portal and the in-game Ranking Stick.</p></div><button id="refreshLogs" class="quiet-btn">↻ Refresh</button></div><div class="content-card"><div id="logsTable" class="table-wrap"></div></div></section>
       </div>
