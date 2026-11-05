@@ -220,10 +220,10 @@ async function loadManagement(tab){
   }
 }
 $("refreshActivity").addEventListener("click",()=>loadManagement("activity"));
-$("leaveSearch")?.addEventListener("input",()=>loadManagement("leaves"));
-$("promotionSearch")?.addEventListener("input",()=>loadManagement("promotions"));
-$("punishmentSearch")?.addEventListener("input",()=>loadManagement("punishments"));
-$("activitySearch")?.addEventListener("input",()=>loadManagement("activity"));
+$("leaveSearch")?.addEventListener("input",()=>{const q=$("leaveSearch").value.toLowerCase();document.querySelectorAll("#leaveTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
+$("promotionSearch")?.addEventListener("input",()=>{const q=$("promotionSearch").value.toLowerCase();document.querySelectorAll("#promotionTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
+$("punishmentSearch")?.addEventListener("input",()=>{const q=$("punishmentSearch").value.toLowerCase();document.querySelectorAll("#punishmentTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
+$("activitySearch")?.addEventListener("input",()=>{const q=$("activitySearch").value.toLowerCase();document.querySelectorAll("#activityTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("saveActivityAdjust").addEventListener("click",async()=>{
   try{
     await api("/api/management/activity/adjust",{method:"POST",body:JSON.stringify({userId:$("activityUserId").value.trim(),username:$("activityUsername").value.trim(),minutes:Number($("activityMinutes").value),reason:$("activityReason").value.trim()})});
@@ -285,6 +285,7 @@ async function loadStaffDirectory(force=false){
   ["punishUsername","promotionUsername","activityUsername","sessionHostSearch","sessionCoHostSearch","sessionPromoterSearch","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
   const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionPromoter","Choose promoter…",true]];
   configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(el)el.innerHTML='<option value="">'+placeholder+'</option>'+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+'</option>').join("");});
+  const oversee=$("sessionOversee");if(oversee)oversee.innerHTML=staffDirectory.filter(m=>m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+' (R'+m.rank+')</option>').join("");
  }catch(e){
   if(status)status.textContent="Could not load staff: "+e.message;
   if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(e.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
@@ -313,7 +314,12 @@ function drawSessionsCalendar(items){
   $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
 async function loadSessions(){
-  try{if(!staffDirectory.length)await loadStaffDirectory();const d=await api("/api/management/sessions");const items=(d.sessions||[]).filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));$("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);$("sessionList").innerHTML=(d.sessions||[]).length?'<table class="data-table"><thead><tr><th>DATE</th><th>SESSION</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th></tr></thead><tbody>'+d.sessions.map(s=>'<tr><td>'+escapeHtml(String(s.session_date).slice(0,10))+'</td><td>'+escapeHtml(s.title)+'</td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name)+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml(s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td></tr>').join("")+'</tbody></table>':'No sessions scheduled yet.';}catch(e){$("sessionList").textContent=e.message;}
+  try{
+    if(!staffDirectory.length)await loadStaffDirectory();
+    const d=await api("/api/management/sessions"),all=d.sessions||[],items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
+    $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
+    $("sessionList").innerHTML=all.length?'<table class="data-table"><thead><tr><th>DATE</th><th>SHIFT</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th><th></th></tr></thead><tbody>'+all.map(s=>'<tr><td>'+escapeHtml(String(s.session_date||"").slice(0,10))+'</td><td><b>'+escapeHtml(s.title)+'</b></td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name||"—")+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml((s.oversee_names||[]).join(", ")||s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td><td>'+(s.canDelete?'<button class="danger-btn" data-delete="session" data-id="'+s.id+'">Delete</button>':"")+'</td></tr>').join("")+'</tbody></table>':'No shifts scheduled yet.';
+  }catch(e){$("sessionList").textContent=e.message;}
 }
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
@@ -325,6 +331,19 @@ $("createSession").addEventListener("click",async()=>{
 });
 
 
+// Resolve typed Roblox usernames to exact staff IDs before saving a shift.
+function connectShiftSearch(inputId,selectId){
+  const input=$(inputId),select=$(selectId);if(!input||!select)return;
+  const resolve=()=>{const match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase());select.value=match?match.id:"";if(!match&&input.value.trim())notice("Choose an exact staff username from the suggestions.","error");};
+  input.addEventListener("change",resolve);input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();resolve();}});
+}
+connectShiftSearch("sessionHostSearch","sessionHost");connectShiftSearch("sessionCoHostSearch","sessionCoHost");connectShiftSearch("sessionPromoterSearch","sessionPromoter");
+$("addSessionAttendee")?.addEventListener("click",()=>{
+  const input=$("sessionAttendeeSearch"),select=$("sessionAttendees"),match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase());
+  if(!match){notice("Choose an exact staff username from the suggestions.","error");return;}
+  if([...select.options].some(o=>o.value===match.id)){notice("That attendee is already added.");return;}
+  const option=document.createElement("option");option.value=match.id;option.textContent=match.username+" — "+match.role;option.selected=true;select.appendChild(option);input.value="";
+});
 // Keep staff suggestions synchronized with the ID fields used by staff forms.
 document.addEventListener("change",e=>{
  const pair={punishUsername:"punishUserId",promotionUsername:"promotionUserId",activityUsername:"activityUserId"};
