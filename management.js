@@ -5,9 +5,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   const defaults = {
     activity_view_rank:238, activity_edit_rank:245,
     punishment_view_rank:238, punishment_add_rank:245, punishment_request_rank:1, punishment_approve_rank:249,
-    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245, session_approve_rank:245, session_status_rank:245, notification_view_rank:238, analytics_view_rank:238, quota_hours_week:2, quota_sessions_week:2, quota_tasks_week:0, notifications_enabled:1, recurring_sessions_enabled:1
+    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245, session_approve_rank:245, session_status_rank:245, notification_view_rank:238, analytics_view_rank:238, quota_hours_week:2, quota_sessions_week:2, quota_tasks_week:0, notifications_enabled:1, recurring_sessions_enabled:1, auto_approve_requests_enabled:0, auto_approve_requests_rank:249
   };
   const columns = Object.keys(defaults);
+  function requestAutoApproved(who, cfg) { return Number(cfg.auto_approve_requests_enabled)===1 && Number(who?.rank||0)>=Number(cfg.auto_approve_requests_rank||256); }
   async function settings() {
     const r = await pool.query("SELECT * FROM management_settings WHERE id=1");
     return r.rows[0] || defaults;
@@ -190,9 +191,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(staff.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"The host and co-host must be current Lemonz staff members."});
     const userNames=await Promise.all(staff.map(async x=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,u.name||x.id];}));
     const names=Object.fromEntries(userNames);
+    const cfg=await settings(),auto=requestAutoApproved(who,cfg);
     const result=await pool.query("INSERT INTO session_requests(session_type,title,details,preferred_date,preferred_time,host_id,host_name,cohost_id,cohost_name,requested_by,requested_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *",[type,title,details,date,time,hostId,names[hostId],cohostId||null,cohostId?names[cohostId]:null,String(req.session.user.id),String(req.session.user.name)]);
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUESTED",String(req.session.user.id),String(req.session.user.name),"Request #"+result.rows[0].id+" | "+type+" | "+title,String(req.session.user.id),String(req.session.user.name)]);
-    res.json({ok:true,item:result.rows[0]});
+    let item=result.rows[0];
+    if(auto){const scheduled=await pool.query("INSERT INTO staff_shifts(title,session_type,session_date,session_time,host_id,host_name,cohost_id,cohost_name,created_by,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'PLANNED') RETURNING id",[title,type,date,time,hostId,names[hostId],cohostId||null,cohostId?names[cohostId]:null,String(req.session.user.id)]);const updated=await pool.query("UPDATE session_requests SET status='APPROVED',reviewed_by=$1,reviewed_by_name=$2,reviewed_at=NOW(),scheduled_session_id=$3 WHERE id=$4 RETURNING *",[String(req.session.user.id),String(req.session.user.name),scheduled.rows[0].id,item.id]);item=updated.rows[0];}
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",auto?"AUTO_APPROVED":"REQUESTED",String(req.session.user.id),String(req.session.user.name),"Request #"+item.id+" | "+type+" | "+title,String(req.session.user.id),String(req.session.user.name)]);
+    res.json({ok:true,item});
   }catch(e){next(e);}});
   router.post("/session-requests/:id/decision",csrf,async(req,res,next)=>{let client;try{
     const who=await gate(req,res,"session_approve_rank");if(!who)return;
@@ -377,10 +381,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!["Strike","Demotion","Termination","Ban","Suspension","Other"].includes(type)||!reason)
         return res.status(400).json({error:"Complete the member, punishment type, and reason."});
-      const status="PENDING"; // Every punishment must be approved by a reviewer.
+      const cfg=await settings(),auto=requestAutoApproved(who,cfg),status=auto?"APPROVED":"PENDING";
       const r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name,decided_by,decided_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
-        [userId,username,type,reason,String(b.duration||"").slice(0,80),status,req.session.user.id,req.session.user.name,null,null]);
-      await writeAudit("REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,reason);
+        [userId,username,type,reason,String(b.duration||"").slice(0,80),status,req.session.user.id,req.session.user.name,auto?req.session.user.id:null,auto?req.session.user.name:null]);
+      await writeAudit(auto?"AUTO_APPROVED":"REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,reason);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
@@ -420,9 +424,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
       const b=req.body||{},userId=String(b.userId||""),username=String(b.username||"").trim(),role=String(b.suggestedRole||"").trim(),reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!role||!reason)return res.status(400).json({error:"Complete the member, suggested role, and reason."});
-      const r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name) VALUES($1,$2,$3,$4,'PENDING',$5,$6) RETURNING *",
-        [userId,username,role,reason,req.session.user.id,req.session.user.name]);
-      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION","REQUESTED",userId,username,"Suggested role: "+role+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);
+      const cfg=await settings(),auto=requestAutoApproved(who,cfg),status=auto?"APPROVED":"PENDING";
+      const r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name,decided_by,decided_by_name,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $5='APPROVED' THEN NOW() ELSE NULL END) RETURNING *",[userId,username,role,reason,status,req.session.user.id,req.session.user.name,auto?req.session.user.id:null,auto?req.session.user.name:null]);
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",auto?"AUTO_APPROVED":"REQUESTED",userId,username,"Suggested role: "+role+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
@@ -462,7 +466,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
         const pending=await client.query("SELECT id FROM leave_requests WHERE user_id=$1 AND status=$2 LIMIT 1",[String(req.session.user.id),"PENDING"]);
         if(pending.rowCount){await client.query("ROLLBACK");return res.status(409).json({error:"You already have a pending time-off request. Wait for a decision or cancel it first."});}
         const member=await client.query("SELECT MAX(end_date) AS last_leave FROM leave_requests WHERE user_id=$1 AND status=$2",[String(req.session.user.id),"APPROVED"]);
-        const result=await client.query("INSERT INTO leave_requests(user_id,roblox_username,start_date,end_date,reason,status,last_leave_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[String(req.session.user.id),roblox,start,end,reason,"PENDING",member.rows[0].last_leave]);item=result.rows[0];await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE","REQUESTED",String(item.user_id),item.roblox_username,"Request #"+item.id+" | "+start+" to "+end+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
+        const cfg=await settings(),auto=requestAutoApproved(await identity(req),cfg),status=auto?"APPROVED":"PENDING";
+        const result=await client.query("INSERT INTO leave_requests(user_id,roblox_username,start_date,end_date,reason,status,last_leave_at,decided_by,decided_by_name,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $6='APPROVED' THEN NOW() ELSE NULL END) RETURNING *",[String(req.session.user.id),roblox,start,end,reason,status,member.rows[0].last_leave,auto?String(req.session.user.id):null,auto?String(req.session.user.name):null]);item=result.rows[0];await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE",auto?"AUTO_APPROVED":"REQUESTED",String(item.user_id),item.roblox_username,"Request #"+item.id+" | "+start+" to "+end+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
       }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}
       res.json({ok:true,item});
     }catch(e){next(e);}
@@ -536,7 +541,7 @@ async function ensureManagementSchema(pool) {
     promotion_suggest_rank INTEGER NOT NULL DEFAULT 238, promotion_approve_rank INTEGER NOT NULL DEFAULT 249,
     leave_approve_rank INTEGER NOT NULL DEFAULT 245, knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, session_create_rank INTEGER NOT NULL DEFAULT 238, session_delete_rank INTEGER NOT NULL DEFAULT 245, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_create_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS session_delete_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS task_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS task_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_approve_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_status_rank INTEGER NOT NULL DEFAULT 245");
-  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS notification_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS analytics_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS quota_hours_week NUMERIC(7,2) NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_sessions_week INTEGER NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_tasks_week INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS notifications_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS recurring_sessions_enabled INTEGER NOT NULL DEFAULT 1");
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS notification_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS analytics_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS quota_hours_week NUMERIC(7,2) NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_sessions_week INTEGER NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_tasks_week INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS notifications_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS recurring_sessions_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS auto_approve_requests_enabled INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS auto_approve_requests_rank INTEGER NOT NULL DEFAULT 249");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_quotas (id BIGSERIAL PRIMARY KEY,scope TEXT NOT NULL DEFAULT 'GLOBAL',scope_id TEXT NOT NULL DEFAULT '',min_rank INTEGER NOT NULL DEFAULT 1,max_rank INTEGER NOT NULL DEFAULT 255,hours_per_week NUMERIC(7,2) NOT NULL DEFAULT 2,sessions_per_week INTEGER NOT NULL DEFAULT 2,tasks_per_week INTEGER NOT NULL DEFAULT 0,enabled BOOLEAN NOT NULL DEFAULT TRUE,updated_by TEXT,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(scope,scope_id,min_rank,max_rank))`);
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS attendance JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS recurrence_rule TEXT, ADD COLUMN IF NOT EXISTS recurrence_until DATE");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
