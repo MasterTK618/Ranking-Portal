@@ -321,16 +321,27 @@ async function loadViews(){
    const upcoming=allSessions.filter(x=>["PLANNED","DELAYED"].includes(x.status)&&new Date(String(x.session_date).slice(0,10)+"T"+String(x.session_time||"00:00").slice(0,5)+":00")>=new Date()).length;
    stats.innerHTML=[["STAFF MEMBERS",staff.length],["ACTIVE STAFF",activityData?active:"—"],["IN-GAME HOURS",activityData?hours:"—"],["UPCOMING SESSIONS",sessionData?upcoming:"—"]].map(x=>'<article class="views-stat"><small>'+x[0]+'</small><b>'+x[1]+'</b><span>'+((x[0]==="ACTIVE STAFF"||x[0]==="IN-GAME HOURS")&&!activityData?"Activity unavailable":"Live portal data")+'</span></article>').join("");
    if(activityData){
-    const roster=staff.map(m=>{const a=activityById.get(String(m.id))||{};return {...m,seconds:Number(a.seconds||0),last_seen:a.last_seen||null,shifts_attended:Number(a.shifts_attended||0)};}).sort((x,y)=>y.seconds-x.seconds||String(x.username).localeCompare(String(y.username)));
-    const avatar=(x,sizeClass)=>x.avatarUrl?'<img class="'+sizeClass+'" src="'+escapeHtml(x.avatarUrl)+'" alt="" loading="lazy">':'<span class="'+sizeClass+' avatar-fallback">'+escapeHtml((x.username||"?").slice(0,1).toUpperCase())+'</span>';
-    const podiumOrder=[roster[1],roster[0],roster[2]].filter(Boolean);
-    const podium=podiumOrder.map(x=>{const rank=roster.indexOf(x)+1;return '<button type="button" class="leader-podium-card podium-place-'+rank+'" data-leader-user="'+escapeHtml(x.id)+'" aria-label="Open '+escapeHtml(x.username)+' profile, leaderboard place '+rank+'">'+
-      '<span class="podium-medal">'+(rank===1?"♛":rank===2?"Ⅱ":"Ⅲ")+'</span>'+avatar(x,"podium-avatar")+
-      '<b class="podium-name">'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small>'+
-      '<strong>'+(x.seconds/3600).toFixed(1)+'<small> hrs</small></strong><span class="podium-base">'+rank+'</span></button>';}).join("");
-    const remaining=roster.slice(3,10).map((x,i)=>{const rank=i+4,activeNow=x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000;return '<button type="button" class="views-leader-row leader-profile-link" data-leader-user="'+escapeHtml(x.id)+'"><span class="views-leader-rank">'+rank+'</span>'+avatar(x,"leader-avatar")+'<div><b>'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small></div><span class="leader-activity '+(activeNow?"is-active":"")+'">'+(activeNow?"Active":x.last_seen?"Tracked":"No recent data")+'</span><strong>'+(x.seconds/3600).toFixed(1)+'h</strong><span class="leader-open-profile">View profile ↗</span></button>';}).join("");
-    leader.innerHTML=roster.length?'<div class="leader-podium">'+podium+'</div><div class="leader-list-heading"><div><b>Leaderboard</b><small>Top 10 staff by recorded in-game time</small></div><span>Click a member to open their profile</span></div>'+(remaining?'<div class="leader-table-head"><span>PLACE</span><span></span><span>STAFF MEMBER</span><span>ACTIVITY</span><span>HOURS</span><span></span></div>'+remaining:''):'<div class="empty-state">No staff members found.</div>';
-   }else showError(leader,"Could not load leaderboard",results[1].reason);
+    const activity=Array.isArray(activityData.members)?activityData.members:[];
+    const activityById=new Map(activity.map(x=>[String(x.user_id??x.id??""),x]).filter(x=>x[0]));
+    const roster=(staffData.members||[]).map(m=>{
+      const id=String(m.id??m.user_id??"");
+      const a=activityById.get(id)||{};
+      return {...m,id,seconds:Number(a.seconds||0),last_seen:a.last_seen||null,shifts_attended:Number(a.shifts_attended||0)};
+    }).filter(m=>/^\d+$/.test(m.id)).sort((x,y)=>y.seconds-x.seconds||String(x.username||"").localeCompare(String(y.username||"")));
+    const avatar=(x,sizeClass)=>x.avatarUrl?'<img class="'+sizeClass+'" src="'+escapeHtml(x.avatarUrl)+'" alt="'+escapeHtml(x.username||"Staff avatar")+'" loading="lazy">':'<span class="'+sizeClass+' avatar-fallback">'+escapeHtml((x.username||"?").slice(0,1).toUpperCase())+'</span>';
+    const podium=([roster[1],roster[0],roster[2]].filter(Boolean)).map(x=>{
+      const place=roster.indexOf(x)+1;
+      return '<button type="button" class="leader-podium-card podium-place-'+place+'" data-leader-user="'+escapeHtml(x.id)+'" aria-label="Open '+escapeHtml(x.username)+' profile, leaderboard place '+place+'"><span class="podium-medal">'+(place===1?"♛":place===2?"Ⅱ":"Ⅲ")+'</span>'+avatar(x,"podium-avatar")+'<b class="podium-name">'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small><strong>'+(x.seconds/3600).toFixed(1)+'<small> hrs</small></strong><span class="podium-base">'+place+'</span></button>';
+    }).join("");
+    const remaining=roster.slice(3,10).map((x,i)=>{
+      const place=i+4,activeNow=x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000;
+      return '<button type="button" class="views-leader-row leader-profile-link" data-leader-user="'+escapeHtml(x.id)+'"><span class="views-leader-rank">'+place+'</span>'+avatar(x,"leader-avatar")+'<div class="leader-member-copy"><b>'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small></div><span class="leader-activity '+(activeNow?"is-active":"")+'">'+(activeNow?"Active":x.last_seen?"Tracked":"No recent data")+'</span><strong>'+(x.seconds/3600).toFixed(1)+'h</strong><span class="leader-open-profile">Profile ↗</span></button>';
+    }).join("");
+    leader.innerHTML=roster.length?'<div class="leader-summary"><span>'+roster.length+' staff ranked</span><span>All-time recorded in-game time</span></div><div class="leader-podium">'+podium+'</div><div class="leader-list-heading"><div><b>Leaderboard</b><small>Places 4–10 · Select a staff member to view their profile</small></div></div>'+(remaining?'<div class="leader-table-head"><span>PLACE</span><span></span><span>STAFF MEMBER</span><span>ACTIVITY</span><span>HOURS</span><span></span></div>'+remaining:''):'<div class="empty-state">No staff members were returned by the group directory. Refresh the staff directory and try again.</div>';
+   }else{
+    const message=activityData?.canViewAll===false?"Your current permission level only allows you to view your own activity. Ask an owner to grant leaderboard viewing access.":results[1].reason?.message||"Activity data could not be loaded.";
+    showError(leader,"Leaderboard unavailable",new Error(message));
+   }
   }
   if(teamData){const allTeams=teamData.teams||[];teams.innerHTML=allTeams.length?allTeams.map(t=>'<div class="views-team-row"><span class="views-team-dot" style="background:'+escapeHtml(t.color||"#f5c928")+'"></span><div><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Lemonz team")+'</small></div><strong>'+Number(t.member_count||0)+'</strong></div>').join(""):'<div class="empty-state">No teams have been created yet.</div>';}else showError(teams,"Could not load teams",results[3].reason);
   if(sessionData){const allSessions=sessionData.sessions||[],counts=[["Planned","PLANNED"],["On-going","ONGOING"],["Delayed","DELAYED"],["Completed","COMPLETED"],["Canceled","CANCELED"]].map(([label,status])=>[label,allSessions.filter(x=>x.status===status).length]),max=Math.max(1,...counts.map(x=>x[1]));sessions.innerHTML=counts.map(x=>'<div class="views-pipeline-row"><span>'+x[0]+'</span><div><i style="width:'+Math.round(x[1]/max*100)+'%"></i></div><b>'+x[1]+'</b></div>').join("");}else showError(sessions,"Could not load sessions",results[2].reason);
@@ -338,7 +349,12 @@ async function loadViews(){
  }catch(e){showError(stats,"Insights unavailable",e);}
  finally{[stats,teams,sessions,leader].forEach(el=>{if(el)el.removeAttribute("aria-busy");});}
 }
-$("viewsLeaderboard")?.addEventListener("click",e=>{const card=e.target.closest("[data-leader-user]");if(!card)return;showPage("members");showStaffProfile(card.dataset.leaderUser);});
+$("viewsLeaderboard")?.addEventListener("click",async e=>{
+ const card=e.target.closest("[data-leader-user]");if(!card)return;
+ const id=String(card.dataset.leaderUser||"");if(!/^\\d+$/.test(id)){notice("This leaderboard entry does not have a valid Roblox user ID.","error");return;}
+ card.disabled=true;showPage("members");
+ try{await showStaffProfile(id);}finally{card.disabled=false;}
+});
 
 $("refreshViews")?.addEventListener("click",loadViews);
 async function loadManagement(tab){
