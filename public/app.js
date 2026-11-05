@@ -474,7 +474,7 @@ async function loadStaffDirectory(force=false){
  try{
   const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=Number(d.minRank||d.diagnostics?.minRank||230);staffDiagnostics=d.diagnostics||null;
   try{
-   const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map((teams.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
+   const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map((teams.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));teamStaffCache=staffDirectory;await syncTeamsByGroupRole();
    const filter=$("directoryTeamFilter");
    if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
   }catch{}
