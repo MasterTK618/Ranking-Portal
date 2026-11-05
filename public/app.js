@@ -183,43 +183,47 @@ async function refreshOverview(){
 function dateOnly(v){return v?String(v).slice(0,10):"—"}
 function actionButtons(type,item,rank,settings){
   const field=type==="punishment"?"punishment_approve_rank":type==="promotion"?"promotion_approve_rank":"leave_approve_rank";
-  if(item.status!=="PENDING"||rank<Number(settings[field]))return "";
-  return `<button class="quiet-btn" data-decision="${type}" data-id="${item.id}" data-status="APPROVED">Approve</button> <button class="quiet-btn" data-decision="${type}" data-id="${item.id}" data-status="REJECTED">Reject</button>`;
+  const decision=item.status==="PENDING"&&rank>=Number(settings[field])
+    ? '<button class="quiet-btn" data-decision="'+type+'" data-id="'+item.id+'" data-status="APPROVED">Approve</button> <button class="quiet-btn" data-decision="'+type+'" data-id="'+item.id+'" data-status="REJECTED">Reject</button>' : "";
+  const remove=item.canDelete?'<button class="danger-btn" data-delete="'+type+'" data-id="'+item.id+'">Delete</button>':"";
+  return '<div class="table-actions">'+decision+remove+'</div>';
 }
+function searchRows(items,id,fields){const q=($(id)?.value||"").trim().toLowerCase();return !q?items:items.filter(x=>fields.some(k=>String(x[k]??"").toLowerCase().includes(q)));}
 async function loadManagement(tab){
   if(!staffDirectory.length){try{await loadStaffDirectory();}catch{}}
   if(tab==="activity"){
     $("activityTable").textContent="Loading activity…";
     try{
-      const d=await api("/api/management/activity");
-      $("activityAdjustCard").classList.toggle("hidden",!d.canEdit);
-      $("activityTable").innerHTML=d.members.length?`<table class="data-table"><thead><tr><th>USERNAME</th><th>USER ID</th><th>TOTAL TIME</th><th>SESSIONS</th><th>LAST SEEN</th></tr></thead><tbody>${d.members.map(m=>`<tr><td>${escapeHtml(m.username)}</td><td>${escapeHtml(m.user_id)}</td><td>${Math.floor(Number(m.seconds)/3600)}h ${Math.floor(Number(m.seconds)%3600/60)}m</td><td>${m.sessions}</td><td>${escapeHtml(formatDate(m.last_seen))}</td></tr>`).join("")}</tbody></table>`:"No completed game sessions yet.";
+      const d=await api("/api/management/activity");$("activityAdjustCard").classList.toggle("hidden",!d.canEdit);
+      const rows=searchRows(d.members,"activitySearch",["username","role","rank"]);
+      $("activityTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>IN-GAME TIME</th><th>SESSIONS</th><th>LAST ACTIVE</th></tr></thead><tbody>'+rows.map(m=>'<tr><td><b>'+escapeHtml(m.username)+'</b></td><td>'+escapeHtml(m.role)+' · '+m.rank+'</td><td>'+Math.floor(Number(m.seconds)/60)+' min</td><td>'+m.sessions+'</td><td>'+escapeHtml(formatDate(m.last_seen))+'</td></tr>').join("")+'</tbody></table>':(d.canViewAll?"No recorded staff activity yet.":"No activity has been recorded for your account yet.");
+      if(!d.canViewAll)$("activityTable").insertAdjacentHTML("afterbegin",'<p class="muted">You can only view your own activity with your current permissions.</p>');
     }catch(e){$("activityTable").textContent=e.message}
   }
   if(tab==="punishments"){
     $("punishmentTable").textContent="Loading records…";
-    try{
-      const d=await api("/api/management/punishments");
-      $("punishmentTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>MEMBER</th><th>TYPE</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>ACTION</th></tr></thead><tbody>${d.items.map(i=>`<tr><td>${escapeHtml(i.username)}</td><td>${escapeHtml(i.type)} ${escapeHtml(i.duration||"")}</td><td>${escapeHtml(i.reason)}</td><td>${escapeHtml(i.status)}</td><td>${escapeHtml(i.created_by_name)}</td><td>${actionButtons("punishment",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No punishment records yet.";
+    try{const d=await api("/api/management/punishments"),rows=searchRows(d.items,"punishmentSearch",["username","type","reason","status","created_by_name"]);
+      $("punishmentTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>TYPE</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>'+escapeHtml(i.username)+'</td><td>'+escapeHtml(i.type)+' '+escapeHtml(i.duration||"")+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.created_by_name)+'</td><td>'+actionButtons("punishment",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching punishment records.";
     }catch(e){$("punishmentTable").textContent=e.message}
   }
   if(tab==="promotions"){
     $("promotionTable").textContent="Loading suggestions…";
-    try{
-      const d=await api("/api/management/promotions");
-      $("promotionTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>MEMBER</th><th>SUGGESTED ROLE</th><th>REASON</th><th>STATUS</th><th>SUGGESTED BY</th><th>ACTION</th></tr></thead><tbody>${d.items.map(i=>`<tr><td>${escapeHtml(i.username)}</td><td>${escapeHtml(i.suggested_role)}</td><td>${escapeHtml(i.reason)}</td><td>${escapeHtml(i.status)}</td><td>${escapeHtml(i.suggested_by_name)}</td><td>${actionButtons("promotion",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No promotion suggestions yet.";
+    try{const d=await api("/api/management/promotions"),rows=searchRows(d.items,"promotionSearch",["username","suggested_role","reason","status","suggested_by_name"]);
+      $("promotionTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>SUGGESTED ROLE</th><th>REASON</th><th>STATUS</th><th>SUGGESTED BY</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>'+escapeHtml(i.username)+'</td><td>'+escapeHtml(i.suggested_role)+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.suggested_by_name)+'</td><td>'+actionButtons("promotion",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching promotion suggestions.";
     }catch(e){$("promotionTable").textContent=e.message}
   }
   if(tab==="leaves"){
-    $("leaveRoblox").value=sessionData?.user?.name||"";
-    $("leaveTable").textContent="Loading requests…";
-    try{
-      const d=await api("/api/management/leaves");
-      $("leaveTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>DISCORD USERNAME</th><th>ROBLOX USERNAME</th><th>START DATE</th><th>END DATE</th><th>REASON</th><th>LAST LEAVE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>${d.items.map(i=>`<tr><td>${escapeHtml(i.discord_username)}</td><td>${escapeHtml(i.roblox_username)}</td><td>${dateOnly(i.start_date)}</td><td>${dateOnly(i.end_date)}</td><td>${escapeHtml(i.reason)}</td><td>${dateOnly(i.last_leave_at)}</td><td>${escapeHtml(i.status)}</td><td>${actionButtons("leave",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No time-off requests yet.";
+    $("leaveRoblox").value=sessionData?.user?.name||"";$("leaveTable").textContent="Loading requests…";
+    try{const d=await api("/api/management/leaves"),rows=searchRows(d.items,"leaveSearch",["discord_username","roblox_username","start_date","end_date","reason","status"]);
+      $("leaveTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>DISCORD</th><th>ROBLOX</th><th>START</th><th>END</th><th>REASON</th><th>LAST LEAVE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>'+escapeHtml(i.discord_username)+'</td><td>'+escapeHtml(i.roblox_username)+'</td><td>'+dateOnly(i.start_date)+'</td><td>'+dateOnly(i.end_date)+'</td><td>'+escapeHtml(i.reason)+'</td><td>'+dateOnly(i.last_leave_at)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+actionButtons("leave",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching time-off requests.";
     }catch(e){$("leaveTable").textContent=e.message}
   }
 }
 $("refreshActivity").addEventListener("click",()=>loadManagement("activity"));
+$("leaveSearch")?.addEventListener("input",()=>loadManagement("leaves"));
+$("promotionSearch")?.addEventListener("input",()=>loadManagement("promotions"));
+$("punishmentSearch")?.addEventListener("input",()=>loadManagement("punishments"));
+$("activitySearch")?.addEventListener("input",()=>loadManagement("activity"));
 $("saveActivityAdjust").addEventListener("click",async()=>{
   try{
     await api("/api/management/activity/adjust",{method:"POST",body:JSON.stringify({userId:$("activityUserId").value.trim(),username:$("activityUsername").value.trim(),minutes:Number($("activityMinutes").value),reason:$("activityReason").value.trim()})});
@@ -245,13 +249,17 @@ $("submitLeave").addEventListener("click",async()=>{
   }catch(e){notice(e.message,"error")}
 });
 document.addEventListener("click",async e=>{
-  const b=e.target.closest("[data-decision]");if(!b)return;
-  const type=b.dataset.decision,id=b.dataset.id,status=b.dataset.status;
-  const route=type==="punishment"?"punishments":type==="promotion"?"promotions":"leaves";
-  try{
-    await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status})});
-    notice(`${type[0].toUpperCase()+type.slice(1)} ${status.toLowerCase()}.`,"success");loadManagement(route);
-  }catch(err){notice(err.message,"error")}
+  const decision=e.target.closest("[data-decision]");
+  if(decision){
+    const type=decision.dataset.decision,id=decision.dataset.id,status=decision.dataset.status,route=type==="punishment"?"punishments":type==="promotion"?"promotions":"leaves";
+    try{await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
+    catch(err){notice(err.message,"error")}return;
+  }
+  const remove=e.target.closest("[data-delete]");if(!remove)return;
+  const type=remove.dataset.delete,id=remove.dataset.id,route=type==="punishment"?"punishments":type==="promotion"?"promotions":type==="leave"?"leaves":"sessions";
+  if(!confirm("Delete this "+(type==="leave"?"time-off request":type==="session"?"shift":type)+"? This cannot be undone."))return;
+  try{await api(`/api/management/${route}/${encodeURIComponent(id)}`,{method:"DELETE"});notice("Record deleted.","success");if(route==="sessions")loadSessions();else loadManagement(route);}
+  catch(err){notice(err.message,"error")}
 });
 
 
