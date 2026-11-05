@@ -114,8 +114,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=await pool.query("DELETE FROM management_teams WHERE id=$1 RETURNING id",[req.params.id]);if(!r.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true});
   }catch(e){next(e);}});
   router.get("/knowledge",async(req,res,next)=>{try{
-    const who=await identity(req);const r=await pool.query("SELECT k.id,k.title,k.kind,k.url,k.content,k.min_rank,k.category,k.team_id,t.name AS team_name,t.department AS team_department,k.created_by_name,k.updated_by_name,k.created_at,k.updated_at FROM knowledge_hub_items k LEFT JOIN management_teams t ON t.id=k.team_id WHERE k.min_rank <= $1 AND (k.team_id IS NULL OR EXISTS(SELECT 1 FROM management_team_members tm WHERE tm.team_id=k.team_id AND tm.user_id=$2) OR $3=TRUE) ORDER BY k.category,k.title",[who?.rank||0,String(req.session.user.id),Number(who?.rank||0)>=255]);
-    res.json({items:r.rows,rank:who?.rank||0,canManage:(who?.rank||0)>=Number((await settings()).knowledge_manage_rank)});
+    const who=await identity(req),s=await settings(),canManage=(who?.rank||0)>=Number(s.knowledge_manage_rank);const r=await pool.query("SELECT k.id,k.title,k.kind,k.url,k.content,k.min_rank,k.category,k.team_id,t.name AS team_name,t.department AS team_department,k.created_by_name,k.updated_by_name,k.created_at,k.updated_at FROM knowledge_hub_items k LEFT JOIN management_teams t ON t.id=k.team_id WHERE k.min_rank <= $1 AND (k.team_id IS NULL OR EXISTS(SELECT 1 FROM management_team_members tm WHERE tm.team_id=k.team_id AND tm.user_id=$2) OR $3=TRUE) ORDER BY k.category,k.title",[who?.rank||0,String(req.session.user.id),canManage]);
+    res.json({items:r.rows,rank:who?.rank||0,canManage});
   }catch(e){next(e);}});
   router.post("/knowledge",csrf,async(req,res,next)=>{try{
     const who=await gate(req,res,"knowledge_manage_rank");if(!who)return;
