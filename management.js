@@ -94,7 +94,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
   router.put("/teams/member/:userId",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
-    const userId=String(req.params.userId);if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
+    const userId=String(req.params.userId);if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
     const teamId=req.body?.teamId==null||req.body.teamId===""?null:String(req.body.teamId);
     if(teamId!==null){const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[teamId]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});}
     await pool.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);
@@ -121,6 +121,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await gate(req,res,"knowledge_manage_rank");if(!who)return;
     const b=req.body||{},title=String(b.title||"").trim(),kind=String(b.kind||"document"),category=String(b.category||"General").trim().slice(0,50),content=String(b.content||"").trim(),url=String(b.url||"").trim(),minRank=Number(b.minRank||1),teamId=b.teamId==null||b.teamId===""?null:Number(b.teamId);
     if(!title||title.length>120||!["link","document"].includes(kind)||!Number.isInteger(minRank)||minRank<1||minRank>255||!content||content.length>30000||(teamId!==null&&(!Number.isInteger(teamId)||teamId<1)))return res.status(400).json({error:"Enter a title, valid type, content, rank, and team."});
+    if(teamId!==null){const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[teamId]);if(!team.rowCount)return res.status(400).json({error:"Choose an existing team."});}
     if(kind==="link"){try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Enter a valid http or https link."});}}
     const r=await pool.query("INSERT INTO knowledge_hub_items(title,kind,url,content,min_rank,category,team_id,created_by,created_by_name,updated_by,updated_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$8,$9) RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,teamId,String(req.session.user.id),req.session.user.name]);
     res.json({ok:true,item:r.rows[0]});
