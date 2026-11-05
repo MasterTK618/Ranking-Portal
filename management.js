@@ -104,7 +104,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.post("/tasks",csrf,async(req,res,next)=>{try{
     const who=await gate(req,res,"task_view_rank");if(!who)return;const b=req.body||{},title=String(b.title||"").trim(),description=String(b.description||"").trim(),assignedToId=String(b.assignedToId||""),priority=String(b.priority||"NORMAL"),dueDate=String(b.dueDate||"");
     if(!title||title.length>120||description.length>2000||!/^\d+$/.test(assignedToId)||!["LOW","NORMAL","HIGH","URGENT"].includes(priority))return res.status(400).json({error:"Enter a task title, assigned staff member, and valid priority."});
-    if(dueDate&&!/^\d{4}-\d{2}-\d{2}$/.test(dueDate))return res.status(400).json({error:"Choose a valid due date."});
+    if(dueDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)||new Date(dueDate+"T00:00:00.000Z").toISOString().slice(0,10)!==dueDate))return res.status(400).json({error:"Choose a valid due date."});
     const assigned=await getIdentity(assignedToId);if(!assigned?.inGroup||Number(assigned.rank)<Number((await settings()).task_view_rank))return res.status(400).json({error:"Assign the task to a staff member who can access the task board."});
     const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(assignedToId));const user=await profile.json().catch(()=>({}));const assignedName=user.name||assignedToId;
     const r=await pool.query("INSERT INTO management_tasks(title,description,assigned_to_id,assigned_to_name,priority,due_date,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[title,description,assignedToId,assignedName,priority,dueDate||null,String(req.session.user.id),req.session.user.name]);
@@ -290,7 +290,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{
       const b=req.body||{},discord=String(b.discordUsername||"").trim(),roblox=String(b.robloxUsername||"").trim(),reason=String(b.reason||"").trim(),start=String(b.startDate||""),end=String(b.endDate||"");
       const parse=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const d=new Date(s+"T00:00:00.000Z");return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==s?null:d;};
-      const a=parse(start),z=parse(end),now=new Date();now.setUTCHours(0,0,0,0);
+      const a=parse(start),z=parse(end),offset=Number(b.timezoneOffset),safeOffset=Number.isInteger(offset)&&Math.abs(offset)<=840?offset:0,now=new Date(Date.now()-safeOffset*60000);now.setUTCHours(0,0,0,0);
       if(discord.length<2||discord.length>80||roblox.length<3||roblox.length>40||reason.length<8||reason.length>2000||!a||!z||a<now||z<a||((z-a)/86400000)>29)return res.status(400).json({error:"Check usernames, provide a reason of at least 8 characters, and choose valid dates within a 30-day period starting today or later."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const client=await pool.connect();let item;
