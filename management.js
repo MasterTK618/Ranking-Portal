@@ -80,16 +80,16 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.post("/teams",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams and departments."});
-    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928");
-    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color))return res.status(400).json({error:"Enter a team name, department, short description, and valid color."});
-    const r=await pool.query("INSERT INTO management_teams(name,department,description,color,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *",[name,department,description,color,String(req.session.user.id)]);
+    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),groupRoleRank=b.groupRoleRank==null||b.groupRoleRank===""?null:Number(b.groupRoleRank);
+    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||(groupRoleRank!==null&&(!Number.isInteger(groupRoleRank)||groupRoleRank<1||groupRoleRank>255)))return res.status(400).json({error:"Check the team name, department, description, color, and optional group-role rank."});
+    const r=await pool.query("INSERT INTO management_teams(name,department,description,color,group_role_rank,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",[name,department,description,color,groupRoleRank,String(req.session.user.id)]);
     res.json({ok:true,team:r.rows[0]});
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
   router.put("/teams/:id",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams and departments."});
-    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928");
-    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color))return res.status(400).json({error:"Enter valid team details."});
-    const r=await pool.query("UPDATE management_teams SET name=$1,department=$2,description=$3,color=$4,updated_at=NOW() WHERE id=$5 RETURNING *",[name,department,description,color,req.params.id]);
+    const b=req.body||{},name=String(b.name||"").trim(),department=String(b.department||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),groupRoleRank=b.groupRoleRank==null||b.groupRoleRank===""?null:Number(b.groupRoleRank);
+    if(name.length<2||name.length>60||department.length<2||department.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||(groupRoleRank!==null&&(!Number.isInteger(groupRoleRank)||groupRoleRank<1||groupRoleRank>255)))return res.status(400).json({error:"Check the team name, department, description, color, and optional group-role rank."});
+    const r=await pool.query("UPDATE management_teams SET name=$1,department=$2,description=$3,color=$4,group_role_rank=$5,updated_at=NOW() WHERE id=$6 RETURNING *",[name,department,description,color,groupRoleRank,req.params.id]);
     if(!r.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true,team:r.rows[0]});
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
   router.put("/teams/:id/members",csrf,async(req,res,next)=>{try{
