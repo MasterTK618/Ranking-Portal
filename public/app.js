@@ -175,12 +175,6 @@ async function refreshOverview(){
 })();
 
 // Management workspace
-function managementTab(tab){
-  document.querySelectorAll("[data-mtab]").forEach(b=>b.classList.toggle("active",b.dataset.mtab===tab));
-  ["activity","punishments","promotions","leaves"].forEach(k=>$("m"+k[0].toUpperCase()+k.slice(1)).classList.toggle("hidden",k!==tab));
-  loadManagement(tab);
-}
-
 function dateOnly(v){return v?String(v).slice(0,10):"—"}
 function actionButtons(type,item,rank,settings){
   const field=type==="punishment"?"punishment_approve_rank":type==="promotion"?"promotion_approve_rank":"leave_approve_rank";
@@ -280,4 +274,13 @@ $("createSession").addEventListener("click",async()=>{
  const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeId:$("sessionOversee").value,promoterId:$("sessionPromoter").value,attendeeIds:attendees};
  const btn=$("createSession");btn.disabled=true;
  try{await api("/api/sessions",{method:"POST",body:JSON.stringify(body)});notice("Session created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
+});
+
+
+// Keep staff suggestions synchronized with the ID fields used by staff forms.
+document.addEventListener("change",e=>{
+ const pair={punishUsername:"punishUserId",promotionUsername:"promotionUserId",activityUsername:"activityUserId"};
+ const idField=pair[e.target.id];if(!idField)return;
+ const match=staffDirectory.find(m=>m.username.toLowerCase()===e.target.value.trim().toLowerCase());
+ if(match)$(idField).value=match.id;
 });
