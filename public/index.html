@@ -14,17 +14,11 @@
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="#"><span class="brand-mark">L</span><span>lemonz<span class="brand-sub">RANKING PORTAL</span></span></a>
-      <div class="side-label">WORKSPACE</div>
-      <button class="nav-item active" data-page="overview">▦ Overview</button>
-      <button class="nav-item" data-page="rank">↗ Ranking</button>
-      <button class="nav-item" data-page="logs">☷ Ranking Logs</button>
-      <button class="nav-item" data-page="members">♙ Members</button>
-      <button class="nav-item" data-page="sessions">▦ Shifts</button>
-      <button class="nav-item" data-page="activity">◷ Activity</button>
-      <button class="nav-item" data-page="punishments">⚑ Punishments</button>
-      <button class="nav-item" data-page="promotions">★ Promotion Suggestions</button>
-      <button class="nav-item" data-page="leaves">▤ Time Off</button>
-      <button class="nav-item hidden" id="settingsNav" data-page="settings">⚙ Settings</button>
+      <div class="side-label">HOME</div><button class="nav-item active" data-page="overview">▦ Overview</button>
+<div class="side-label nav-section-label">PEOPLE</div><button class="nav-item" data-page="members">♙ Staff directory</button>
+<div class="side-label nav-section-label">RANKING</div><button class="nav-item" data-page="rank">↗ Rank members</button><button class="nav-item" data-page="logs">☷ Ranking history</button>
+<div class="side-label nav-section-label">MANAGEMENT</div><button class="nav-item" data-page="sessions">▦ Shifts</button><button class="nav-item" data-page="activity">◷ Staff activity</button><button class="nav-item" data-page="punishments">⚑ Punishments</button><button class="nav-item" data-page="promotions">★ Promotion suggestions</button><button class="nav-item" data-page="leaves">▤ Time off</button>
+<div class="side-label nav-section-label">ADMINISTRATION</div><button class="nav-item hidden" id="settingsNav" data-page="settings">⚙ Settings</button>
       <div class="sidebar-bottom">
         <div class="group-pill"><span class="status-dot"></span><span><b>Lemonz</b><small>Group #16597698</small></span></div>
         <button id="themeToggle" class="theme-toggle"><span id="themeIcon">☾</span><span id="themeText">Dark mode</span></button>
@@ -48,7 +42,7 @@
           <div class="page-intro"><div><h2>Rank a member</h2><p>Search for a Roblox username, review their current role, and choose their new role.</p></div></div>
           <div class="content-card rank-form"><label for="memberSearch">ROBLOX USERNAME</label><div class="search-row"><input id="memberSearch" placeholder="Enter a username…" autocomplete="off"><button id="searchMember" class="primary-btn">Search member</button></div><div id="memberResult" class="member-result hidden"></div><div id="rankControls" class="hidden"><div class="form-divider"></div><div class="form-grid"><div><label for="newRole">NEW GROUP ROLE</label><select id="newRole"><option value="">Choose a role…</option></select></div><div><label for="rankAction">ACTION</label><select id="rankAction"><option value="set">Set role</option><option value="promote">Promote</option><option value="demote">Demote</option></select></div></div><label for="reason">REASON <span class="muted">(required for demotions)</span></label><textarea id="reason" rows="3" placeholder="Add a short reason for this change…"></textarea><div class="form-footer"><span>Roblox hierarchy rules still apply.</span><button id="submitRank" class="primary-btn">Confirm ranking</button></div></div></div>
         </section>
-        <section id="membersPage" class="page hidden"><div class="page-intro"><div><h2>Members</h2><p>Browse staff ranked 230 or higher. Select a member to see their shift history, activity, and punishments.</p></div></div><div class="content-card"><div class="search-row"><input id="directorySearch" placeholder="Search staff by username or role…"><button id="directoryButton" class="quiet-btn">Refresh staff</button></div><div id="staffCount" class="directory-count"></div><div id="directoryResult" class="staff-grid"></div><div id="memberProfile" class="content-card member-profile hidden"></div></div></section>
+        <section id="membersPage" class="page hidden"><div class="page-intro"><div><h2>Members</h2><p>Browse staff ranked 230 or higher. Select a member to see their shift history, activity, and punishments.</p></div></div><div class="content-card directory-shell"><div class="directory-toolbar"><div><h3>All staff members</h3><p id="staffCount" class="muted">Staff directory has not loaded yet.</p></div><button id="directoryButton" class="quiet-btn">↻ Refresh</button></div><input id="directorySearch" class="directory-search" placeholder="Search by username, display name, or role…" autocomplete="off"><div id="directoryStatus" class="directory-status">Loading staff directory…</div><div id="directoryResult" class="staff-grid"></div></div><div id="memberProfile" class="content-card member-profile hidden"></div></section>
         <section id="settingsPage" class="page hidden">
           <div class="page-intro"><div><h2>In-game ranking settings</h2><p>Control who can use in-game promotions and which members are eligible to be promoted.</p></div></div>
           <div class="content-card rank-form">
