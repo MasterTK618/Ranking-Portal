@@ -68,7 +68,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
 
   router.get("/sessions",async(req,res,next)=>{try{
-    const who=await identity(req);const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
+    let who=null;try{who=await identity(req);}catch{}const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
     res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=255}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
@@ -109,7 +109,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const avatarUrl=thumbData.data?.[0]?.imageUrl||"";
       const sessions=await pool.query("SELECT * FROM portal_sessions WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
       const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
-      const activity=await pool.query("SELECT COALESCE(SUM(seconds),0)::BIGINT AS seconds,COUNT(*)::INTEGER AS sessions,MAX(ended_at) AS last_seen FROM activity_sessions WHERE user_id=$1 AND ended_at IS NOT NULL",[userId]);
+      const activity=await pool.query("SELECT COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0) AS seconds,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
       res.json({member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]});
     }catch(e){next(e);}
   });
@@ -118,10 +118,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const s=await settings(),canViewAll=who.rank>=Number(s.activity_view_rank);
     const sql=canViewAll
-      ? "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT AS seconds,MAX(COALESCE(ended_at,started_at)) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions GROUP BY user_id,username ORDER BY SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END) DESC LIMIT 500"
-      : "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT AS seconds,MAX(COALESCE(ended_at,started_at)) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=$1 GROUP BY user_id,username";
+      ? "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments aa WHERE aa.user_id=activity_sessions.user_id),0) AS seconds,MAX(COALESCE(ended_at,NOW())) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions GROUP BY user_id,username ORDER BY seconds DESC LIMIT 500"
+      : "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments aa WHERE aa.user_id=activity_sessions.user_id),0) AS seconds,MAX(COALESCE(ended_at,NOW())) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=$1 GROUP BY user_id,username";
     const r=await pool.query(sql,canViewAll?[]:[String(req.session.user.id)]);
-    const members=await Promise.all(r.rows.map(async row=>{let rank=0,role="—";try{const i=await getIdentity(row.user_id);rank=i.rank||0;role=i.roleName||"—";}catch{}return {...row,rank,role};}));
+    if(!canViewAll&&!r.rows.length)r.rows.push({user_id:String(req.session.user.id),username:req.session.user.name||"You",seconds:0,sessions:0,last_seen:null});
+    const members=await Promise.all(r.rows.map(async row=>{let rank=String(row.user_id)===String(req.session.user.id)?who.rank:0,role=String(row.user_id)===String(req.session.user.id)?who.roleName:"—";if(canViewAll)try{const i=await getIdentity(row.user_id);rank=i.rank||0;role=i.roleName||"—";}catch{}return {...row,rank,role};}));
     const adjustments=canViewAll?await pool.query("SELECT user_id,username,minutes,reason,actor_name,created_at FROM activity_adjustments ORDER BY created_at DESC LIMIT 100"):{rows:[]};
     res.json({members,adjustments:adjustments.rows,canEdit:who.rank>=Number(s.activity_edit_rank),canViewAll});
   }catch(e){next(e);}});
