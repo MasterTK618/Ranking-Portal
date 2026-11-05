@@ -130,6 +130,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const shiftSql="SELECT person_id,COUNT(*)::INTEGER AS shifts_attended FROM (SELECT id AS shift_id,host_id AS person_id FROM portal_sessions WHERE host_id IS NOT NULL UNION SELECT id,cohost_id FROM portal_sessions WHERE cohost_id IS NOT NULL UNION SELECT id,promoter_id FROM portal_sessions WHERE promoter_id IS NOT NULL UNION SELECT id,unnest(oversee_ids) FROM portal_sessions WHERE cardinality(oversee_ids)>0 UNION SELECT id,unnest(attendee_ids) FROM portal_sessions WHERE cardinality(attendee_ids)>0) AS assigned_people WHERE ($1::TEXT IS NULL OR person_id=$1) GROUP BY person_id";
     const shiftResult=await pool.query(shiftSql,[canViewAll?null:userId]);
     const shiftCounts=new Map(shiftResult.rows.map(row=>[String(row.person_id),Number(row.shifts_attended||0)]));
+    if(canViewAll)for(const [id,count] of shiftCounts){const existing=stats.get(id)||{user_id:id,username:id,seconds:0,last_seen:null,game_sessions:0};existing.shifts_attended=count;stats.set(id,existing);}
     if(!canViewAll&&!stats.has(userId))stats.set(userId,{user_id:userId,username:req.session.user.name||"You",seconds:0,last_seen:null,game_sessions:0});
     const members=[...stats.values()].map(row=>({...row,shifts_attended:shiftCounts.get(row.user_id)||0,rank:row.user_id===userId?Number(who.rank):null,role:row.user_id===userId?(who.roleName||"—"):"—"}));
     const adjustments=canViewAll
