@@ -5,7 +5,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   const defaults = {
     activity_view_rank:238, activity_edit_rank:245,
     punishment_view_rank:238, punishment_add_rank:245, punishment_request_rank:1, punishment_approve_rank:249,
-    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245
+    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245, session_approve_rank:245
   };
   const columns = Object.keys(defaults);
   async function settings() {
