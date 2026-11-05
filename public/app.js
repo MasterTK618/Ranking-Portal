@@ -199,7 +199,14 @@ async function loadManagement(tab){
         roster=(d.members||[]).map(person=>({...person,username:person.username||sessionData?.user?.name||"You",rank:person.rank??sessionData?.identity?.rank??"—",role:person.role||sessionData?.identity?.roleName||"—"}));
       }
       roster.sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.username).localeCompare(String(y.username)));
-      const rows=searchRows(roster,"activitySearch",["username","displayName","role","rank","shifts_attended","seconds"]);
+      const now=Date.now();
+       roster=roster.map(person=>{const age=person.last_seen?now-new Date(person.last_seen).getTime():Infinity;return {...person,activityStatus:!person.last_seen?"Not tracked":age>7*86400000?"Inactive":"Active"};});
+       const totalShifts=roster.reduce((n,p)=>n+Number(p.shifts_attended||0),0);
+       const totalMinutes=Math.floor(roster.reduce((n,p)=>n+Number(p.seconds||0),0)/60);
+       const activeCount=roster.filter(p=>p.activityStatus==="Active").length;
+       const inactiveCount=roster.filter(p=>p.activityStatus!=="Active").length;
+       $("activitySummary").innerHTML='<div class="activity-stat"><small>STAFF SHOWN</small><b>'+roster.length.toLocaleString()+'</b></div><div class="activity-stat"><small>SHIFTS ATTENDED</small><b>'+totalShifts.toLocaleString()+'</b></div><div class="activity-stat"><small>TOTAL IN-GAME MINUTES</small><b>'+totalMinutes.toLocaleString()+'</b></div><div class="activity-stat"><small>INACTIVE / NOT TRACKED</small><b>'+inactiveCount.toLocaleString()+'</b><em>'+activeCount+' active in last 7 days</em></div>';
+       const rows=searchRows(roster,"activitySearch",["username","displayName","role","rank","shifts_attended","seconds","activityStatus"]);
       const scope=d.canViewAll?"All staff members":"Only your own activity is visible with your current permissions";
       $("activityTable").innerHTML='<div class="activity-table-heading"><span>'+escapeHtml(scope)+'</span><span>'+rows.length+' shown</span></div>'+
         (rows.length?'<table class="data-table activity-data-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP RANK</th><th>SHIFTS ATTENDED</th><th>IN-GAME MINUTES</th><th>LAST ACTIVE</th></tr></thead><tbody>'+
@@ -270,18 +277,18 @@ document.addEventListener("click",async e=>{
 });
 
 
-let staffDirectory=[], calendarCursor=new Date();
+let staffDirectory=[], calendarCursor=new Date(), staffMinRank=230, staffDiagnostics=null;
 function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
  const q=(search?.value||"").trim().toLowerCase();
  const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
- $("staffCount").textContent=staffDirectory.length+" staff members · Rank 230+";
+ $("staffCount").textContent=staffDirectory.length+" staff members · Rank "+staffMinRank+"+";
  status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search.";
  result.innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("");
 }
 async function loadStaffDirectory(force=false){
  const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
- if(status)status.textContent="Loading staff ranked 230+…";
+ if(status)status.textContent="Loading staff ranked "+staffMinRank+"+…";
  if(staffDirectory.length&&!force){renderStaffDirectory();return;}
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
@@ -300,6 +307,13 @@ async function loadStaffDirectory(force=false){
  }finally{if($("directoryButton"))$("directoryButton").disabled=false;}
 }
 $("directoryButton")?.addEventListener("click",()=>loadStaffDirectory(true));
+ $("exportStaff")?.addEventListener("click",()=>{
+   if(!staffDirectory.length){notice("There are no staff members to export.","error");return;}
+   const fields=["username","displayName","role","rank","id"];
+   const quote=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+   const csv=[fields.join(","),...staffDirectory.map(m=>fields.map(k=>quote(m[k])).join(","))].join("\r\n");
+   const link=document.createElement("a");link.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);link.download="lemonz-staff-directory.csv";link.click();
+ });
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
 $("directoryResult")?.addEventListener("click",e=>{const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
 
