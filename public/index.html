@@ -82,6 +82,21 @@
             <div class="content-card"><h3>Request time off</h3><p class="muted">Requests may be up to 30 days. Your Roblox username is matched to the account you verified.</p><div class="form-grid"><input id="leaveDiscord" placeholder="Discord username"><input id="leaveRoblox" placeholder="Roblox username"><div><label for="leaveStart">START DATE</label><input id="leaveStart" type="date"></div><div><label for="leaveEnd">END DATE</label><input id="leaveEnd" type="date"></div></div><textarea id="leaveReason" rows="3" placeholder="Reason for time off"></textarea><button id="submitLeave" class="primary-btn">Request time off</button></div>
             <div class="content-card"><h3>Time-off requests</h3><div id="leaveTable" class="table-wrap"></div></div>
           </section>
+            <div class="form-divider"></div>
+            <h3>Management permissions</h3>
+            <p class="muted">Set the minimum Lemonz group rank required for each management action. Only rank 255 can edit these permissions.</p>
+            <div class="form-grid management-rank-grid">
+              <div><label for="activityViewRank">VIEW ACTIVITY</label><input id="activityViewRank" type="number" min="1" max="255" value="238"></div>
+              <div><label for="activityEditRank">EDIT ACTIVITY</label><input id="activityEditRank" type="number" min="1" max="255" value="245"></div>
+              <div><label for="punishmentViewRank">VIEW PUNISHMENTS</label><input id="punishmentViewRank" type="number" min="1" max="255" value="238"></div>
+              <div><label for="punishmentAddRank">ADD PUNISHMENTS DIRECTLY</label><input id="punishmentAddRank" type="number" min="1" max="255" value="245"></div>
+              <div><label for="punishmentRequestRank">REQUEST PUNISHMENTS</label><input id="punishmentRequestRank" type="number" min="1" max="255" value="1"></div>
+              <div><label for="punishmentApproveRank">APPROVE PUNISHMENTS</label><input id="punishmentApproveRank" type="number" min="1" max="255" value="249"></div>
+              <div><label for="promotionSuggestRank">SUGGEST PROMOTIONS</label><input id="promotionSuggestRank" type="number" min="1" max="255" value="238"></div>
+              <div><label for="promotionApproveRank">APPROVE PROMOTIONS</label><input id="promotionApproveRank" type="number" min="1" max="255" value="249"></div>
+              <div><label for="leaveApproveRank">APPROVE TIME OFF</label><input id="leaveApproveRank" type="number" min="1" max="255" value="245"></div>
+            </div>
+            <div class="form-footer"><span>Ranks are checked by the server on every request.</span><button id="saveManagementSettings" class="primary-btn">Save management permissions</button></div>
         </section>
         <section id="logsPage" class="page hidden"><div class="page-intro"><div><h2>Ranking logs</h2><p>A record of role changes made through the portal and the in-game Ranking Stick.</p></div><button id="refreshLogs" class="quiet-btn">↻ Refresh</button></div><div class="content-card"><div id="logsTable" class="table-wrap"></div></div></section>
       </div>
