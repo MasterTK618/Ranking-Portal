@@ -139,28 +139,27 @@ async function loadTeamsSettings(){
   const box=$("teamDirectory");if(!box)return;
   box.innerHTML='<div class="empty-state">Loading teams and departments…</div>';
   try{
-    const d=await api("/api/management/teams");managementTeams=d.teams||[];teamAssignments=new Map((d.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
+    const d=await api("/api/management/teams");managementTeams=d.teams||[];teamAssignments=new Map();for(const x of (d.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}
     if(!teamStaffCache.length){const staff=await api("/api/staff");teamStaffCache=staff.members||[];}
     await syncTeamsByGroupRole();
+    const roleSelect=$("teamGroupRoleRanks");if(roleSelect){const roles=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].sort((a,b)=>a.rank-b.rank);const selected=[...roleSelect.selectedOptions].map(o=>o.value);roleSelect.innerHTML=roles.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");for(const o of roleSelect.options)o.selected=selected.includes(o.value);}
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
     teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
     if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
-    teamMemberDraft=new Set(teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(teamSelect.value||"")).map(m=>String(m.id)));
+    teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
     renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
   }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
 }
 async function syncTeamsByGroupRole(){
-  if(!teamStaffCache.length||!managementTeams.some(t=>Number(t.group_role_rank)>0))return;
-  const automatic=managementTeams.filter(t=>Number(t.group_role_rank)>0),desired=new Map();
-  for(const team of automatic)for(const member of teamStaffCache)if(Number(member.rank)===Number(team.group_role_rank))desired.set(String(member.id),String(team.id));
-  const byTeam=new Map(automatic.map(t=>[String(t.id),[]]));
-  for(const [userId,teamId] of desired)byTeam.get(teamId).push(userId);
-  let changed=false;
-  for(const [userId,teamId] of desired)if(teamAssignments.get(userId)!==teamId)changed=true;
-  for(const team of automatic){const ids=byTeam.get(String(team.id))||[],existing=teamStaffCache.filter(member=>teamAssignments.get(String(member.id))===String(team.id)).map(member=>String(member.id));if(ids.length!==existing.length||ids.some(id=>!existing.includes(id)))changed=true;}
-  if(!changed)return;
-  for(const team of automatic)await api("/api/management/teams/"+encodeURIComponent(team.id)+"/members",{method:"PUT",body:JSON.stringify({userIds:byTeam.get(String(team.id))||[]})});
-  const refreshed=await api("/api/management/teams");teamAssignments=new Map((refreshed.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
+  if(!teamStaffCache.length)return;
+  for(const team of managementTeams){
+    const ranks=Array.isArray(team.group_role_ranks)&&team.group_role_ranks.length?team.group_role_ranks:(Number(team.group_role_rank)>0?[Number(team.group_role_rank)]:[]);
+    if(!ranks.length)continue;
+    const current=teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(team.id))).map(m=>String(m.id));
+    const additions=teamStaffCache.filter(m=>ranks.includes(Number(m.rank))&&!current.includes(String(m.id))).map(m=>String(m.id));
+    if(additions.length)await api("/api/management/teams/"+encodeURIComponent(team.id)+"/members",{method:"PUT",body:JSON.stringify({userIds:[...current,...additions]})});
+  }
+  const refreshed=await api("/api/management/teams");teamAssignments=new Map();for(const x of (refreshed.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}
 }
 function renderTeamDirectory(){
   const box=$("teamDirectory");if(!box)return;
@@ -173,7 +172,7 @@ function renderTeamAssignmentMembers(){
  const q=($("teamMemberSearch")?.value||"").trim().toLowerCase();
  if(!teamId){box.innerHTML='<div class="empty-state">Choose a team to manage its members.</div>';$("teamAssignmentHelp").textContent="Choose a team first.";$("teamSelectedCount").textContent="0 selected";return;}
  const visible=teamStaffCache.filter(m=>[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)));
- box.innerHTML=visible.length?visible.map(m=>{const id=String(m.id),assigned=teamAssignments.get(id),checked=teamMemberDraft.has(id),other=assigned&&assigned!==String(teamId);return '<label class="team-member-row"><input type="checkbox" data-team-member-check="'+escapeHtml(id)+'" '+(checked?'checked':'')+'><span class="team-member-avatar">'+escapeHtml(String(m.username||"?").slice(0,1).toUpperCase())+'</span><span class="team-member-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.role||"Staff member")+'</small></span><span class="team-member-current">'+(other?'Currently on another team':checked?'Selected':'Not assigned')+'</span></label>';}).join(""):'<div class="empty-state">No staff matched your search.</div>';
+ box.innerHTML=visible.length?visible.map(m=>{const id=String(m.id),assigned=teamAssignments.get(id)||new Set(),checked=teamMemberDraft.has(id),other=[...assigned].filter(x=>x!==String(teamId)).length;return '<label class="team-member-row"><input type="checkbox" data-team-member-check="'+escapeHtml(id)+'" '+(checked?'checked':'')+'><span class="team-member-avatar">'+escapeHtml(String(m.username||"?").slice(0,1).toUpperCase())+'</span><span class="team-member-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.role||"Staff member")+'</small></span><span class="team-member-current">'+(other?other+' other team(s)':checked?'Selected':'Not assigned')+'</span></label>';}).join(""):'<div class="empty-state">No staff matched your search.</div>';
  $("teamAssignmentHelp").textContent=teamMemberDraft.size+" selected for this team";$("teamSelectedCount").textContent=teamMemberDraft.size+" selected";
 }
 $("teamMembersSelect")?.addEventListener("change",e=>{const input=e.target.closest("[data-team-member-check]");if(!input)return;const id=String(input.dataset.teamMemberCheck);if(input.checked)teamMemberDraft.add(id);else teamMemberDraft.delete(id);renderTeamAssignmentMembers();});
@@ -181,11 +180,11 @@ $("teamSelectVisible")?.addEventListener("click",()=>{document.querySelectorAll(
 $("teamClearVisible")?.addEventListener("click",()=>{document.querySelectorAll("#teamMembersSelect [data-team-member-check]").forEach(el=>teamMemberDraft.delete(String(el.dataset.teamMemberCheck)));renderTeamAssignmentMembers();});
 $("createTeam")?.addEventListener("click",async()=>{
   const btn=$("createTeam");btn.disabled=true;
-  try{const id=$("teamEditId").value;const payload={name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value,groupRoleRank:$("teamGroupRoleRank").value===""?null:Number($("teamGroupRoleRank").value)};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
-    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRank").value="";btn.textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
+  try{const id=$("teamEditId").value;const payload={name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value,groupRoleRanks:[...$("teamGroupRoleRanks").selectedOptions].map(o=>Number(o.value))};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
+    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRanks").selectedIndex=-1;btn.textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
-$("teamAssignmentSelect")?.addEventListener("change",()=>{const id=$("teamAssignmentSelect").value;teamMemberDraft=new Set(teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(id)).map(m=>String(m.id)));renderTeamAssignmentMembers();});
+$("teamAssignmentSelect")?.addEventListener("change",()=>{const id=$("teamAssignmentSelect").value;teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(id))).map(m=>String(m.id)));renderTeamAssignmentMembers();});
 $("teamMemberSearch")?.addEventListener("input",renderTeamAssignmentMembers);
 $("saveTeamMembers")?.addEventListener("click",async()=>{
   const teamId=$("teamAssignmentSelect").value;if(!teamId){notice("Choose a team first.","error");return;}
@@ -193,10 +192,10 @@ $("saveTeamMembers")?.addEventListener("click",async()=>{
   try{const userIds=[...teamMemberDraft];await api("/api/management/teams/"+encodeURIComponent(teamId)+"/members",{method:"PUT",body:JSON.stringify({userIds})});notice("Team assignments saved.","success");await loadTeamsSettings();}
   catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
-$("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRank").value="";$("createTeam").textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");});
+$("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRanks").selectedIndex=-1;$("createTeam").textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");});
 $("teamDirectory")?.addEventListener("click",async event=>{
   const edit=event.target.closest("[data-team-edit]");
-  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamGroupRoleRank").value=t.group_role_rank??"";$("createTeam").textContent="Save team changes";$("cancelTeamEdit").classList.remove("hidden");$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
+  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamGroupRoleRanks").value=(t.group_role_ranks|| (t.group_role_rank?[t.group_role_rank]:[])).map(String);$("createTeam").textContent="Save team changes";$("cancelTeamEdit").classList.remove("hidden");$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const manage=event.target.closest("[data-team-manage]");if(manage){const id=manage.dataset.teamManage;$("teamAssignmentSelect").value=id;teamMemberDraft=new Set(teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(id)).map(m=>String(m.id)));renderTeamAssignmentMembers();$("teamAssignmentSelect").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const btn=event.target.closest("[data-team-delete]");if(!btn)return;
   if(!confirm("Delete this team? Its staff assignments will be cleared."))return;
@@ -204,6 +203,7 @@ $("teamDirectory")?.addEventListener("click",async event=>{
   catch(e){notice(e.message,"error")}
 });
 $("directoryTeamFilter")?.addEventListener("change",renderStaffDirectory);
+$("directoryResult")?.addEventListener("click",event=>{const b=event.target.closest("[data-member-teams]");if(!b)return;const id=String(b.dataset.memberTeams),ids=teamAssignments.get(id)||new Set(),teamId=[...ids][0]||"";$("teamAssignmentSelect").value=teamId;teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamId))).map(m=>String(m.id)));renderTeamAssignmentMembers();$("teamAssignmentSelect").scrollIntoView({behavior:"smooth",block:"center"});});
 async function loadGameSettings(){
   try{
     const d=await api("/api/settings/game-ranking");
@@ -455,10 +455,10 @@ function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
  const q=(search?.value||"").trim().toLowerCase(),teamFilter=$("directoryTeamFilter")?.value||"ALL";
  const list=staffDirectory.filter(m=>{
-  const teamId=teamAssignments.get(String(m.id))||"";
-  const team=managementTeams.find(t=>String(t.id)===String(teamId));
-  const matchesSearch=!q||[m.username,m.displayName,m.role,team?.name,team?.department].some(v=>String(v||"").toLowerCase().includes(q));
-  const matchesTeam=teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!teamId:String(teamId)===teamFilter);
+  const teamIds=teamAssignments.get(String(m.id))||new Set();
+  const teams=managementTeams.filter(t=>teamIds.has(String(t.id)));
+  const matchesSearch=!q||[m.username,m.displayName,m.role,...teams.flatMap(t=>[t.name,t.department])].some(v=>String(v||"").toLowerCase().includes(q));
+  const matchesTeam=teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!teamIds.size:teamIds.has(teamFilter));
   return matchesSearch&&matchesTeam;
  }).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
  $("staffCount").textContent=staffDirectory.length+" staff members · Rank "+staffMinRank+"+";
