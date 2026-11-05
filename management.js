@@ -69,7 +69,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   router.get("/sessions",async(req,res,next)=>{try{
     const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
-    res.json({sessions:result.rows});
+    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number((req.identity?.rank)||0)>=255}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
     const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
@@ -140,8 +140,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   router.get("/punishments", async(req,res,next)=>{
     try{const who=await gate(req,res,"punishment_view_rank");if(!who)return;
-      const r=await pool.query("SELECT * FROM management_punishments ORDER BY created_at DESC LIMIT 250");
-      res.json({items:r.rows,rank:who.rank,settings:await settings()});
+      const r=await pool.query("SELECT * FROM management_punishments ORDER BY created_at DESC LIMIT 250"),s=await settings();
+      res.json({items:r.rows.map(x=>({...x,canDelete:String(x.created_by)===String(req.session.user.id)||who.rank>=Number(s.punishment_approve_rank)})),rank:who.rank,settings:s});
     }catch(e){next(e);}
   });
   router.post("/punishments", csrf, async(req,res,next)=>{
@@ -171,8 +171,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   router.get("/promotions",async(req,res,next)=>{
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
-      const r=await pool.query("SELECT * FROM promotion_suggestions ORDER BY created_at DESC LIMIT 250");
-      res.json({items:r.rows,rank:who.rank,settings:await settings()});
+      const r=await pool.query("SELECT * FROM promotion_suggestions ORDER BY created_at DESC LIMIT 250"),s=await settings();
+      res.json({items:r.rows.map(x=>({...x,canDelete:String(x.suggested_by)===String(req.session.user.id)||who.rank>=Number(s.promotion_approve_rank)})),rank:who.rank,settings:s});
     }catch(e){next(e);}
   });
   router.post("/promotions",csrf,async(req,res,next)=>{
@@ -200,7 +200,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const s=await settings();
       const r=await pool.query("SELECT * FROM leave_requests WHERE user_id=$1 OR $2 >= $3 ORDER BY created_at DESC LIMIT 250",
         [req.session.user.id,who.rank,s.leave_approve_rank]);
-      res.json({items:r.rows,rank:who.rank,settings:s});
+      res.json({items:r.rows.map(x=>({...x,canDelete:String(x.user_id)===String(req.session.user.id)||who.rank>=Number(s.leave_approve_rank)})),rank:who.rank,settings:s});
     }catch(e){next(e);}
   });
   router.post("/leaves",csrf,async(req,res,next)=>{
