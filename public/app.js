@@ -105,8 +105,17 @@ async function loadLogs(){
 $("refreshLogs").addEventListener("click",loadLogs);
 $("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toLowerCase();document.querySelectorAll("#logsTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 
+async function populateGroupRoleDropdowns(){
+ const ids=["activityViewRank","activityEditRank","punishmentViewRank","punishmentRequestRank","punishmentAddRank","punishmentApproveRank","promotionSuggestRank","promotionApproveRank","leaveApproveRank","sessionCreateRank","sessionApproveRank","sessionStatusRank","sessionDeleteRank","taskViewRank","taskManageRank","knowledgeManageRank","notificationViewRank","analyticsViewRank","autoApproveRequestsRank","knowledgeMinRank"];
+ const selects=ids.map(id=>$(id)).filter(Boolean);
+ if(!selects.length)return;
+ if(!groupRoleCache.length){const d=await api("/api/group/roles");groupRoleCache=Array.isArray(d.roles)?d.roles:[];}
+ const list=[...groupRoleCache].sort((x,y)=>Number(x.rank)-Number(y.rank));
+ for(const el of selects){const old=el.value;el.innerHTML=list.map(r=>`<option value="${Number(r.rank)}">${escapeHtml(r.name||("Rank "+r.rank))} · Rank ${Number(r.rank)}</option>`).join("");if(list.some(r=>String(r.rank)===old))el.value=old;}
+}
 async function loadManagementSettings(){
   try{
+    await populateGroupRoleDropdowns();
     const d=await api("/api/management/settings");
     const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",session_approve_rank:"sessionApproveRank",session_status_rank:"sessionStatusRank",notification_view_rank:"notificationViewRank",analytics_view_rank:"analyticsViewRank",quota_hours_week:"quotaHoursWeek",quota_sessions_week:"quotaSessionsWeek",quota_tasks_week:"quotaTasksWeek",notifications_enabled:"notificationsEnabled",recurring_sessions_enabled:"recurringSessionsEnabled",auto_approve_requests_enabled:"autoApproveRequestsEnabled",auto_approve_requests_rank:"autoApproveRequestsRank"};
     Object.entries(map).forEach(([key,id])=>{const el=$(id);if(el.type==="checkbox")el.checked=Number(d.settings[key])!==0;else el.value=d.settings[key];});if($("autoApproveRequestsRankValue"))$("autoApproveRequestsRankValue").textContent=$("autoApproveRequestsRank")?.value||"249";
