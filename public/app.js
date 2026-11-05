@@ -185,7 +185,7 @@ function dateOnly(v){return v?String(v).slice(0,10):"—"}
 function actionButtons(type,item,rank,settings){
   const field=type==="punishment"?"punishment_approve_rank":type==="promotion"?"promotion_approve_rank":"leave_approve_rank";
   if(item.status!=="PENDING"||rank<Number(settings[field]))return "";
-  return `<button class="quiet-btn" data-decision="\${type}" data-id="\${item.id}" data-status="APPROVED">Approve</button> <button class="quiet-btn" data-decision="\${type}" data-id="\${item.id}" data-status="REJECTED">Reject</button>`;
+  return `<button class="quiet-btn" data-decision="${type}" data-id="${item.id}" data-status="APPROVED">Approve</button> <button class="quiet-btn" data-decision="${type}" data-id="${item.id}" data-status="REJECTED">Reject</button>`;
 }
 async function loadManagement(tab){
   if(tab==="activity"){
@@ -193,21 +193,21 @@ async function loadManagement(tab){
     try{
       const d=await api("/api/management/activity");
       $("activityAdjustCard").classList.toggle("hidden",!d.canEdit);
-      $("activityTable").innerHTML=d.members.length?`<table class="data-table"><thead><tr><th>USERNAME</th><th>USER ID</th><th>TOTAL TIME</th><th>SESSIONS</th><th>LAST SEEN</th></tr></thead><tbody>\${d.members.map(m=>`<tr><td>\${escapeHtml(m.username)}</td><td>\${escapeHtml(m.user_id)}</td><td>\${Math.floor(Number(m.seconds)/3600)}h \${Math.floor(Number(m.seconds)%3600/60)}m</td><td>\${m.sessions}</td><td>\${escapeHtml(formatDate(m.last_seen))}</td></tr>`).join("")}</tbody></table>`:"No completed game sessions yet.";
+      $("activityTable").innerHTML=d.members.length?`<table class="data-table"><thead><tr><th>USERNAME</th><th>USER ID</th><th>TOTAL TIME</th><th>SESSIONS</th><th>LAST SEEN</th></tr></thead><tbody>${d.members.map(m=>`<tr><td>${escapeHtml(m.username)}</td><td>${escapeHtml(m.user_id)}</td><td>${Math.floor(Number(m.seconds)/3600)}h ${Math.floor(Number(m.seconds)%3600/60)}m</td><td>${m.sessions}</td><td>${escapeHtml(formatDate(m.last_seen))}</td></tr>`).join("")}</tbody></table>`:"No completed game sessions yet.";
     }catch(e){$("activityTable").textContent=e.message}
   }
   if(tab==="punishments"){
     $("punishmentTable").textContent="Loading records…";
     try{
       const d=await api("/api/management/punishments");
-      $("punishmentTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>MEMBER</th><th>TYPE</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>ACTION</th></tr></thead><tbody>\${d.items.map(i=>`<tr><td>\${escapeHtml(i.username)}</td><td>\${escapeHtml(i.type)} \${escapeHtml(i.duration||"")}</td><td>\${escapeHtml(i.reason)}</td><td>\${escapeHtml(i.status)}</td><td>\${escapeHtml(i.created_by_name)}</td><td>\${actionButtons("punishment",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No punishment records yet.";
+      $("punishmentTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>MEMBER</th><th>TYPE</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>ACTION</th></tr></thead><tbody>${d.items.map(i=>`<tr><td>${escapeHtml(i.username)}</td><td>${escapeHtml(i.type)} ${escapeHtml(i.duration||"")}</td><td>${escapeHtml(i.reason)}</td><td>${escapeHtml(i.status)}</td><td>${escapeHtml(i.created_by_name)}</td><td>${actionButtons("punishment",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No punishment records yet.";
     }catch(e){$("punishmentTable").textContent=e.message}
   }
   if(tab==="promotions"){
     $("promotionTable").textContent="Loading suggestions…";
     try{
       const d=await api("/api/management/promotions");
-      $("promotionTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>MEMBER</th><th>SUGGESTED ROLE</th><th>REASON</th><th>STATUS</th><th>SUGGESTED BY</th><th>ACTION</th></tr></thead><tbody>\${d.items.map(i=>`<tr><td>\${escapeHtml(i.username)}</td><td>\${escapeHtml(i.suggested_role)}</td><td>\${escapeHtml(i.reason)}</td><td>\${escapeHtml(i.status)}</td><td>\${escapeHtml(i.suggested_by_name)}</td><td>\${actionButtons("promotion",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No promotion suggestions yet.";
+      $("promotionTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>MEMBER</th><th>SUGGESTED ROLE</th><th>REASON</th><th>STATUS</th><th>SUGGESTED BY</th><th>ACTION</th></tr></thead><tbody>${d.items.map(i=>`<tr><td>${escapeHtml(i.username)}</td><td>${escapeHtml(i.suggested_role)}</td><td>${escapeHtml(i.reason)}</td><td>${escapeHtml(i.status)}</td><td>${escapeHtml(i.suggested_by_name)}</td><td>${actionButtons("promotion",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No promotion suggestions yet.";
     }catch(e){$("promotionTable").textContent=e.message}
   }
   if(tab==="leaves"){
@@ -215,7 +215,7 @@ async function loadManagement(tab){
     $("leaveTable").textContent="Loading requests…";
     try{
       const d=await api("/api/management/leaves");
-      $("leaveTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>DISCORD USERNAME</th><th>ROBLOX USERNAME</th><th>START DATE</th><th>END DATE</th><th>REASON</th><th>LAST LEAVE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>\${d.items.map(i=>`<tr><td>\${escapeHtml(i.discord_username)}</td><td>\${escapeHtml(i.roblox_username)}</td><td>\${dateOnly(i.start_date)}</td><td>\${dateOnly(i.end_date)}</td><td>\${escapeHtml(i.reason)}</td><td>\${dateOnly(i.last_leave_at)}</td><td>\${escapeHtml(i.status)}</td><td>\${actionButtons("leave",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No time-off requests yet.";
+      $("leaveTable").innerHTML=d.items.length?`<table class="data-table"><thead><tr><th>DISCORD USERNAME</th><th>ROBLOX USERNAME</th><th>START DATE</th><th>END DATE</th><th>REASON</th><th>LAST LEAVE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>${d.items.map(i=>`<tr><td>${escapeHtml(i.discord_username)}</td><td>${escapeHtml(i.roblox_username)}</td><td>${dateOnly(i.start_date)}</td><td>${dateOnly(i.end_date)}</td><td>${escapeHtml(i.reason)}</td><td>${dateOnly(i.last_leave_at)}</td><td>${escapeHtml(i.status)}</td><td>${actionButtons("leave",i,d.rank,d.settings)}</td></tr>`).join("")}</tbody></table>`:"No time-off requests yet.";
     }catch(e){$("leaveTable").textContent=e.message}
   }
 }
@@ -249,7 +249,7 @@ document.addEventListener("click",async e=>{
   const type=b.dataset.decision,id=b.dataset.id,status=b.dataset.status;
   const route=type==="punishment"?"punishments":type==="promotion"?"promotions":"leaves";
   try{
-    await api(`/api/management/\${route}/\${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status})});
-    notice(`\${type[0].toUpperCase()+type.slice(1)} \${status.toLowerCase()}.`,"success");loadManagement(route);
+    await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status})});
+    notice(`${type[0].toUpperCase()+type.slice(1)} ${status.toLowerCase()}.`,"success");loadManagement(route);
   }catch(err){notice(err.message,"error")}
 });
