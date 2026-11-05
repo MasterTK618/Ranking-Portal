@@ -261,3 +261,12 @@ body.dark .status-completed{background:#263650;color:#b8cdf7}
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid color-mix(in srgb,var(--yellow) 65%,transparent);outline-offset:2px}
 @media(max-width:1050px){.main{padding:26px 22px}.content-card{padding:24px}.session-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.main{padding:18px 13px}.page-intro h2{font-size:24px}.content-card{padding:18px;margin-bottom:17px}.workspace-intro-card{padding:17px;gap:12px}.form-grid{gap:14px}.form-footer{align-items:stretch;flex-direction:column}.form-footer button{width:100%}.session-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.session-stat{padding:15px;min-height:96px}.session-stat b{font-size:22px}.leave-toolbar{align-items:stretch;flex-direction:column}.filter-select{max-width:none}.sidebar .nav-group .nav-item{width:100%;margin-left:0}}
+
+.calendar-event{display:flex;flex-direction:column;gap:3px}
+.calendar-event b{font-size:10px;font-weight:800}
+.calendar-event small{font-size:9px;line-height:1.35;opacity:.82}
+.calendar-event.calendar-ongoing{outline:1px solid #4b9b70}
+.calendar-event.calendar-delayed{outline:1px solid #d28b32}
+.calendar-event.calendar-canceled{opacity:.55;text-decoration:line-through}
+.calendar-event.calendar-completed{opacity:.72}
+.session-type-pill{background:color-mix(in srgb,var(--yellow) 16%,var(--panel));border-color:color-mix(in srgb,var(--yellow) 38%,var(--line))}
