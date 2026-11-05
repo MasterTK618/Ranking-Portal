@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-let sessionData = null, selectedMember = null, roles = [];
+let sessionData = null, selectedMember = null, roles = [];\nlet managementTeams=[],teamAssignments=new Map(),teamStaffCache=[];
 const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -134,6 +134,53 @@ async function runRobloxDiagnostics(buttonId,outputId){const b=$(buttonId),out=$
 $("testRobloxConnection")?.addEventListener("click",()=>runRobloxDiagnostics("testRobloxConnection","robloxDiagnostics"));
 $("directoryDiagnosticsButton")?.addEventListener("click",()=>runRobloxDiagnostics("directoryDiagnosticsButton","directoryDiagnostics"));
 
+async function loadTeamsSettings(){
+  const box=$("teamDirectory");if(!box)return;
+  box.innerHTML='<div class="empty-state">Loading teams and departments…</div>';
+  try{
+    const d=await api("/api/management/teams");managementTeams=d.teams||[];teamAssignments=new Map((d.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));
+    if(!teamStaffCache.length){const staff=await api("/api/staff");teamStaffCache=staff.members||[];}
+    const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
+    teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
+    if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
+    renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
+  }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+function renderTeamDirectory(){
+  const box=$("teamDirectory");if(!box)return;
+  if(!managementTeams.length){box.innerHTML='<div class="empty-state">No teams yet. Create your first team above.</div>';return;}
+  const departments=[...new Set(managementTeams.map(t=>t.department))];
+  box.innerHTML=departments.map(dept=>'<section class="department-group"><div class="department-heading"><b>'+escapeHtml(dept)+'</b><span>'+managementTeams.filter(t=>t.department===dept).length+' teams</span></div><div class="team-card-grid">'+managementTeams.filter(t=>t.department===dept).map(t=>'<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"No description")+'</small><em>'+Number(t.member_count||0)+' assigned staff</em></div><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></article>').join("")+'</div></section>').join("");
+}
+function renderTeamAssignmentMembers(){
+  const teamId=$("teamAssignmentSelect")?.value,select=$("teamMembersSelect");if(!select)return;
+  const q=($("teamMemberSearch")?.value||"").trim().toLowerCase();
+  const selected=teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(teamId||""));
+  const pool=teamStaffCache.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)));
+  select.innerHTML=pool.map(m=>'<option value="'+escapeHtml(m.id)+'"'+(selected.some(x=>String(x.id)===String(m.id))?' selected':'')+'>'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+(teamAssignments.has(String(m.id))&&String(teamAssignments.get(String(m.id)))!==String(teamId)?' · assigned elsewhere':'')+'</option>').join("");
+  $("teamAssignmentHelp").textContent=teamId?selected.length+" staff currently assigned. Select the members who should belong to this team.":"Select a team to load its current members.";
+}
+$("createTeam")?.addEventListener("click",async()=>{
+  const btn=$("createTeam");btn.disabled=true;
+  try{await api("/api/management/teams",{method:"POST",body:JSON.stringify({name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value})});
+    $("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";notice("Team created.","success");await loadTeamsSettings();
+  }catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
+});
+$("teamAssignmentSelect")?.addEventListener("change",renderTeamAssignmentMembers);
+$("teamMemberSearch")?.addEventListener("input",renderTeamAssignmentMembers);
+$("saveTeamMembers")?.addEventListener("click",async()=>{
+  const teamId=$("teamAssignmentSelect").value;if(!teamId){notice("Choose a team first.","error");return;}
+  const btn=$("saveTeamMembers");btn.disabled=true;
+  try{const userIds=Array.from($("teamMembersSelect").selectedOptions).map(o=>o.value);await api("/api/management/teams/"+encodeURIComponent(teamId)+"/members",{method:"PUT",body:JSON.stringify({userIds})});notice("Team assignments saved.","success");await loadTeamsSettings();}
+  catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
+});
+$("teamDirectory")?.addEventListener("click",async event=>{
+  const btn=event.target.closest("[data-team-delete]");if(!btn)return;
+  if(!confirm("Delete this team? Its staff assignments will be cleared."))return;
+  try{await api("/api/management/teams/"+encodeURIComponent(btn.dataset.teamDelete),{method:"DELETE"});notice("Team deleted.","success");await loadTeamsSettings();}
+  catch(e){notice(e.message,"error")}
+});
+$("directoryTeamFilter")?.addEventListener("change",renderStaffDirectory);
 async function loadGameSettings(){
   try{
     const d=await api("/api/settings/game-ranking");
