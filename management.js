@@ -248,39 +248,46 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   router.get("/leaves",async(req,res,next)=>{
     try{
-      const who=await identity(req); if(!who)return res.status(401).json({error:"Sign in first."});
-      const s=await settings();
-      const r=await pool.query("SELECT * FROM leave_requests WHERE user_id=$1 OR $2 >= $3 ORDER BY created_at DESC LIMIT 250",
-        [req.session.user.id,who.rank,s.leave_approve_rank]);
-      res.json({items:r.rows.map(x=>({...x,canDelete:String(x.user_id)===String(req.session.user.id)||who.rank>=Number(s.leave_approve_rank)})),rank:who.rank,settings:s});
+      const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+      const s=await settings(),canViewAll=Number(who.rank)>=Number(s.leave_approve_rank);
+      const r=canViewAll?await pool.query("SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM leave_requests WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
+      res.json({items:r.rows.map(x=>({...x,canDelete:(String(x.user_id)===String(req.session.user.id)&&x.status==="PENDING")||Number(who.rank)>=Number(s.leave_approve_rank)})),rank:Number(who.rank),settings:s,canViewAll});
+    }catch(e){next(e);}
+  });
+  router.get("/leaves/audit",async(req,res,next)=>{
+    try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),all=Number(who.rank)>=Number(s.leave_approve_rank);
+      const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category=$1 ORDER BY created_at DESC LIMIT 300",["LEAVE"]):await pool.query("SELECT * FROM management_audit_logs WHERE category=$1 AND actor_id=$2 ORDER BY created_at DESC LIMIT 100",["LEAVE",String(req.session.user.id)]);res.json({items:r.rows});
     }catch(e){next(e);}
   });
   router.post("/leaves",csrf,async(req,res,next)=>{
     try{
-      const b=req.body||{},discord=String(b.discordUsername||"").trim(),roblox=String(b.robloxUsername||"").trim(),reason=String(b.reason||"").trim();
-      const start=String(b.startDate||""),end=String(b.endDate||"");
-      const parse=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+"T00:00:00Z"):null;
+      const b=req.body||{},discord=String(b.discordUsername||"").trim(),roblox=String(b.robloxUsername||"").trim(),reason=String(b.reason||"").trim(),start=String(b.startDate||""),end=String(b.endDate||"");
+      const parse=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const d=new Date(s+"T00:00:00.000Z");return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==s?null:d;};
       const a=parse(start),z=parse(end),now=new Date();now.setUTCHours(0,0,0,0);
-      if(!discord||!roblox||!reason||!a||!z||a<now||z<a||((z-a)/86400000)>29)
-        return res.status(400).json({error:"Enter all fields. Leave must start today or later and last no more than 30 days."});
+      if(discord.length<2||discord.length>80||roblox.length<3||roblox.length>40||reason.length<8||reason.length>2000||!a||!z||a<now||z<a||((z-a)/86400000)>29)return res.status(400).json({error:"Check usernames, provide a reason of at least 8 characters, and choose valid dates within a 30-day period starting today or later."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-      const pending=await pool.query("SELECT id FROM leave_requests WHERE user_id=$1 AND status='PENDING'",[req.session.user.id]);
-      if(pending.rowCount)return res.status(409).json({error:"You already have a pending time-off request."});
-      const member=await pool.query("SELECT MAX(end_date) AS last_leave FROM leave_requests WHERE user_id=$1 AND status='APPROVED'",[req.session.user.id]);
-      const r=await pool.query("INSERT INTO leave_requests(user_id,roblox_username,discord_username,start_date,end_date,reason,status,last_leave_at) VALUES($1,$2,$3,$4,$5,$6,'PENDING',$7) RETURNING *",
-        [req.session.user.id,roblox,discord,a.toISOString().slice(0,10),z.toISOString().slice(0,10),reason,member.rows[0].last_leave]);
-      res.json({ok:true,item:r.rows[0]});
+      const client=await pool.connect();let item;
+      try{await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(req.session.user.id)]);
+        const pending=await client.query("SELECT id FROM leave_requests WHERE user_id=$1 AND status=$2 LIMIT 1",[String(req.session.user.id),"PENDING"]);
+        if(pending.rowCount){await client.query("ROLLBACK");return res.status(409).json({error:"You already have a pending time-off request. Wait for a decision or cancel it first."});}
+        const member=await client.query("SELECT MAX(end_date) AS last_leave FROM leave_requests WHERE user_id=$1 AND status=$2",[String(req.session.user.id),"APPROVED"]);
+        const result=await client.query("INSERT INTO leave_requests(user_id,roblox_username,discord_username,start_date,end_date,reason,status,last_leave_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[String(req.session.user.id),roblox,discord,start,end,reason,"PENDING",member.rows[0].last_leave]);item=result.rows[0];await client.query("COMMIT");
+      }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE","REQUESTED",String(item.user_id),item.roblox_username,"Request #"+item.id+" | "+start+" to "+end+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);
+      res.json({ok:true,item});
     }catch(e){next(e);}
   });
   router.post("/leaves/:id/decision",csrf,async(req,res,next)=>{
-    try{const who=await gate(req,res,"leave_approve_rank");if(!who)return;
-      const status=String(req.body?.status||"");if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});
-      const r=await pool.query("UPDATE leave_requests SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",
-        [status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
+    try{const who=await gate(req,res,"leave_approve_rank");if(!who)return;const status=String(req.body?.status||"");
+      if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});const note=String(req.body?.note||"").trim().slice(0,500);
+      if(status==="REJECTED"&&!note)return res.status(400).json({error:"Add a short reason when rejecting a leave request."});
+      const r=await pool.query("UPDATE leave_requests SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status=$6 RETURNING *",[status,req.session.user.id,req.session.user.name,note,req.params.id,"PENDING"]);
       if(!r.rowCount)return res.status(404).json({error:"Pending leave request not found."});
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE",status,String(r.rows[0].user_id),r.rows[0].roblox_username,"Request #"+r.rows[0].id+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
+
   router.delete("/sessions/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const r=await pool.query("DELETE FROM staff_shifts WHERE id=$1 AND (created_by=$2 OR $3>=$4) RETURNING id",[req.params.id,String(req.session.user.id),who.rank,Number((await settings()).session_delete_rank)]);if(!r.rowCount)return res.status(403).json({error:"Only the shift creator or a member meeting the configured delete rank can delete this shift."});res.json({ok:true});}catch(e){next(e);}});
   for(const [path,table,ownerCol,rankField] of [["punishments","management_punishments","created_by","punishment_approve_rank"],["promotions","promotion_suggestions","suggested_by","promotion_approve_rank"],["leaves","leave_requests","user_id","leave_approve_rank"]]){
     router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),canManage=who.rank>=Number(s[rankField]);const r=await pool.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);if(!r.rowCount)return res.status(403).json({error:"You do not have permission to delete this request."});if(path==="punishments")await writeAudit("DELETED",r.rows[0],req.session.user.id,req.session.user.name,"Record deleted");res.json({ok:true});}catch(e){next(e);}});
