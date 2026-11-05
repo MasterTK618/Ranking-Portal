@@ -92,8 +92,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=await pool.query("DELETE FROM knowledge_hub_items WHERE id=$1 RETURNING id",[req.params.id]);if(!r.rowCount)return res.status(404).json({error:"Knowledge item not found."});res.json({ok:true});
   }catch(e){next(e);}});
   router.get("/sessions",async(req,res,next)=>{try{
-    let who=null;try{who=await identity(req);}catch{}const result=await pool.query("SELECT * FROM staff_shifts ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
-    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=Number((await settings()).session_delete_rank)}))});
+    let who=null;try{who=await identity(req);}catch{}const cfg=await settings();const result=await pool.query("SELECT * FROM staff_shifts ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
+    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=Number(cfg.session_delete_rank)}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
     const allowed=await gate(req,res,"session_create_rank");if(!allowed)return;
