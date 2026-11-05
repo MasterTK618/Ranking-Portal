@@ -708,3 +708,6 @@ body:not(.dark) .main{background:#f3f4f6;color:#20211f}body:not(.dark) .topbar h
 .views-leader-row.leader-profile-link{display:grid;grid-template-columns:34px 38px minmax(120px,1fr) minmax(85px,auto) 60px 80px;align-items:center;gap:12px;width:100%;text-align:left;color:var(--text);cursor:pointer}
 .leader-member-copy{display:flex;flex-direction:column;gap:4px;min-width:0}.leader-member-copy b,.leader-member-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.leader-member-copy small{color:var(--muted);font-size:10px}
 @media(max-width:700px){.command-open{min-width:40px;padding:9px}.command-open span,.command-open kbd{display:none}.leader-summary span:last-child{display:none}.views-leader-row.leader-profile-link{grid-template-columns:26px 32px minmax(80px,1fr) 55px 55px}.leader-open-profile{display:none}}
+
+/* Home leaderboard */
+.overview-leaderboard-panel{grid-column:1/-1;margin:18px 0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--shadow)}.leader-footer{display:flex;justify-content:center;padding:18px 0 4px}.leader-footer .quiet-btn{min-width:210px}.overview-leaderboard-panel .leader-podium{max-width:760px;margin:18px auto 10px}.overview-leaderboard-panel .views-leader-row{max-width:900px;margin-left:auto;margin-right:auto}
