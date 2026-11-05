@@ -310,6 +310,17 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){next(e);}
   });
 
+  router.delete("/punishments/:id",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const s=await settings(),canManage=Number(who.rank)>=Number(s.punishment_approve_rank);
+    const found=await pool.query("SELECT * FROM management_punishments WHERE id=$1",[req.params.id]);
+    if(!found.rowCount)return res.status(404).json({error:"Discipline record not found."});
+    const item=found.rows[0];
+    if(String(item.created_by)!==String(req.session.user.id)&&!canManage)return res.status(403).json({error:"Only the requester or an authorized discipline reviewer can delete this record."});
+    await pool.query("DELETE FROM management_punishments WHERE id=$1",[req.params.id]);
+    await writeAudit("DELETED",item,req.session.user.id,req.session.user.name,"Discipline record deleted");
+    res.json({ok:true});
+  }catch(e){next(e);}});
   router.get("/promotions",async(req,res,next)=>{
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
       const r=await pool.query("SELECT * FROM promotion_suggestions ORDER BY created_at DESC LIMIT 250"),s=await settings();
@@ -356,17 +367,17 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
   router.post("/leaves",csrf,async(req,res,next)=>{
     try{
-      const b=req.body||{},discord=String(b.discordUsername||"").trim(),roblox=String(b.robloxUsername||"").trim(),reason=String(b.reason||"").trim(),start=String(b.startDate||""),end=String(b.endDate||"");
+      const b=req.body||{},roblox=String(b.robloxUsername||"").trim(),reason=String(b.reason||"").trim(),start=String(b.startDate||""),end=String(b.endDate||"");
       const parse=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const d=new Date(s+"T00:00:00.000Z");return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==s?null:d;};
       const a=parse(start),z=parse(end),offset=Number(b.timezoneOffset),safeOffset=Number.isInteger(offset)&&Math.abs(offset)<=840?offset:0,now=new Date(Date.now()-safeOffset*60000);now.setUTCHours(0,0,0,0);
-      if(discord.length<2||discord.length>80||roblox.length<3||roblox.length>40||reason.length<8||reason.length>2000||!a||!z||a<now||z<a||((z-a)/86400000)>29)return res.status(400).json({error:"Check usernames, provide a reason of at least 8 characters, and choose valid dates within a 30-day period starting today or later."});
+      if(roblox.length<3||roblox.length>40||reason.length<8||reason.length>2000||!a||!z||a<now||z<a||((z-a)/86400000)>29)return res.status(400).json({error:"Check your Roblox username, provide a reason of at least 8 characters, and choose valid dates within a 30-day period starting today or later."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const client=await pool.connect();let item;
       try{await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(req.session.user.id)]);
         const pending=await client.query("SELECT id FROM leave_requests WHERE user_id=$1 AND status=$2 LIMIT 1",[String(req.session.user.id),"PENDING"]);
         if(pending.rowCount){await client.query("ROLLBACK");return res.status(409).json({error:"You already have a pending time-off request. Wait for a decision or cancel it first."});}
         const member=await client.query("SELECT MAX(end_date) AS last_leave FROM leave_requests WHERE user_id=$1 AND status=$2",[String(req.session.user.id),"APPROVED"]);
-        const result=await client.query("INSERT INTO leave_requests(user_id,roblox_username,discord_username,start_date,end_date,reason,status,last_leave_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[String(req.session.user.id),roblox,discord,start,end,reason,"PENDING",member.rows[0].last_leave]);item=result.rows[0];await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE","REQUESTED",String(item.user_id),item.roblox_username,"Request #"+item.id+" | "+start+" to "+end+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
+        const result=await client.query("INSERT INTO leave_requests(user_id,roblox_username,start_date,end_date,reason,status,last_leave_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",[String(req.session.user.id),roblox,start,end,reason,"PENDING",member.rows[0].last_leave]);item=result.rows[0];await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["LEAVE","REQUESTED",String(item.user_id),item.roblox_username,"Request #"+item.id+" | "+start+" to "+end+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
       }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}
       res.json({ok:true,item});
     }catch(e){next(e);}
@@ -400,6 +411,8 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_create_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS session_delete_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS task_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS task_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_approve_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_status_rank INTEGER NOT NULL DEFAULT 245");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS management_team_members (user_id TEXT PRIMARY KEY,team_id BIGINT NOT NULL REFERENCES management_teams(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS group_role_rank INTEGER");
+  await pool.query("ALTER TABLE leave_requests ALTER COLUMN discord_username DROP NOT NULL");
   await pool.query("CREATE INDEX IF NOT EXISTS management_team_members_team_idx ON management_team_members(team_id)");
   await pool.query("INSERT INTO management_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING");
   await pool.query("CREATE TABLE IF NOT EXISTS staff_shifts (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL DEFAULT 'Shift',session_date DATE,session_time TIME,host_id TEXT,host_name TEXT,cohost_id TEXT,cohost_name TEXT,oversee_id TEXT,oversee_name TEXT,oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],promoter_id TEXT,promoter_name TEXT,attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],created_by TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
