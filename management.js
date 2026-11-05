@@ -230,12 +230,16 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",status,String(request.requested_by),request.requested_by_name,"Request #"+request.id+" | "+request.session_type+" | "+request.title+(scheduled?" | Scheduled session #"+scheduled.id:"")+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);
     await client.query("COMMIT");res.json({ok:true,item:updated.rows[0],session:scheduled});
   }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
-  router.delete("/session-requests/:id",csrf,async(req,res,next)=>{try{
+  router.delete("/session-requests/:id",csrf,async(req,res,next)=>{let client;try{
+    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid request ID."});
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canManage=Number(who.rank)>=Number(cfg.session_approve_rank);
-    const result=await pool.query("DELETE FROM session_requests WHERE id=$1 AND status='PENDING' AND (requested_by=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
-    if(!result.rowCount)return res.status(403).json({error:"Only the requester or an authorized reviewer can cancel a pending session request."});
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUEST_CANCELED",String(result.rows[0].requested_by),result.rows[0].requested_by_name,"Request #"+result.rows[0].id+" | "+result.rows[0].title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true});
-  }catch(e){next(e);}});
+    client=await pool.connect();await client.query("BEGIN");
+    const result=await client.query("DELETE FROM session_requests WHERE id=$1 AND status='PENDING' AND (requested_by=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
+    if(!result.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"This request is no longer pending, was already removed, or you cannot cancel it."});}
+    const item=result.rows[0];
+    await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUEST_CANCELED",String(item.requested_by),item.requested_by_name,"Request #"+item.id+" | "+item.title,String(req.session.user.id),String(req.session.user.name)]);
+    await client.query("COMMIT");res.json({ok:true});
+  }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   router.get("/session-requests/audit",async(req,res,next)=>{try{const who=await gate(req,res,"session_approve_rank");if(!who)return;const result=await pool.query("SELECT * FROM management_audit_logs WHERE category='SESSION' ORDER BY created_at DESC LIMIT 300");res.json({items:result.rows});}catch(e){next(e);}});
   router.patch("/sessions/:id/roles",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
