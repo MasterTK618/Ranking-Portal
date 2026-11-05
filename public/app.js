@@ -177,9 +177,24 @@ function renderTeamDirectory(){
   const mode=t.auto_assign_mode||"NONE",rule=mode==="ABOVE"?"Rank "+t.auto_assign_min_rank+":":mode==="RANGE"?"Ranks "+t.auto_assign_min_rank+"–"+t.auto_assign_max_rank:"Manual assignment";
   const assigned=teamStaffCache.filter(member=>teamAssignments.get(String(member.id))?.has(String(t.id)));
   const names=assigned.length?'<div class="team-card-members">'+assigned.map(member=>'<span class="team-member-chip">'+escapeHtml(member.username||("User "+member.id))+' <small>· '+escapeHtml(member.role||("Rank "+member.rank))+'</small></span>').join("")+'</div>':'<div class="team-card-empty">No staff assigned to this team yet.</div>';
-  return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Team")+'</small><em>'+assigned.length+' of '+teamStaffCache.length+' staff · '+escapeHtml(rule)+'</em></div>'+names+'<div class="team-card-actions"><button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Manage members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></div></article>';
+  return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Team")+'</small><em>'+assigned.length+' of '+teamStaffCache.length+' staff · '+escapeHtml(rule)+'</em></div>'+names+'<div class="team-card-actions"><button class="quiet-btn" data-team-dashboard="'+escapeHtml(t.id)+'">Team dashboard</button><button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Manage members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></div></article>';
  }).join("")+'</div>';
 }
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("[data-team-dashboard]");if(!b)return;
+ const card=b.closest(".team-card");if(!card)return;
+ let panel=card.querySelector(".team-dashboard-inline");if(panel){panel.remove();b.textContent="Team dashboard";return;}
+ b.disabled=true;b.textContent="Loading…";
+ try{
+  const d=await api("/api/management/teams/"+encodeURIComponent(b.dataset.teamDashboard)+"/dashboard");
+  panel=document.createElement("div");panel.className="team-dashboard-inline";
+  const hours=(d.activity||[]).reduce((n,x)=>n+Number(x.seconds||0),0)/3600;
+  const tasks=(d.tasks||[]).reduce((n,x)=>n+Number(x.count||0),0);
+  panel.innerHTML='<div class="team-dashboard-stats"><span><b>'+Number(d.members?.length||0)+'</b><small>Members</small></span><span><b>'+hours.toFixed(1)+'h</b><small>Recorded activity</small></span><span><b>'+Number(d.sessionCount||0)+'</b><small>Hosted sessions</small></span><span><b>'+tasks+'</b><small>Tracked tasks</small></span></div><div class="team-dashboard-task-list">'+(d.tasks||[]).map(x=>'<span>'+escapeHtml(x.status)+': '+Number(x.count)+'</span>').join(" · ")+'</div>';
+  card.appendChild(panel);b.textContent="Hide dashboard";
+ }catch(err){notice(err.message,"error");b.textContent="Team dashboard";}
+ finally{b.disabled=false;}
+});
 function renderTeamAssignmentMembers(){
  const teamId=$("teamAssignmentSelect")?.value,box=$("teamMembersSelect");if(!box)return;
  const q=($("teamMemberSearch")?.value||"").trim().toLowerCase();
