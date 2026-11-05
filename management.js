@@ -159,11 +159,18 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=await pool.query("UPDATE management_tasks SET status=$1,updated_at=NOW(),completed_at=CASE WHEN $1=$2 THEN NOW() ELSE NULL END WHERE id=$3 RETURNING *",[status,"COMPLETED",req.params.id]);
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK",status,r.rows[0].assigned_to_id,r.rows[0].assigned_to_name,"Task #"+r.rows[0].id+" | "+r.rows[0].title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:r.rows[0]});
   }catch(e){next(e);}});
-  router.delete("/tasks/:id",csrf,async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),found=await pool.query("SELECT * FROM management_tasks WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Task not found."});const task=found.rows[0];
-    if(String(task.created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(s.task_manage_rank))return res.status(403).json({error:"Only the task creator or a task manager can delete this task."});
-    await pool.query("DELETE FROM management_tasks WHERE id=$1",[req.params.id]);await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","DELETED",task.assigned_to_id,task.assigned_to_name,"Task #"+task.id+" | "+task.title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true});
-  }catch(e){next(e);}});
+  router.delete("/tasks/:id",csrf,async(req,res,next)=>{let client;try{
+    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid task ID."});
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const s=await settings();client=await pool.connect();await client.query("BEGIN");
+    const found=await client.query("SELECT * FROM management_tasks WHERE id=$1 FOR UPDATE",[req.params.id]);
+    if(!found.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"This task may already have been deleted. Refresh the task board."});}
+    const task=found.rows[0];
+    if(String(task.created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(s.task_manage_rank)){await client.query("ROLLBACK");return res.status(403).json({error:"Only the task creator or a task manager can delete this task."});}
+    await client.query("DELETE FROM management_tasks WHERE id=$1",[req.params.id]);
+    await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","DELETED",task.assigned_to_id,task.assigned_to_name,"Task #"+task.id+" | "+task.title,String(req.session.user.id),String(req.session.user.name)]);
+    await client.query("COMMIT");res.json({ok:true});
+  }catch(e){if(client)try{await client.query("ROLLBACK")}catch{};next(e);}finally{client?.release();}});
   router.get("/session-requests",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank);
     const result=canReview?await pool.query("SELECT * FROM session_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM session_requests WHERE requested_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
@@ -254,6 +261,23 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       [title,date,time,host,nameMap[host],cohost,cohost?nameMap[cohost]:null,overseeIds[0]||null,overseeIds.map(id=>nameMap[id]).join(", ")||null,overseeIds,overseeIds.map(id=>nameMap[id]),promoter,promoter?nameMap[promoter]:null,attendeeIds,attendeeIds.map(id=>nameMap[id]),req.session.user.id,["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(String(b.sessionType||""))?String(b.sessionType):"PROMOTIONAL","PLANNED"]);
     res.json({ok:true,session:result.rows[0]});
   }catch(e){next(e);}});
+  router.post("/members/:id/notes",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<238)return res.status(403).json({error:"Rank 238 or higher is required to add staff notes."});
+    const userId=String(req.params.id||""),body=String(req.body?.body||"").trim();
+    if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
+    if(body.length<2||body.length>2000)return res.status(400).json({error:"Notes must be between 2 and 2,000 characters."});
+    const target=await getIdentity(userId);if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"Staff member not found."});
+    const r=await pool.query("INSERT INTO management_member_notes(user_id,body,created_by,created_by_name) VALUES($1,$2,$3,$4) RETURNING *",[userId,body,String(req.session.user.id),String(req.session.user.name)]);
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["MEMBER_NOTE","CREATED",userId,target.username||userId,"Note #"+r.rows[0].id,String(req.session.user.id),String(req.session.user.name)]);
+    res.json({ok:true,note:r.rows[0]});
+  }catch(e){next(e);}});
+  router.delete("/members/:id/notes/:noteId",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const result=await pool.query("DELETE FROM management_member_notes WHERE id=$1 AND user_id=$2 AND (created_by=$3 OR $4>=245) RETURNING *",[req.params.noteId,req.params.id,String(req.session.user.id),Number(who.rank)]);
+    if(!result.rowCount)return res.status(404).json({error:"Note not found, or you do not have permission to remove it."});
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["MEMBER_NOTE","DELETED",String(req.params.id),"Staff member","Note #"+req.params.noteId,String(req.session.user.id),String(req.session.user.name)]);
+    res.json({ok:true});
+  }catch(e){next(e);}});
   router.get("/members/:id", async(req,res,next)=>{
     try{
       const userId=String(req.params.id||"");
@@ -275,7 +299,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const sessions=await pool.query("SELECT * FROM staff_shifts WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
       const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const activity=await pool.query("SELECT COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0) AS seconds,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
-      res.json({member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]});
+      const notes=await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
+      const viewer=await identity(req);
+      res.json({canAddNotes:Number(viewer?.rank||0)>=238,canModerateNotes:Number(viewer?.rank||0)>=245,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows});
     }catch(e){next(e);}
   });
 
@@ -514,6 +540,11 @@ async function ensureManagementSchema(pool) {
   await pool.query("CREATE INDEX IF NOT EXISTS management_audit_category_created_idx ON management_audit_logs(category,created_at DESC)");
   await pool.query("CREATE TABLE IF NOT EXISTS management_tasks (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',assigned_to_id TEXT NOT NULL,assigned_to_name TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',status TEXT NOT NULL DEFAULT 'OPEN',due_date DATE,created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),completed_at TIMESTAMPTZ)");
   await pool.query("CREATE INDEX IF NOT EXISTS management_tasks_status_due_idx ON management_tasks(status,due_date)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS management_member_notes (
+    id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,body TEXT NOT NULL,
+    created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query("CREATE INDEX IF NOT EXISTS management_member_notes_user_created_idx ON management_member_notes(user_id,created_at DESC)");
   await pool.query(`CREATE TABLE IF NOT EXISTS promotion_suggestions (
     id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,username TEXT NOT NULL,suggested_role TEXT NOT NULL,reason TEXT NOT NULL,
     status TEXT NOT NULL,suggested_by TEXT NOT NULL,suggested_by_name TEXT NOT NULL,decided_by TEXT,decided_by_name TEXT,
