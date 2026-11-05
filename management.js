@@ -80,7 +80,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const ids=[b.hostId,b.cohostId,b.overseeId,b.promoterId,...attendeeIds].filter(Boolean).map(String);
       if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)
         return res.status(400).json({error:"Enter a session name, date, time, and host."});
-      if(ids.length>250||new Set(ids).size!==ids.length)
+      if(new Set(ids).size!==ids.length)
         return res.status(400).json({error:"A staff member can only be assigned one role per session."});
       const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
       if(identities.some(x=>!x.who.inGroup))return res.status(400).json({error:"Every selected person must be a current Lemonz member."});
