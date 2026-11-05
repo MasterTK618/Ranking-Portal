@@ -98,6 +98,21 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){next(e);}
   });
 
+  router.get("/members/:id", async(req,res,next)=>{
+    try{
+      const userId=String(req.params.id||"");
+      if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
+      const who=await getIdentity(userId);
+      if(!who.inGroup||who.rank<230)return res.status(404).json({error:"Staff member not found."});
+      const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));
+      const user=await profile.json().catch(()=>({}));
+      const sessions=await pool.query("SELECT * FROM portal_sessions WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 ORDER BY session_date DESC,session_time DESC",[userId]);
+      const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
+      const activity=await pool.query("SELECT COALESCE(SUM(seconds),0)::BIGINT AS seconds,COUNT(*)::INTEGER AS sessions,MAX(ended_at) AS last_seen FROM activity_sessions WHERE user_id=$1 AND ended_at IS NOT NULL",[userId]);
+      res.json({member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":s.oversee_id===userId?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]});
+    }catch(e){next(e);}
+  });
+
   router.get("/activity", async (req,res,next) => {
     try {
       const who=await gate(req,res,"activity_view_rank"); if(!who)return;
