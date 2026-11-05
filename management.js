@@ -130,7 +130,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.get("/tasks",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings();if(Number(who.rank)<Number(s.task_view_rank))return res.status(403).json({error:"Your rank cannot access staff tasks."});
-    const r=await pool.query("SELECT * FROM management_tasks ORDER BY CASE status WHEN $1 THEN 0 WHEN $2 THEN 1 WHEN $3 THEN 2 ELSE 3 END,due_date NULLS LAST,created_at DESC",["OPEN","IN_PROGRESS","BLOCKED"]);
+    const r=await pool.query("SELECT t.*,mt.name AS assigned_team_name,mt.department AS assigned_department FROM management_tasks t LEFT JOIN management_team_members tm ON tm.user_id=t.assigned_to_id LEFT JOIN management_teams mt ON mt.id=tm.team_id ORDER BY CASE t.status WHEN $1 THEN 0 WHEN $2 THEN 1 WHEN $3 THEN 2 ELSE 3 END,t.due_date NULLS LAST,t.created_at DESC",["OPEN","IN_PROGRESS","BLOCKED"]);
     res.json({items:r.rows.map(x=>({...x,canUpdate:String(x.assigned_to_id)===String(req.session.user.id)||String(x.created_by)===String(req.session.user.id)||Number(who.rank)>=Number(s.task_manage_rank),canDelete:String(x.created_by)===String(req.session.user.id)||Number(who.rank)>=Number(s.task_manage_rank)})),rank:Number(who.rank),settings:s,canManage:Number(who.rank)>=Number(s.task_manage_rank)});
   }catch(e){next(e);}});
   router.get("/tasks/audit",async(req,res,next)=>{try{const who=await gate(req,res,"task_manage_rank");if(!who)return;const r=await pool.query("SELECT * FROM management_audit_logs WHERE category=$1 ORDER BY created_at DESC LIMIT 200",["TASK"]);res.json({items:r.rows});}catch(e){next(e);}});
@@ -185,7 +185,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const result=await pool.query("UPDATE staff_shifts SET status=$1,status_note=$2,updated_at=NOW() WHERE id=$3 RETURNING *",[status,note,req.params.id]);await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",status,String(current.id),current.title,"Session #"+current.id+" | "+current.title+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,session:result.rows[0]});
   }catch(e){next(e);}});
   router.get("/sessions",async(req,res,next)=>{try{
-    let who=null;try{who=await identity(req);}catch{}const cfg=await settings();const result=await pool.query("SELECT * FROM staff_shifts ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
+    let who=null;try{who=await identity(req);}catch{}const cfg=await settings();const result=await pool.query("SELECT sh.*,tm.name AS host_team_name,tm.department AS host_department FROM staff_shifts sh LEFT JOIN management_team_members tmem ON tmem.user_id=sh.host_id LEFT JOIN management_teams tm ON tm.id=tmem.team_id ORDER BY sh.session_date NULLS LAST,sh.session_time NULLS LAST,sh.created_at DESC");
     res.json({canCreate:Number(who?.rank||0)>=Number(cfg.session_create_rank),sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=Number(cfg.session_delete_rank),canUpdate:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=Number(cfg.session_status_rank)}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
