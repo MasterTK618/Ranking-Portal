@@ -95,11 +95,32 @@ async function loadLogs(){
   }catch(e){$("logsTable").textContent=e.message}
 }
 $("refreshLogs").addEventListener("click",loadLogs);
+
+async function loadManagementSettings(){
+  try{
+    const d=await api("/api/management/settings");
+    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank"};
+    Object.entries(map).forEach(([key,id])=>$(id).value=d.settings[key]);
+  }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
+}
+$("saveManagementSettings").addEventListener("click",async()=>{
+  const btn=$("saveManagementSettings");btn.disabled=true;btn.textContent="Saving…";
+  try{
+    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank"};
+    const values={};Object.entries(map).forEach(([key,id])=>values[key]=Number($(id).value));
+    await api("/api/management/settings",{method:"PUT",body:JSON.stringify(values)});
+    notice("Management permissions saved.","success");
+  }catch(e){notice(e.message,"error")}
+  finally{btn.disabled=false;btn.textContent="Save management permissions"}
+});
+
 async function loadGameSettings(){
   try{
     const d=await api("/api/settings/game-ranking");
     if(!d.canConfigure){$("settingsNav").classList.add("hidden");notice("Only the group owner can configure in-game ranking.","error");return}
     const s=d.settings;
+    await loadManagementSettings();
+    const gameMinActorRankElement=$("gameMinActorRank");
     $("gameMinActorRank").value=s.min_actor_rank;
     $("gameMinTargetRank").value=s.min_target_rank;
     $("gameRankingEnabled").checked=s.enabled;
