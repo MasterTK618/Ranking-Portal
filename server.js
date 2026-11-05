@@ -169,7 +169,8 @@ app.post("/auth/challenge", async (req,res,next) => {
     const data = await lookup.json();
     const found = data.data?.[0];
     if (!lookup.ok || !found) return res.status(404).json({error:"Roblox username not found."});
-    const emojiPool = ["🍋","⭐","🌙","🍉","🍒","🌼","🧁","🍀","🫧","🍓","🌈","🐝","🍊","💛","🪻","🍇","🦋","☀️","🍪","🎀"];\n    const code = Array.from({length:5},()=>emojiPool[crypto.randomInt(emojiPool.length)]).join(" ");
+    const emojiPool = ["🍋","⭐","🌙","🍉","🍒","🌼","🧁","🍀","🫧","🍓","🌈","🐝","🍊","💛","🪻","🍇","🦋","☀️","🍪","🎀"];
+    const code = Array.from({length:5},()=>emojiPool[crypto.randomInt(emojiPool.length)]).join(" ");
     req.session.pendingVerification = { id:String(found.id), name:found.name, code, expiresAt:Date.now()+10*60*1000, attempts:0 };
     req.session.save(err => {
       if (err) return next(err);
