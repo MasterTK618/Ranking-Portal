@@ -600,7 +600,7 @@ function renderStaffDirectory(){
  status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search or team filter.";
  result.innerHTML=list.map(m=>{
   const teamIds=teamAssignments.get(String(m.id))||new Set(),teams=managementTeams.filter(t=>teamIds.has(String(t.id)));
-  const picker=Number(sessionData?.identity?.rank)>=255?'<button class="quiet-btn" type="button" data-member-teams="'+escapeHtml(m.id)+'">Manage teams</button>':"";
+  const picker=Number(sessionData?.identity?.rank)>=255?'<button class="quiet-btn" type="button" data-member-teams="'+escapeHtml(m.id)+'">＋ Teams</button>':"";
   return '<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small><small class="staff-team-label">'+(teams.length?teams.map(t=>'<i style="background:'+escapeHtml(t.color)+'"></i>'+escapeHtml(t.department)+' · '+escapeHtml(t.name)).join(" · "):'Unassigned')+'</small></span><span class="staff-card-side"><span class="rank-pill">R'+m.rank+'</span>'+picker+'</span></article>';
  }).join("");
 }
@@ -642,31 +642,54 @@ $("directoryButton")?.addEventListener("click",()=>loadStaffDirectory(true));
    const link=document.createElement("a");link.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);link.download="lemonz-staff-directory.csv";link.click();
  });
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-$("directoryResult")?.addEventListener("click",e=>{if(e.target.closest("select"))return;const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
+$("directoryResult")?.addEventListener("click",e=>{if(e.target.closest("select,button"))return;const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
-async function showStaffProfile(id){
+async function showStaffProfile(id,openTeams=false){
   const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML='<div class="profile-loading"><span class="loading-dot"></span> Loading staff profile…</div>';
   try{
     const d=await api("/api/management/members/"+encodeURIComponent(id)),m=d.member;
-    const tabs=[["overview","Overview"],["shifts","Shift history"],["discipline","Discipline"],["notes","Management notes"]];
+    const canManageTeams=Number(sessionData?.identity?.rank)>=255;const tabs=[["overview","Overview"],["teams","Teams"],["shifts","Shift history"],["discipline","Discipline"],["notes","Management notes"]].filter(t=>t[0]!=="teams"||canManageTeams);
     panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">STAFF PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.role)+' · Rank '+m.rank+'</p><span class="profile-id">Roblox ID '+escapeHtml(m.id)+'</span></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div>'+
     '<div class="profile-stats"><div><b>'+d.sessions.length+'</b><small>Shifts attended</small></div><div><b>'+d.punishments.length+'</b><small>Punishments</small></div><div><b>'+Math.floor(Number(d.activity?.seconds||0)/3600)+'h</b><small>Recorded activity</small></div></div>'+
     '<div class="profile-activity"><div class="profile-activity-heading"><div><h4>Recent session attendance</h4><p>Sessions recorded over the last seven days</p></div><span>'+d.sessions.filter(s=>new Date(String(s.session_date).slice(0,10)+"T00:00:00")>=new Date(Date.now()-7*86400000)).length+' sessions</span></div><div class="profile-week-chart">'+Array.from({length:7},(_,i)=>{const day=new Date();day.setHours(0,0,0,0);day.setDate(day.getDate()-(6-i));const count=d.sessions.filter(s=>String(s.session_date).slice(0,10)===day.toISOString().slice(0,10)).length;return '<div class="profile-week-day"><b>'+count+'</b><i style="height:'+Math.max(4,Math.min(100,count*24))+'%"></i><small>'+day.toLocaleDateString(undefined,{weekday:"short"})+'</small></div>';}).join("")+'</div></div>'+
     '<nav class="profile-tabs" aria-label="Staff profile sections">'+tabs.map((t,i)=>'<button type="button" class="profile-tab'+(i===0?' active':'')+'" data-profile-tab="'+t[0]+'">'+t[1]+'</button>').join("")+'</nav>'+
     '<section class="profile-panel" data-profile-panel="overview"><div class="profile-columns"><section><h4>Staff overview</h4><div class="profile-detail-row"><span>Current role</span><b>'+escapeHtml(m.role)+'</b></div><div class="profile-detail-row"><span>Group rank</span><b>'+m.rank+'</b></div><div class="profile-detail-row"><span>Game sessions</span><b>'+Number(d.activity?.sessions||0)+'</b></div><div class="profile-detail-row"><span>Last activity</span><b>'+escapeHtml(d.activity?.last_seen?formatDate(d.activity.last_seen):"No activity recorded")+'</b></div></section><section><h4>Recent activity</h4><p class="muted">This profile brings together attendance, recorded activity, discipline history, and internal management notes.</p><button type="button" class="quiet-btn" data-profile-tab-jump="shifts">View shift history →</button></section></div></section>'+
-    '<section class="profile-panel hidden" data-profile-panel="shifts"><h4>Shift history</h4>'+(d.sessions.length?'<ul class="history-list">'+d.sessions.map(s=>'<li><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_date).slice(0,10))+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+escapeHtml(s.member_role||"Attendee")+'</small></li>').join("")+'</ul>':'<p class="muted">No shifts recorded.</p>')+'</section>'+
+    '<section class="profile-panel hidden" data-profile-panel="teams"><div class="profile-notes-heading"><div><h4>Team memberships</h4><p class="muted">Assign this staff member to one or more teams. Changes save directly to their profile.</p></div><span class="profile-note-count" id="profileTeamCount">Loading teams…</span></div><div class="profile-team-toolbar"><input id="profileTeamSearch" type="search" placeholder="Search teams…"><button type="button" class="quiet-btn" id="profileTeamClear">Clear all</button></div><div id="profileTeamChoices" class="profile-team-choices"><div class="empty-state">Loading available teams…</div></div><div class="profile-team-footer"><span id="profileTeamStatus" class="muted">Select the teams this staff member belongs to.</span><button type="button" class="primary-btn" id="saveProfileTeams">Save team changes</button></div></section><section class="profile-panel hidden" data-profile-panel="shifts"><h4>Shift history</h4>'+(d.sessions.length?'<ul class="history-list">'+d.sessions.map(s=>'<li><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_date).slice(0,10))+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+escapeHtml(s.member_role||"Attendee")+'</small></li>').join("")+'</ul>':'<p class="muted">No shifts recorded.</p>')+'</section>'+
     '<section class="profile-panel hidden" data-profile-panel="discipline"><h4>Discipline history</h4>'+(d.punishments.length?'<ul class="history-list">'+d.punishments.map(p=>'<li><b>'+escapeHtml(p.type)+' · '+escapeHtml(p.status)+'</b><small>'+escapeHtml(p.reason)+' · '+escapeHtml(formatDate(p.created_at))+'</small></li>').join("")+'</ul>':'<p class="muted">No punishment records.</p>')+'</section>'+
     '<section class="profile-panel hidden" data-profile-panel="notes"><div class="profile-notes-heading"><div><h4>Management notes</h4><p class="muted">Internal notes for staff management. Keep entries factual and professional.</p></div><span class="profile-note-count">'+(d.notes||[]).length+' notes</span></div>'+
     (d.canAddNotes?'<form id="memberNoteForm" class="member-note-form"><label for="memberNoteBody">ADD A NOTE</label><textarea id="memberNoteBody" rows="3" maxlength="2000" placeholder="Write a private management note about this staff member…"></textarea><div class="profile-note-footer"><small>Visible to authorized staff viewing this profile.</small><button class="primary-btn" type="submit">＋ Add note</button></div></form>':'<p class="muted">You need rank 238 or higher to add management notes.</p>')+
     '<div id="memberNotesList" class="member-notes-list">'+((d.notes||[]).length?d.notes.map(n=>'<article class="member-note"><div><b>'+escapeHtml(n.created_by_name)+'</b><time>'+escapeHtml(formatDate(n.created_at))+'</time></div><p>'+escapeHtml(n.body)+'</p>'+((String(n.created_by)===String(sessionData?.user?.id)||d.canModerateNotes)?'<button type="button" class="danger-text-btn" data-note-delete="'+escapeHtml(n.id)+'">Delete note</button>':'')+'</article>').join(""):'<div class="empty-state">No management notes yet.</div>')+'</div></section>';
     panel.dataset.memberId=String(m.id);
+    if(canManageTeams){await loadProfileTeamEditor(m.id);if(openTeams)panel.querySelector('[data-profile-tab="teams"]')?.click();}
     panel.scrollIntoView({behavior:"smooth",block:"start"});
   }catch(e){panel.innerHTML='<div class="profile-error">'+escapeHtml(e.message)+'</div>';}
+}
+async function loadProfileTeamEditor(userId){
+ const choices=$("profileTeamChoices"),status=$("profileTeamStatus"),save=$("saveProfileTeams");
+ if(!choices||!save)return;
+ choices.innerHTML='<div class="empty-state">Loading teams…</div>';save.disabled=true;
+ try{
+  const data=await api("/api/management/teams"),teams=Array.isArray(data.teams)?data.teams:[],members=Array.isArray(data.members)?data.members:[];
+  const selected=new Set(members.filter(x=>String(x.user_id)===String(userId)).map(x=>String(x.team_id)));
+  const render=()=>{
+   const q=($("profileTeamSearch")?.value||"").trim().toLowerCase();
+   const filtered=teams.filter(t=>[t.name,t.description,t.department].some(v=>String(v||"").toLowerCase().includes(q)));
+   choices.innerHTML=filtered.length?filtered.map(t=>'<label class="profile-team-option"><input type="checkbox" data-profile-team="'+escapeHtml(t.id)+'" '+(selected.has(String(t.id))?'checked':'')+'><span class="profile-team-swatch" style="background:'+escapeHtml(t.color||"#f5c928")+'"></span><span class="profile-team-option-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||t.department||"Team")+'</small></span><span class="profile-team-option-state">'+(selected.has(String(t.id))?'Assigned':'Not assigned')+'</span></label>').join(""):'<div class="empty-state">No teams match your search.</div>';
+   $("profileTeamCount").textContent=selected.size+" of "+teams.length+" assigned";
+   choices.querySelectorAll("[data-profile-team]").forEach(input=>input.addEventListener("change",()=>{const id=String(input.dataset.profileTeam);if(input.checked)selected.add(id);else selected.delete(id);render();}));
+  };
+  render();
+  $("profileTeamSearch")?.addEventListener("input",render,{once:true});
+  $("profileTeamClear")?.addEventListener("click",()=>{selected.clear();render();});
+  save.onclick=async()=>{save.disabled=true;save.textContent="Saving…";try{await api("/api/management/teams/member/"+encodeURIComponent(userId),{method:"PUT",body:JSON.stringify({teamIds:[...selected]})});status.textContent="Team memberships saved.";status.className="success-text";const fresh=await api("/api/management/teams");managementTeams=fresh.teams||[];teamAssignments=new Map();for(const row of(fresh.members||[])){const id=String(row.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(row.team_id));}renderStaffDirectory();renderTeamDirectory();$("profileTeamCount").textContent=selected.size+" of "+teams.length+" assigned";}catch(err){status.textContent=err.message;status.className="error-text";}finally{save.disabled=false;save.textContent="Save team changes";}};
+  save.disabled=false;
+ }catch(err){choices.innerHTML='<div class="empty-state error-state">'+escapeHtml(err.message)+'</div>';status.textContent="Could not load team memberships.";save.disabled=true;}
 }
 document.addEventListener("click",async e=>{
   const tab=e.target.closest("[data-profile-tab],[data-profile-tab-jump]");
   if(tab){const key=tab.dataset.profileTab||tab.dataset.profileTabJump,panel=$("memberProfile");panel.querySelectorAll("[data-profile-panel]").forEach(x=>x.classList.toggle("hidden",x.dataset.profilePanel!==key));panel.querySelectorAll("[data-profile-tab]").forEach(x=>x.classList.toggle("active",x.dataset.profileTab===key));return;}
+  const teamButton=e.target.closest("[data-member-teams]");if(teamButton){e.preventDefault();e.stopPropagation();await showStaffProfile(String(teamButton.dataset.memberTeams),true);return;}
   const del=e.target.closest("[data-note-delete]");if(del){if(!confirm("Delete this management note?"))return;del.disabled=true;try{await api("/api/management/members/"+encodeURIComponent($("memberProfile").dataset.memberId)+"/notes/"+encodeURIComponent(del.dataset.noteDelete),{method:"DELETE"});await showStaffProfile($("memberProfile").dataset.memberId);$("memberProfile").querySelector('[data-profile-tab="notes"]')?.click();}catch(err){notice(err.message,"error");del.disabled=false;}return;}
 });
 document.addEventListener("submit",async e=>{
