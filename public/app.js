@@ -421,19 +421,60 @@ function drawSessionsCalendar(items){
   for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day"><b>'+day+'</b>'+events.map(s=>'<div class="calendar-event">'+escapeHtml(s.title)+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+'</div>').join("")+'</div>');}
   $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
-async function loadSessions(){
-  try{
-    if(!staffDirectory.length)await loadStaffDirectory();
-    const d=await api("/api/management/sessions"),all=d.sessions||[];$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);
-    const now=new Date(),upcoming=all.filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;
-    const thisMonth=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(now)).length;
-    $("sessionSummary").innerHTML='<div class="session-stat"><span>▦</span><small>TOTAL SCHEDULED</small><b>'+all.length+'</b><em>All recorded sessions</em></div><div class="session-stat"><span>◷</span><small>UPCOMING</small><b>'+upcoming+'</b><em>Still to take place</em></div><div class="session-stat"><span>▤</span><small>THIS MONTH</small><b>'+thisMonth+'</b><em>Sessions on the calendar</em></div>';
-    const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
-    $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
-    const q=($("sessionSearch")?.value||"").trim().toLowerCase(),filter=$("sessionFilter")?.value||"all",visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=new Date();const textMatch=!q||[s.title,s.session_date,s.session_time,s.host_name,s.cohost_name,s.oversee_name,(s.oversee_names||[]).join(" "),s.promoter_name,(s.attendee_names||[]).join(" ")].some(v=>String(v||"").toLowerCase().includes(q));return textMatch&&(filter==="all"||(filter==="upcoming"&&future)||(filter==="past"&&!future));});
-    $("sessionList").innerHTML=visible.length?'<table class="data-table"><thead><tr><th>DATE</th><th>SHIFT</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th><th>STATUS</th><th></th></tr></thead><tbody>'+visible.map(s=>'<tr><td>'+escapeHtml(String(s.session_date||"").slice(0,10))+'</td><td><b>'+escapeHtml(s.title)+'</b></td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name||"—")+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml((s.oversee_names||[]).join(", ")||s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td><td><span class="status-pill">'+(new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=new Date()?"Upcoming":"Past")+'</span></td><td>'+(s.canDelete?'<button class="danger-btn" data-delete="session" data-id="'+s.id+'">Delete</button>':"")+'</td></tr>').join("")+'</tbody></table>':(all.length?"No shifts match your search.":"No shifts scheduled yet.");
-  }catch(e){$("sessionList").textContent=e.message;}
+function sessionTypeLabel(v){return v==="RECRUITMENT"?"Recruitment":v==="MINI_GAMES"?"Mini-Games":"Promotional";}
+function sessionStatusLabel(v){return ({PLANNED:"Planned",ONGOING:"On-Going",DELAYED:"Delayed",CANCELED:"Canceled",COMPLETED:"Completed"})[v]||"Planned";}
+function sessionStatusControl(s){return s.canUpdate?'<select class="task-status-select session-status-select" data-session-status="'+escapeHtml(s.id)+'">'+["PLANNED","ONGOING","DELAYED","CANCELED","COMPLETED"].map(v=>'<option value="'+v+'"'+(s.status===v?" selected":"")+'>'+sessionStatusLabel(v)+'</option>').join("")+'</select>':'<span class="status-pill status-'+String(s.status||"PLANNED").toLowerCase()+'">'+sessionStatusLabel(s.status||"PLANNED")+'</span>';}
+function renderSessionTable(items,el,searchText=""){
+ const q=searchText.toLowerCase(),rows=items.filter(s=>!q||[s.title,s.session_type,s.status,s.status_note,s.host_name,s.cohost_name,s.session_date,s.promoter_name].some(v=>String(v||"").toLowerCase().includes(q)));
+ el.innerHTML=rows.length?'<table class="data-table session-data-table"><thead><tr><th>SESSION</th><th>TYPE</th><th>DATE &amp; TIME</th><th>HOST / CO-HOST</th><th>OVERSEE / PROMOTER</th><th>ATTENDEES</th><th>STATUS</th><th></th></tr></thead><tbody>'+rows.map(s=>'<tr><td><b>'+escapeHtml(s.title)+'</b>'+(s.status_note?'<small class="table-subtext">'+escapeHtml(s.status_note)+'</small>':"")+'</td><td><span class="session-type-pill">'+sessionTypeLabel(s.session_type)+'</span></td><td>'+escapeHtml(String(s.session_date||"").slice(0,10))+'<small class="table-subtext">'+escapeHtml(String(s.session_time||"").slice(0,5))+'</small></td><td>'+escapeHtml(s.host_name||"—")+'<small class="table-subtext">'+escapeHtml(s.cohost_name||"")+'</small></td><td>'+escapeHtml((s.oversee_names||[]).join(", ")||s.oversee_name||"—")+'<small class="table-subtext">'+escapeHtml(s.promoter_name||"")+'</small></td><td>'+escapeHtml((s.attendee_names||[]).join(", ")||"—")+'</td><td>'+sessionStatusControl(s)+'</td><td>'+(s.canDelete?'<button class="danger-btn" data-delete="session" data-id="'+s.id+'">Delete</button>':"")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No sessions match this view.</div>';
 }
+async function loadSessions(){
+ try{
+  if(!staffDirectory.length)await loadStaffDirectory();
+  const d=await api("/api/management/sessions"),all=d.sessions||[];$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);
+  const now=new Date(),upcoming=all.filter(s=>s.status==="PLANNED"||s.status==="DELAYED").filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;
+  const counts=[["TOTAL SESSIONS",all.length,"All recorded events"],["UPCOMING",upcoming,"Planned or delayed"],["ON-GOING",all.filter(s=>s.status==="ONGOING").length,"Currently running"],["COMPLETED",all.filter(s=>s.status==="COMPLETED").length,"Successfully delivered"]];
+  $("sessionSummary").innerHTML=counts.map(x=>'<article class="session-stat"><span>▦</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
+  const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
+  $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
+  const q=$("sessionSearch")?.value||"",filter=$("sessionFilter")?.value||"all";
+  const visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now;return filter==="all"||(filter==="upcoming"&&future&&["PLANNED","DELAYED"].includes(s.status))||(filter==="past"&&(!future||["CANCELED","COMPLETED"].includes(s.status)));});
+  renderSessionTable(visible,$("sessionList"),q);
+  const historyFilter=$("sessionHistoryFilter")?.value||"all",historyQ=$("sessionHistorySearch")?.value||"";
+  const history=all.filter(s=>["COMPLETED","CANCELED","DELAYED"].includes(s.status)&&(historyFilter==="all"||s.status===historyFilter));
+  renderSessionTable(history,$("sessionHistoryList"),historyQ);
+ }catch(e){$("sessionList").innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+async function loadSessionRequests(){
+ const el=$("sessionRequestTable");if(!el)return;el.textContent="Loading session requests…";
+ try{const d=await api("/api/management/session-requests"),items=d.items||[];
+  const pending=items.filter(x=>x.status==="PENDING").length,approved=items.filter(x=>x.status==="APPROVED").length;
+  el.innerHTML='<div class="request-summary"><span>'+items.length+' total requests</span><span>'+pending+' pending</span><span>'+approved+' approved</span></div>'+(items.length?'<table class="data-table"><thead><tr><th>REQUEST</th><th>TYPE</th><th>PREFERRED DATE</th><th>REQUESTED BY</th><th>STATUS</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+items.map(x=>'<tr><td><b>'+escapeHtml(x.title)+'</b><small class="table-subtext">'+escapeHtml(x.details)+'</small></td><td>'+sessionTypeLabel(x.session_type)+'</td><td>'+dateOnly(x.preferred_date)+'<small class="table-subtext">'+escapeHtml(String(x.preferred_time||"").slice(0,5))+'</small></td><td>'+escapeHtml(x.requested_by_name)+'</td><td><span class="status-pill status-'+String(x.status).toLowerCase()+'">'+escapeHtml(x.status)+'</span></td><td>'+escapeHtml(x.review_note||"—")+'</td><td>'+(d.canReview&&x.status==="PENDING"?'<button class="quiet-btn" data-session-request-decision="'+x.id+'" data-status="APPROVED">Approve</button> <button class="quiet-btn" data-session-request-decision="'+x.id+'" data-status="REJECTED">Decline</button>':"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No session requests have been submitted yet.</div>');
+  $("sessionRequestAuditCard").classList.toggle("hidden",!d.canReview);if(d.canReview)await loadSessionRequestAudit();
+ }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+async function loadSessionRequestAudit(){
+ const el=$("sessionRequestAuditTable");if(!el)return;try{const d=await api("/api/management/session-requests/audit"),items=d.items||[];el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE</th><th>ACTION</th><th>REQUESTER</th><th>DETAILS</th><th>REVIEWED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No session request actions logged yet.</div>';}catch(e){el.textContent=e.message;}
+}
+$("submitSessionRequest")?.addEventListener("click",async()=>{
+ const b=$("submitSessionRequest");b.disabled=true;b.textContent="Sending…";
+ try{await api("/api/management/session-requests",{method:"POST",body:JSON.stringify({sessionType:$("sessionRequestType").value,title:$("sessionRequestTitle").value.trim(),details:$("sessionRequestDetails").value.trim(),preferredDate:$("sessionRequestDate").value,preferredTime:$("sessionRequestTime").value})});["sessionRequestTitle","sessionRequestDetails","sessionRequestDate","sessionRequestTime"].forEach(id=>$(id).value="");notice("Session request submitted and logged.","success");await loadSessionRequests();}
+ catch(e){notice(e.message,"error");}finally{b.disabled=false;b.textContent="Send session request";}
+});
+$("refreshSessionRequests")?.addEventListener("click",loadSessionRequests);
+$("refreshSessionAudit")?.addEventListener("click",loadSessionRequestAudit);
+$("sessionHistorySearch")?.addEventListener("input",loadSessions);$("sessionHistoryFilter")?.addEventListener("change",loadSessions);
+document.addEventListener("change",async e=>{
+ const select=e.target.closest("[data-session-status]");if(!select)return;
+ const status=select.value,note=["DELAYED","CANCELED"].includes(status)?(prompt(status==="DELAYED"?"Why is this session delayed?":"Why was this session canceled?")||""):"";
+ if(["DELAYED","CANCELED"].includes(status)&&!note.trim()){notice("Add a short note explaining this status change.","error");await loadSessions();return;}
+ select.disabled=true;try{await api("/api/management/sessions/"+encodeURIComponent(select.dataset.sessionStatus)+"/status",{method:"PATCH",body:JSON.stringify({status,note})});notice("Session status updated and logged.","success");await loadSessions();}catch(err){notice(err.message,"error");await loadSessions();}
+});
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("[data-session-request-decision]");if(!b)return;const status=b.dataset.status,note=prompt(status==="REJECTED"?"Why are you declining this session request?":"Optional review note:")||"";
+ if(status==="REJECTED"&&!note.trim()){notice("A reason is required when declining a request.","error");return;}
+ b.disabled=true;try{await api("/api/management/session-requests/"+encodeURIComponent(b.dataset.sessionRequestDecision)+"/decision",{method:"POST",body:JSON.stringify({status,note})});notice("Session request "+status.toLowerCase()+".","success");await loadSessionRequests();}catch(err){notice(err.message,"error");}
+});
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
 $("refreshSessions")?.addEventListener("click",loadSessions);
