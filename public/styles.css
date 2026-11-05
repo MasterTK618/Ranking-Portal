@@ -95,3 +95,42 @@ body.compact-layout .page{padding-top:18px}
 .diagnostic-ok{color:#18834f;font-weight:800}.diagnostic-bad{color:#b33a30;font-weight:800}
 .session-filter{min-height:42px}
 @media(max-width:650px){.diagnostic-line{flex-direction:column;gap:5px}}
+
+/* Sidebar scrolling: keep navigation usable even when many sections are visible. */
+.sidebar{height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent;min-height:0}
+.sidebar::-webkit-scrollbar{width:6px}.sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:20px}
+.sidebar .brand{flex:0 0 auto}.sidebar .sidebar-bottom{flex:0 0 auto;margin-top:24px;padding-bottom:6px}
+.sidebar .side-label{flex:0 0 auto}.sidebar .nav-item{flex:0 0 auto}
+.sessions-calendar-card{overflow:hidden}.sessions-calendar{overflow-x:auto;padding:3px 2px 12px}
+.calendar-weekdays,.calendar-grid{min-width:650px;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.calendar-weekdays b{font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+.calendar-day{min-height:118px;padding:10px;border-radius:13px;gap:7px;transition:border-color .15s,background .15s}
+.calendar-day:hover{border-color:#e3c23a}.calendar-day> b{font-size:13px}
+.calendar-day.outside{background:transparent;border-color:transparent}
+.calendar-event{font-size:10px;line-height:1.35;overflow-wrap:anywhere;background:var(--accent-soft,#fff3bf);border-left:3px solid var(--yellow);padding:7px;border-radius:7px}
+.session-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:0 0 18px}
+.session-stat{position:relative;display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto auto;column-gap:12px;align-items:center;padding:17px 18px;background:var(--panel);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow)}
+.session-stat>span{grid-row:1/4;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--accent-soft,#fff3bf);color:#8c6b00;font-size:18px}
+.session-stat small{font-size:9px;letter-spacing:1px;font-weight:800;color:var(--muted)}
+.session-stat b{font-size:23px;line-height:1.3}.session-stat em{font-size:10px;color:var(--muted);font-style:normal}
+#sessionCreateCard{max-width:none;border-color:#eadb9d;background:linear-gradient(135deg,var(--panel),var(--panel2))}
+#sessionCreateCard h3{font-size:16px;margin:0 0 17px}
+#sessionCreateCard select[multiple]{min-height:132px;padding:8px}
+#sessionCreateCard .form-grid{gap:17px}
+#sessionCreateCard .form-footer{border-top:1px solid var(--line);padding-top:16px}
+.session-list-toolbar{padding:3px 0 8px}
+.session-filter{max-width:180px}
+#sessionList .data-table{min-width:1040px}
+#sessionList .data-table td{max-width:230px}
+.punishment-submit-card{max-width:none}
+.punishment-submit-card textarea{resize:vertical;line-height:1.55}
+.punishment-submit-card .directory-toolbar{align-items:flex-start}
+#punishmentAuditTable .data-table{min-width:680px}
+@media(max-width:900px){.session-summary-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:650px){
+ .sidebar{height:auto;max-height:none;overflow:visible;position:static}
+ .session-summary-grid{grid-template-columns:1fr}
+ .calendar-day{min-height:92px;padding:7px}
+ .calendar-event{font-size:9px;padding:5px}
+ #sessionCreateCard .form-grid{grid-template-columns:1fr}
+}
