@@ -225,7 +225,7 @@ app.get("/api/staff", requireLogin, async (req,res,next)=>{
       const paths=m.roles&&m.roles.length?m.roles:m.role?[m.role]:[];
       const role=paths.map(p=>roles.find(r=>r.path===p)).filter(Boolean).sort((a,b)=>b.rank-a.rank)[0];
       return {id,rank:role?role.rank:0,role:role?role.name:"Member"};
-    }).filter(m=>/^\d+$/.test(m.id));
+    }).filter(m=>/^\d+$/.test(m.id)&&m.rank>=230);
     const profiles=[];
     for(let i=0;i<base.length;i+=100){
       const response=await fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:base.slice(i,i+100).map(m=>Number(m.id)),excludeBannedUsers:false})});
