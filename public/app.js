@@ -390,7 +390,7 @@ async function loadViews(){
  }catch(e){showError(stats,"Insights unavailable",e);}
  finally{[stats,teams,sessions,leader].forEach(el=>{if(el)el.removeAttribute("aria-busy");});}
 }
-$("viewsLeaderboard")?.addEventListener("click",async e=>{
+document.addEventListener("click",async e=>{
  const all=e.target.closest("[data-leader-see-all]");if(all){showPage("members");await loadStaffDirectory(true);$("directorySearch").value="";renderStaffDirectory();return;}const card=e.target.closest("[data-leader-user]");if(!card)return;
  const id=String(card.dataset.leaderUser||"");if(!/^\d+$/.test(id)){notice("This leaderboard entry does not have a valid Roblox user ID.","error");return;}
  card.disabled=true;showPage("members");
