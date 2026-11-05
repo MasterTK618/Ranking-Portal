@@ -425,7 +425,7 @@ document.addEventListener("change",async e=>{
 });
 document.addEventListener("click",async e=>{
   const del=e.target.closest("[data-task-delete]");if(!del)return;if(!confirm("Delete this staff task? Its audit history will remain."))return;
-  try{await api("/api/management/tasks/"+encodeURIComponent(del.dataset.taskDelete),{method:"DELETE"});notice("Task deleted and logged.","success");await loadTasks();}catch(err){notice(err.message,"error")}
+  del.disabled=true;del.textContent="Deleting…";try{await api("/api/management/tasks/"+encodeURIComponent(del.dataset.taskDelete),{method:"DELETE"});notice("Task deleted and logged.","success");await loadTasks();}catch(err){notice(err.message,"error");del.disabled=false;del.textContent="Delete";}
 });
 
 $("submitLeave").addEventListener("click",async()=>{
@@ -507,18 +507,35 @@ $("directoryButton")?.addEventListener("click",()=>loadStaffDirectory(true));
  });
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
 $("directoryResult")?.addEventListener("click",e=>{if(e.target.closest("select"))return;const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
-$("directoryResult")?.addEventListener("change",async e=>{const picker=e.target.closest("[data-member-team]");if(!picker)return;picker.disabled=true;try{const teamId=picker.value||null;await api("/api/management/teams/member/"+encodeURIComponent(picker.dataset.memberTeam),{method:"PUT",body:JSON.stringify({teamId})});if(teamId)teamAssignments.set(String(picker.dataset.memberTeam),String(teamId));else teamAssignments.delete(String(picker.dataset.memberTeam));notice("Staff team assignment updated.","success");renderStaffDirectory();}catch(err){notice(err.message,"error");}finally{picker.disabled=false;}});
+// Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
 async function showStaffProfile(id){
-  const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML="<p>Loading staff profile…</p>";
+  const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML='<div class="profile-loading"><span class="loading-dot"></span> Loading staff profile…</div>';
   try{
     const d=await api("/api/management/members/"+encodeURIComponent(id)),m=d.member;
-    panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"") + '" alt="Roblox avatar"><div><div class="eyebrow">STAFF PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.role)+' · Rank '+m.rank+'</p></div></div>'+
+    const tabs=[["overview","Overview"],["shifts","Shift history"],["discipline","Discipline"],["notes","Management notes"]];
+    panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">STAFF PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.role)+' · Rank '+m.rank+'</p><span class="profile-id">Roblox ID '+escapeHtml(m.id)+'</span></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div>'+
     '<div class="profile-stats"><div><b>'+d.sessions.length+'</b><small>Shifts attended</small></div><div><b>'+d.punishments.length+'</b><small>Punishments</small></div><div><b>'+Math.floor(Number(d.activity?.seconds||0)/3600)+'h</b><small>Recorded activity</small></div></div>'+
-    '<div class="profile-columns"><section><h4>Shift history</h4>'+(d.sessions.length?'<ul class="history-list">'+d.sessions.map(s=>'<li><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_date).slice(0,10))+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+escapeHtml(s.member_role||"Attendee")+'</small></li>').join("")+'</ul>':'<p class="muted">No shifts recorded.</p>')+'</section><section><h4>Punishments</h4>'+(d.punishments.length?'<ul class="history-list">'+d.punishments.map(p=>'<li><b>'+escapeHtml(p.type)+' · '+escapeHtml(p.status)+'</b><small>'+escapeHtml(p.reason)+' · '+escapeHtml(formatDate(p.created_at))+'</small></li>').join("")+'</ul>':'<p class="muted">No punishment records.</p>')+'</section></div>';
+    '<nav class="profile-tabs" aria-label="Staff profile sections">'+tabs.map((t,i)=>'<button type="button" class="profile-tab'+(i===0?' active':'')+'" data-profile-tab="'+t[0]+'">'+t[1]+'</button>').join("")+'</nav>'+
+    '<section class="profile-panel" data-profile-panel="overview"><div class="profile-columns"><section><h4>Staff overview</h4><div class="profile-detail-row"><span>Current role</span><b>'+escapeHtml(m.role)+'</b></div><div class="profile-detail-row"><span>Group rank</span><b>'+m.rank+'</b></div><div class="profile-detail-row"><span>Game sessions</span><b>'+Number(d.activity?.sessions||0)+'</b></div><div class="profile-detail-row"><span>Last activity</span><b>'+escapeHtml(d.activity?.last_seen?formatDate(d.activity.last_seen):"No activity recorded")+'</b></div></section><section><h4>Recent activity</h4><p class="muted">This profile brings together attendance, recorded activity, discipline history, and internal management notes.</p><button type="button" class="quiet-btn" data-profile-tab-jump="shifts">View shift history →</button></section></div></section>'+
+    '<section class="profile-panel hidden" data-profile-panel="shifts"><h4>Shift history</h4>'+(d.sessions.length?'<ul class="history-list">'+d.sessions.map(s=>'<li><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_date).slice(0,10))+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+escapeHtml(s.member_role||"Attendee")+'</small></li>').join("")+'</ul>':'<p class="muted">No shifts recorded.</p>')+'</section>'+
+    '<section class="profile-panel hidden" data-profile-panel="discipline"><h4>Discipline history</h4>'+(d.punishments.length?'<ul class="history-list">'+d.punishments.map(p=>'<li><b>'+escapeHtml(p.type)+' · '+escapeHtml(p.status)+'</b><small>'+escapeHtml(p.reason)+' · '+escapeHtml(formatDate(p.created_at))+'</small></li>').join("")+'</ul>':'<p class="muted">No punishment records.</p>')+'</section>'+
+    '<section class="profile-panel hidden" data-profile-panel="notes"><div class="profile-notes-heading"><div><h4>Management notes</h4><p class="muted">Internal notes for staff management. Keep entries factual and professional.</p></div><span class="profile-note-count">'+(d.notes||[]).length+' notes</span></div>'+
+    (d.canAddNotes?'<form id="memberNoteForm" class="member-note-form"><label for="memberNoteBody">ADD A NOTE</label><textarea id="memberNoteBody" rows="3" maxlength="2000" placeholder="Write a private management note about this staff member…"></textarea><div class="profile-note-footer"><small>Visible to authorized staff viewing this profile.</small><button class="primary-btn" type="submit">＋ Add note</button></div></form>':'<p class="muted">You need rank 238 or higher to add management notes.</p>')+
+    '<div id="memberNotesList" class="member-notes-list">'+((d.notes||[]).length?d.notes.map(n=>'<article class="member-note"><div><b>'+escapeHtml(n.created_by_name)+'</b><time>'+escapeHtml(formatDate(n.created_at))+'</time></div><p>'+escapeHtml(n.body)+'</p>'+((String(n.created_by)===String(sessionData?.user?.id)||d.canModerateNotes)?'<button type="button" class="danger-text-btn" data-note-delete="'+escapeHtml(n.id)+'">Delete note</button>':'')+'</article>').join(""):'<div class="empty-state">No management notes yet.</div>')+'</div></section>';
+    panel.dataset.memberId=String(m.id);
     panel.scrollIntoView({behavior:"smooth",block:"start"});
-  }catch(e){panel.textContent=e.message;}
+  }catch(e){panel.innerHTML='<div class="profile-error">'+escapeHtml(e.message)+'</div>';}
 }
+document.addEventListener("click",async e=>{
+  const tab=e.target.closest("[data-profile-tab],[data-profile-tab-jump]");
+  if(tab){const key=tab.dataset.profileTab||tab.dataset.profileTabJump,panel=$("memberProfile");panel.querySelectorAll("[data-profile-panel]").forEach(x=>x.classList.toggle("hidden",x.dataset.profilePanel!==key));panel.querySelectorAll("[data-profile-tab]").forEach(x=>x.classList.toggle("active",x.dataset.profileTab===key));return;}
+  const del=e.target.closest("[data-note-delete]");if(del){if(!confirm("Delete this management note?"))return;del.disabled=true;try{await api("/api/management/members/"+encodeURIComponent($("memberProfile").dataset.memberId)+"/notes/"+encodeURIComponent(del.dataset.noteDelete),{method:"DELETE"});await showStaffProfile($("memberProfile").dataset.memberId);$("memberProfile").querySelector('[data-profile-tab="notes"]')?.click();}catch(err){notice(err.message,"error");del.disabled=false;}return;}
+});
+document.addEventListener("submit",async e=>{
+  if(e.target.id!=="memberNoteForm")return;e.preventDefault();const id=$("memberProfile").dataset.memberId,body=$("memberNoteBody").value.trim(),btn=e.target.querySelector('button[type="submit"]');if(!body){notice("Write a note first.","error");return;}btn.disabled=true;btn.textContent="Saving…";
+  try{await api("/api/management/members/"+encodeURIComponent(id)+"/notes",{method:"POST",body:JSON.stringify({body})});await showStaffProfile(id);$("memberProfile").querySelector('[data-profile-tab="notes"]')?.click();notice("Management note added.","success");}catch(err){notice(err.message,"error");btn.disabled=false;btn.textContent="＋ Add note";}
+});
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
   const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=first.getDay(),days=new Date(y,m+1,0).getDate(),cells=[];
