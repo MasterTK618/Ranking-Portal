@@ -363,7 +363,7 @@ async function loadLeaveAudit(){
 }
 function fillTeamFilter(id){
  const el=$(id);if(!el)return "ALL";const previous=el.value;
- el.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
+ el.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
  if([...el.options].some(o=>o.value===previous))el.value=previous;
  return el.value||"ALL";
 }
@@ -459,7 +459,7 @@ async function loadStaffDirectory(force=false){
  try{
   const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=Number(d.minRank||d.diagnostics?.minRank||230);staffDiagnostics=d.diagnostics||null;
   try{
-   const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map((teams.members||[]).map(x=>[String(x.user_id),String(x.team_id)]));teamStaffCache=staffDirectory;await syncTeamsByGroupRole();
+   const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map();for(const x of(teams.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}teamStaffCache=staffDirectory;await syncTeamsByGroupRole();
    const filter=$("directoryTeamFilter");
    if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
   }catch{}
