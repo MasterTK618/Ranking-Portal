@@ -293,6 +293,43 @@ async function refreshOverview(){
   }
 })();
 
+// Workspace command palette: fast navigation and direct staff lookup.
+const commandDialog=$("commandPalette"),commandInput=$("commandSearch"),commandResults=$("commandResults");
+let commandSelection=0,commandItems=[];
+function renderCommandResults(){
+ if(!commandResults)return;
+ const query=String(commandInput?.value||"").trim().toLowerCase();
+ const pages=[...document.querySelectorAll(".nav-item:not(.hidden)")].map(b=>({kind:"page",page:b.dataset.page,view:b.dataset.view||"",label:b.textContent.trim().replace(/^[^\\w]+/,""),detail:"Open workspace",icon:"↗"}));
+ const people=(staffDirectory||[]).filter(m=>!query||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(query))).slice(0,8).map(m=>({kind:"member",id:String(m.id),label:m.username||"Staff member",detail:(m.role||"Staff")+" · Roblox profile",icon:"♙"}));
+ const matchingPages=pages.filter(x=>!query||(x.label+" "+x.page+" "+x.view).toLowerCase().includes(query));
+ commandItems=[...matchingPages.slice(0,12),...people];
+ if(!query)commandItems=pages.slice(0,12);
+ commandSelection=0;
+ commandResults.innerHTML=commandItems.length?commandItems.map((x,i)=>'<button type="button" class="command-result" data-command-index="'+i+'" aria-selected="'+(i===0?'true':'false')+'"><span class="command-result-icon">'+x.icon+'</span><span class="command-result-copy"><b>'+escapeHtml(x.label)+'</b><small>'+escapeHtml(x.detail)+'</small></span></button>').join(""):'<div class="command-empty">No matching pages or staff members found.</div>';
+}
+function openCommandPalette(){
+ if(!commandDialog)return;
+ renderCommandResults();if(!commandDialog.open)commandDialog.showModal();commandInput.value="";renderCommandResults();commandInput.focus();
+}
+function chooseCommand(index){
+ const item=commandItems[index];if(!item)return;
+ commandDialog.close();
+ if(item.kind==="member"){showPage("members");showStaffProfile(item.id);}
+ else showPage(item.page,item.view);
+}
+$("openCommandPalette")?.addEventListener("click",openCommandPalette);
+$("closeCommandPalette")?.addEventListener("click",()=>commandDialog.close());
+commandInput?.addEventListener("input",renderCommandResults);
+commandResults?.addEventListener("click",e=>{const result=e.target.closest("[data-command-index]");if(result)chooseCommand(Number(result.dataset.commandIndex));});
+commandInput?.addEventListener("keydown",e=>{
+ if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();if(!commandItems.length)return;commandSelection=(commandSelection+(e.key==="ArrowDown"?1:-1)+commandItems.length)%commandItems.length;commandResults.querySelectorAll("[data-command-index]").forEach((el,i)=>el.setAttribute("aria-selected",String(i===commandSelection)));commandResults.querySelector('[data-command-index="'+commandSelection+'"]')?.scrollIntoView({block:"nearest"});}
+ if(e.key==="Enter"){e.preventDefault();chooseCommand(commandSelection);}
+});
+document.addEventListener("keydown",e=>{
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openCommandPalette();}
+ if(e.key==="Escape"&&commandDialog?.open)commandDialog.close();
+});
+
 // Management workspace
 function dateOnly(v){return v?String(v).slice(0,10):"—"}
 function actionButtons(type,item,rank,settings){
