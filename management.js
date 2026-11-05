@@ -115,17 +115,27 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
 
   router.get("/activity",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-    const s=await settings(),canViewAll=who.rank>=Number(s.activity_view_rank);
-    const sql=canViewAll
-      ? "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments aa WHERE aa.user_id=activity_sessions.user_id),0) AS seconds,MAX(COALESCE(ended_at,NOW())) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions GROUP BY user_id,username ORDER BY seconds DESC LIMIT 500"
-      : "SELECT user_id,username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments aa WHERE aa.user_id=activity_sessions.user_id),0) AS seconds,MAX(COALESCE(ended_at,NOW())) AS last_seen,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=$1 GROUP BY user_id,username";
-    const r=await pool.query(sql,canViewAll?[]:[String(req.session.user.id)]);
-    if(!canViewAll&&!r.rows.length)r.rows.push({user_id:String(req.session.user.id),username:req.session.user.name||"You",seconds:0,sessions:0,last_seen:null});
-    const members=await Promise.all(r.rows.map(async row=>{let rank=String(row.user_id)===String(req.session.user.id)?who.rank:0,role=String(row.user_id)===String(req.session.user.id)?who.roleName:"—";if(canViewAll)try{const i=await getIdentity(row.user_id);rank=i.rank||0;role=i.roleName||"—";}catch{}const attended=await pool.query("SELECT COUNT(*)::INTEGER AS shifts_attended FROM portal_sessions WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR oversee_id=$1 OR $1=ANY(oversee_ids) OR $1=ANY(attendee_ids)",[String(row.user_id)]);return {...row,rank,role,shifts_attended:attended.rows[0]?.shifts_attended||0};}));
-    members.sort((a,b)=>Number(b.rank)-Number(a.rank)||Number(b.seconds)-Number(a.seconds));
-    const adjustments=canViewAll?await pool.query("SELECT user_id,username,minutes,reason,actor_name,created_at FROM activity_adjustments ORDER BY created_at DESC LIMIT 100"):{rows:[]};
-    res.json({members,adjustments:adjustments.rows,canEdit:who.rank>=Number(s.activity_edit_rank),canViewAll});
+    const who=await identity(req);
+    if(!who)return res.status(401).json({error:"Sign in first."});
+    const s=await settings(),canViewAll=Number(who.rank)>=Number(s.activity_view_rank),userId=String(req.session.user.id);
+    const activityResult=canViewAll
+      ? await pool.query("SELECT user_id,MAX(username) AS username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT AS seconds,MAX(COALESCE(ended_at,NOW())) AS last_seen,COUNT(*)::INTEGER AS game_sessions FROM activity_sessions GROUP BY user_id")
+      : await pool.query("SELECT user_id,MAX(username) AS username,SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END)::BIGINT AS seconds,MAX(COALESCE(ended_at,NOW())) AS last_seen,COUNT(*)::INTEGER AS game_sessions FROM activity_sessions WHERE user_id=$1 GROUP BY user_id",[userId]);
+    const adjustmentResult=canViewAll
+      ? await pool.query("SELECT user_id,MAX(username) AS username,SUM(minutes*60)::BIGINT AS seconds FROM activity_adjustments GROUP BY user_id")
+      : await pool.query("SELECT user_id,MAX(username) AS username,SUM(minutes*60)::BIGINT AS seconds FROM activity_adjustments WHERE user_id=$1 GROUP BY user_id",[userId]);
+    const stats=new Map();
+    for(const row of activityResult.rows)stats.set(String(row.user_id),{user_id:String(row.user_id),username:row.username,seconds:Number(row.seconds||0),last_seen:row.last_seen,game_sessions:Number(row.game_sessions||0)});
+    for(const row of adjustmentResult.rows){const id=String(row.user_id),existing=stats.get(id)||{user_id:id,username:row.username,seconds:0,last_seen:null,game_sessions:0};existing.seconds+=Number(row.seconds||0);if(row.username)existing.username=row.username;stats.set(id,existing);}
+    const shiftSql="SELECT person_id,COUNT(*)::INTEGER AS shifts_attended FROM (SELECT host_id AS person_id FROM portal_sessions WHERE host_id IS NOT NULL UNION ALL SELECT cohost_id FROM portal_sessions WHERE cohost_id IS NOT NULL UNION ALL SELECT promoter_id FROM portal_sessions WHERE promoter_id IS NOT NULL UNION ALL SELECT unnest(oversee_ids) FROM portal_sessions WHERE cardinality(oversee_ids)>0 UNION ALL SELECT unnest(attendee_ids) FROM portal_sessions WHERE cardinality(attendee_ids)>0) AS assigned_people WHERE ($1::TEXT IS NULL OR person_id=$1) GROUP BY person_id";
+    const shiftResult=await pool.query(shiftSql,[canViewAll?null:userId]);
+    const shiftCounts=new Map(shiftResult.rows.map(row=>[String(row.person_id),Number(row.shifts_attended||0)]));
+    if(!canViewAll&&!stats.has(userId))stats.set(userId,{user_id:userId,username:req.session.user.name||"You",seconds:0,last_seen:null,game_sessions:0});
+    const members=[...stats.values()].map(row=>({...row,shifts_attended:shiftCounts.get(row.user_id)||0,rank:row.user_id===userId?Number(who.rank):null,role:row.user_id===userId?(who.roleName||"—"):"—"}));
+    const adjustments=canViewAll
+      ? await pool.query("SELECT user_id,username,minutes,reason,actor_name,created_at FROM activity_adjustments ORDER BY created_at DESC LIMIT 100")
+      : {rows:[]};
+    res.json({members,adjustments:adjustments.rows,canEdit:Number(who.rank)>=Number(s.activity_edit_rank),canViewAll});
   }catch(e){next(e);}});
   router.post("/activity/adjust", csrf, async (req,res,next) => {
     try {
