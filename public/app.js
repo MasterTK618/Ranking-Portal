@@ -137,14 +137,14 @@ $("directoryDiagnosticsButton")?.addEventListener("click",()=>runRobloxDiagnosti
 
 async function loadTeamsSettings(){
   const box=$("teamDirectory");if(!box)return;
-  box.innerHTML='<div class="empty-state">Loading teams and departments…</div>';
+  box.innerHTML='<div class="empty-state">Loading teams…</div>';
   try{
     const d=await api("/api/management/teams");managementTeams=d.teams||[];teamAssignments=new Map();for(const x of (d.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}
     if(!teamStaffCache.length){const staff=await api("/api/staff");teamStaffCache=staff.members||[];}
     await syncTeamsByGroupRole();
     const ranks=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].sort((x,y)=>x.rank-y.rank);for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),prev=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===prev))el.value=prev;}
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
-    teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
+    teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
     if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
     teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
     renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
@@ -175,9 +175,9 @@ $("saveTeamMembers")?.addEventListener("click",async()=>{
   try{const userIds=[...teamMemberDraft];await api("/api/management/teams/"+encodeURIComponent(teamId)+"/members",{method:"PUT",body:JSON.stringify({userIds})});notice("Team assignments saved.","success");await loadTeamsSettings();}
   catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
-$("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRanks").selectedIndex=-1;$("cancelTeamEdit").classList.add("hidden");setTeamKind("TEAM");});
+
 $("teamDirectory")?.addEventListener("click",async event=>{
-  const edit=event.target.closest("[data-team-edit]");if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamRuleMode").value=t.auto_assign_mode||"NONE";$("teamRuleMin").value=t.auto_assign_min_rank||"";$("teamRuleMax").value=t.auto_assign_max_rank||"";updateTeamRuleFields();$("createTeam").textContent="Save team changes";$("cancelTeamEdit").classList.remove("hidden");$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}}
+  const edit=event.target.closest("[data-team-edit]");if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamRuleMode").value=t.auto_assign_mode||"NONE";$("teamRuleMin").value=t.auto_assign_min_rank||"";$("teamRuleMax").value=t.auto_assign_max_rank||"";updateTeamRuleFields();$("createTeam").textContent="Save team changes";$("cancelTeamEdit").classList.remove("hidden");$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const manage=event.target.closest("[data-team-manage]");if(manage){const id=manage.dataset.teamManage;$("teamAssignmentSelect").value=id;teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(id))).map(m=>String(m.id)));renderTeamAssignmentMembers();$("teamAssignmentSelect").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const btn=event.target.closest("[data-team-delete]");if(!btn)return;
   if(!confirm("Delete this team? Its staff assignments will be cleared."))return;
