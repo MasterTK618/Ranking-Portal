@@ -134,3 +134,53 @@ body.compact-layout .page{padding-top:18px}
  .calendar-event{font-size:9px;padding:5px}
  #sessionCreateCard .form-grid{grid-template-columns:1fr}
 }
+
+/* Spacious staff-management workspace */
+.main{max-width:none;padding-left:clamp(24px,3vw,52px);padding-right:clamp(24px,3vw,52px)}
+.page{padding-top:34px;padding-bottom:24px}
+.page-intro{margin-bottom:25px;align-items:flex-end}
+.page-intro h2{font-size:27px;letter-spacing:-.6px}
+.page-intro p{font-size:13px;line-height:1.65;color:var(--muted);max-width:760px}
+.content-card{padding:28px;margin-bottom:23px;border-radius:18px}
+.card-heading h3,.section-heading h3{font-size:17px}
+.card-heading p,.section-heading p{font-size:12px;line-height:1.65;color:var(--muted);margin:6px 0 0}
+.section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:20px}
+.section-heading>div{min-width:0}
+.form-grid{gap:19px;margin-bottom:20px}
+.form-grid label,.rank-form label{font-size:10px;letter-spacing:.8px;margin:0 0 8px}
+input,select,textarea{font-size:13px;padding:13px 15px;min-height:46px}
+textarea{line-height:1.6;resize:vertical}
+.form-footer{margin-top:22px;padding-top:16px}
+.form-footer span{font-size:11px}
+.data-table{font-size:12px;min-width:760px}
+.data-table th{font-size:10px;padding:15px 14px}
+.data-table td{padding:16px 14px;line-height:1.55;vertical-align:top}
+.table-wrap{margin-top:16px}
+.table-subtext{display:block;color:var(--muted);font-size:10px;line-height:1.5;margin-top:5px}
+.reason-cell{min-width:190px;max-width:360px;white-space:normal;overflow-wrap:anywhere}
+.leave-request-card{border-color:#eadb9d;background:linear-gradient(135deg,var(--panel),var(--panel2))}
+.leave-toolbar{display:flex;gap:12px;align-items:center;margin:8px 0 14px}
+.leave-toolbar .table-search{flex:1;max-width:none;margin:0}
+.filter-select{max-width:190px}
+.leave-data-table{min-width:1160px}
+.status-pending{background:#fff2bd;color:#725800}
+.status-approved{background:#e3f5e9;color:#17643c}
+.status-rejected{background:#ffe8e5;color:#9a3026}
+body.dark .status-approved{background:#173d2a;color:#9de0b8}
+body.dark .status-rejected{background:#492724;color:#ffb4aa}
+.task-create-card{border-color:#eadb9d}
+.task-data-table{min-width:940px}
+.priority-pill{display:inline-flex;border-radius:20px;padding:6px 10px;font-size:10px;font-weight:800;background:var(--panel2);white-space:nowrap}
+.priority-low{color:#52735c}.priority-normal{color:#6c6650}.priority-high{color:#9a5d00;background:#fff2d8}.priority-urgent{color:#a22d24;background:#ffe8e5}
+body.dark .priority-high{background:#45331a;color:#f4c36d}body.dark .priority-urgent{background:#492724;color:#ffb4aa}
+.task-status-select{min-width:132px;padding:9px 11px;min-height:38px;font-size:11px}
+.empty-state{padding:38px 22px;font-size:13px;line-height:1.6}
+.session-summary-grid{gap:16px;margin-bottom:22px}
+.session-stat{padding:20px;min-height:104px}
+.session-stat small{font-size:10px}
+.session-stat b{font-size:26px}
+.sidebar .nav-item{font-size:13px;padding:13px 14px;margin-bottom:3px}
+.sidebar .side-label{font-size:10px;letter-spacing:1.2px}
+.sidebar .nav-section-label{margin-top:20px;padding-top:13px}
+@media(max-width:900px){.main{padding-left:22px;padding-right:22px}.content-card{padding:22px}.leave-toolbar{align-items:stretch;flex-direction:column}.filter-select{max-width:none}}
+@media(max-width:650px){.main{padding:18px 13px}.page{padding-top:22px}.page-intro{align-items:flex-start;flex-direction:column}.page-intro h2{font-size:23px}.content-card{padding:17px;margin-bottom:16px}.section-heading{flex-direction:column}.form-grid{gap:13px}.leave-toolbar{gap:8px}.session-summary-grid{grid-template-columns:1fr 1fr}.session-stat{padding:14px;min-height:90px}.session-stat b{font-size:21px}}
