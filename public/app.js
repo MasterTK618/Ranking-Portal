@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Ranking",members:"Members",logs:"Ranking Logs",sessions:"Sessions",activity:"Activity",punishments:"Punishments",promotions:"Promotion Suggestions",leaves:"Time Off",settings:"Settings"};
+const pageNames = {overview:"Overview",rank:"Ranking",members:"Members",logs:"Ranking Logs",sessions:"Shifts",activity:"Activity",punishments:"Punishments",promotions:"Promotion Suggestions",leaves:"Time Off",settings:"Settings"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
@@ -21,6 +21,7 @@ function showPage(page) {
   if(page==="rank") loadRoles();
   if(page==="settings") loadGameSettings();
   if(page==="sessions") loadSessions();
+  if(page==="members") loadStaffDirectory();
   if(page==="activity") loadManagement("activity");
   if(page==="punishments") loadManagement("punishments");
   if(page==="promotions") loadManagement("promotions");
@@ -87,7 +88,7 @@ async function directorySearch(){
   }catch(e){$("directoryResult").textContent=e.message}
   finally{$("directoryButton").disabled=false}
 }
-$("directoryButton").addEventListener("click",directorySearch);$("directorySearch").addEventListener("keydown",e=>{if(e.key==="Enter")directorySearch()});
+$("directoryButton").addEventListener("click",()=>loadStaffDirectory().catch(e=>notice(e.message,"error")));$("directorySearch").addEventListener("input",()=>{if(staffDirectory.length)loadStaffDirectory().catch(()=>{});});
 function formatDate(s){try{return new Date(s).toLocaleString()}catch{return s||"—"}}
 async function loadLogs(){
   $("logsTable").textContent="Loading logs…";
@@ -257,6 +258,13 @@ document.addEventListener("click",async e=>{
 let staffDirectory=[], calendarCursor=new Date();
 async function loadStaffDirectory(){
   const d=await api("/api/staff");staffDirectory=d.members||[];
+  if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" staff members";
+  if($("directoryResult")){
+    const q=($("directorySearch")?.value||"").trim().toLowerCase();
+    const list=staffDirectory.filter(m=>!q||m.username.toLowerCase().includes(q)||m.role.toLowerCase().includes(q));
+    $("directoryResult").innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><span class="avatar-circle">'+escapeHtml(m.username.slice(0,1).toUpperCase())+'</span><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("")||'<p class="muted">No matching staff members.</p>';
+    $("directoryResult").onclick=e=>{const b=e.target.closest("[data-staff-id]");if(b)showStaffProfile(b.dataset.staffId);};
+  }
   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true]];
   configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(!el)return;el.innerHTML=(placeholder?'<option value="">'+placeholder+'</option>':'')+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+' (Rank '+m.rank+')</option>').join("");});
@@ -275,6 +283,16 @@ async function loadStaffDirectory(){
     const option=document.createElement("option");option.value=id;option.textContent=member.username+" — "+member.role;option.selected=true;select.appendChild(option);input.value="";input.dataset.selectedId="";
   };
 }
+async function showStaffProfile(id){
+  const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML="<p>Loading staff profile…</p>";
+  try{
+    const d=await api("/api/management/members/"+encodeURIComponent(id)),m=d.member;
+    panel.innerHTML='<div class="profile-head"><div class="avatar-circle">'+escapeHtml(m.username.slice(0,1).toUpperCase())+'</div><div><div class="eyebrow">STAFF PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.role)+' · Rank '+m.rank+'</p></div></div>'+
+    '<div class="profile-stats"><div><b>'+d.sessions.length+'</b><small>Shifts attended</small></div><div><b>'+d.punishments.length+'</b><small>Punishments</small></div><div><b>'+Math.floor(Number(d.activity?.seconds||0)/3600)+'h</b><small>Recorded activity</small></div></div>'+
+    '<div class="profile-columns"><section><h4>Shift history</h4>'+(d.sessions.length?'<ul class="history-list">'+d.sessions.map(s=>'<li><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_date).slice(0,10))+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+escapeHtml(s.member_role||"Attendee")+'</small></li>').join("")+'</ul>':'<p class="muted">No shifts recorded.</p>')+'</section><section><h4>Punishments</h4>'+(d.punishments.length?'<ul class="history-list">'+d.punishments.map(p=>'<li><b>'+escapeHtml(p.type)+' · '+escapeHtml(p.status)+'</b><small>'+escapeHtml(p.reason)+' · '+escapeHtml(formatDate(p.created_at))+'</small></li>').join("")+'</ul>':'<p class="muted">No punishment records.</p>')+'</section></div>';
+    panel.scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(e){panel.textContent=e.message;}
+}
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
   const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=first.getDay(),days=new Date(y,m+1,0).getDate(),cells=[];
@@ -283,7 +301,7 @@ function drawSessionsCalendar(items){
   $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
 async function loadSessions(){
-  try{if(!staffDirectory.length)await loadStaffDirectory();const d=await api("/api/sessions");const items=(d.sessions||[]).filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));$("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);$("sessionList").innerHTML=(d.sessions||[]).length?'<table class="data-table"><thead><tr><th>DATE</th><th>SESSION</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th></tr></thead><tbody>'+d.sessions.map(s=>'<tr><td>'+escapeHtml(String(s.session_date).slice(0,10))+'</td><td>'+escapeHtml(s.title)+'</td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name)+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml(s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td></tr>').join("")+'</tbody></table>':'No sessions scheduled yet.';}catch(e){$("sessionList").textContent=e.message;}
+  try{if(!staffDirectory.length)await loadStaffDirectory();const d=await api("/api/management/sessions");const items=(d.sessions||[]).filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));$("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);$("sessionList").innerHTML=(d.sessions||[]).length?'<table class="data-table"><thead><tr><th>DATE</th><th>SESSION</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th></tr></thead><tbody>'+d.sessions.map(s=>'<tr><td>'+escapeHtml(String(s.session_date).slice(0,10))+'</td><td>'+escapeHtml(s.title)+'</td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name)+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml(s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td></tr>').join("")+'</tbody></table>':'No sessions scheduled yet.';}catch(e){$("sessionList").textContent=e.message;}
 }
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
@@ -291,7 +309,7 @@ $("createSession").addEventListener("click",async()=>{
  const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
  const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeId:$("sessionOversee").value,promoterId:$("sessionPromoter").value,attendeeIds:attendees};
  const btn=$("createSession");btn.disabled=true;
- try{await api("/api/sessions",{method:"POST",body:JSON.stringify(body)});notice("Session created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
+ try{await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});notice("Shift created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
 });
 
 
