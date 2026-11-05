@@ -270,3 +270,29 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .calendar-event.calendar-canceled{opacity:.55;text-decoration:line-through}
 .calendar-event.calendar-completed{opacity:.72}
 .session-type-pill{background:color-mix(in srgb,var(--yellow) 16%,var(--panel));border-color:color-mix(in srgb,var(--yellow) 38%,var(--line))}
+
+
+/* Teams and department management */
+.directory-filters{display:grid;grid-template-columns:minmax(220px,1fr) minmax(190px,260px);gap:12px;margin:16px 0 20px}
+.directory-filters .directory-search{width:100%;max-width:none}
+.staff-team-label{display:flex!important;align-items:center;gap:6px;color:var(--muted);font-size:10px;margin-top:5px}
+.staff-team-label i{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 8px}
+.teams-settings-card{border-color:#e7d78e}
+.team-create-grid{margin-top:20px}
+.team-create-grid input[type=color]{min-height:48px;padding:5px;width:100%}
+.department-group{margin-top:20px}
+.department-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 3px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.department-heading b{font-size:13px}
+.department-heading span{font-size:10px;color:var(--muted)}
+.team-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.team-card{display:flex;align-items:center;gap:12px;min-width:0;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--panel2)}
+.team-color-dot{width:12px;height:12px;flex:0 0 12px;border-radius:50%;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 8%,transparent)}
+.team-card-copy{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.team-card-copy b{font-size:12px}
+.team-card-copy small{font-size:10px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+.team-card-copy em{font-size:10px;font-style:normal;font-weight:800;color:var(--muted)}
+.team-card .table-actions{flex:0 0 auto}
+#teamMembersSelect{min-height:210px;height:210px;padding:9px}
+#teamMembersSelect option{padding:7px}
+#teamDirectory{margin-top:10px}
+@media(max-width:650px){.directory-filters{grid-template-columns:1fr}.team-card-grid{grid-template-columns:1fr}.team-card{align-items:flex-start}.team-card .danger-btn,.team-card .quiet-btn{padding:7px}}
