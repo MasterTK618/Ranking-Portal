@@ -102,7 +102,7 @@ $("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toL
 async function loadManagementSettings(){
   try{
     const d=await api("/api/management/settings");
-    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank"};
+    const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank"};
     Object.entries(map).forEach(([key,id])=>$(id).value=d.settings[key]);
   }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
 }
