@@ -50,3 +50,14 @@ body.dark .error-state{color:#ffb4aa}
 .status-pill{white-space:nowrap}
 #punishmentTable,#promotionTable,#leaveTable,#sessionList{max-width:100%}
 @media(max-width:700px){.activity-table-heading{align-items:flex-start;flex-direction:column}.activity-data-table{min-width:680px}.content-card{padding:16px}.table-search{max-width:none}}
+
+
+/* Activity overview and directory export */
+.activity-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px}
+.activity-stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.activity-stat small{font-size:9px;letter-spacing:1px;font-weight:800;color:var(--muted)}
+.activity-stat b{font-size:23px;letter-spacing:-.5px}
+.activity-stat em{font-size:10px;color:var(--muted);font-style:normal}
+.directory-toolbar .table-actions{margin-left:auto}
+@media(max-width:850px){.activity-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.activity-summary{grid-template-columns:1fr 1fr}.activity-stat{padding:12px}.activity-stat b{font-size:19px}}
