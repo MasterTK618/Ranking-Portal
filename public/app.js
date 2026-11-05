@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Ranking",members:"Members",logs:"Ranking Logs",sessions:"Shifts",activity:"Activity",punishments:"Punishments",promotions:"Promotion Suggestions",leaves:"Time Off",knowledge:"Knowledge Hub",settings:"Settings"};
+const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Shifts",activity:"Staff Activity",punishments:"Discipline Records",promotions:"Promotion Reviews",leaves:"Leave Requests",knowledge:"Knowledge Hub",settings:"Settings"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
