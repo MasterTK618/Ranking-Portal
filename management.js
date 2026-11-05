@@ -149,15 +149,19 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const dueDateValue=dueDate?new Date(dueDate+"T00:00:00.000Z"):null;if(dueDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)||Number.isNaN(dueDateValue.getTime())||dueDateValue.toISOString().slice(0,10)!==dueDate))return res.status(400).json({error:"Choose a valid due date."});
     const assigned=await getIdentity(assignedToId);if(!assigned?.inGroup||Number(assigned.rank)<Number((await settings()).task_view_rank))return res.status(400).json({error:"Assign the task to a staff member who can access the task board."});
     const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(assignedToId));const user=await profile.json().catch(()=>({}));const assignedName=user.name||assignedToId;
-    const r=await pool.query("INSERT INTO management_tasks(title,description,assigned_to_id,assigned_to_name,priority,due_date,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[title,description,assignedToId,assignedName,priority,dueDate||null,String(req.session.user.id),req.session.user.name]);
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","CREATED",assignedToId,assignedName,"Task #"+r.rows[0].id+" | "+title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:r.rows[0]});
+    const client=await pool.connect();let item;try{await client.query("BEGIN");
+      const r=await client.query("INSERT INTO management_tasks(title,description,assigned_to_id,assigned_to_name,priority,due_date,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[title,description,assignedToId,assignedName,priority,dueDate||null,String(req.session.user.id),req.session.user.name]);item=r.rows[0];
+      await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","CREATED",assignedToId,assignedName,"Task #"+item.id+" | "+title,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
+    }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}res.json({ok:true,item});
   }catch(e){next(e);}});
   router.patch("/tasks/:id/status",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const status=String(req.body?.status||"");if(!["OPEN","IN_PROGRESS","BLOCKED","COMPLETED"].includes(status))return res.status(400).json({error:"Choose a valid task status."});
     const s=await settings(),found=await pool.query("SELECT * FROM management_tasks WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Task not found."});const task=found.rows[0];
     if(String(task.assigned_to_id)!==String(req.session.user.id)&&String(task.created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(s.task_manage_rank))return res.status(403).json({error:"Only the assigned staff member, task creator, or a task manager can update this task."});
-    const r=await pool.query("UPDATE management_tasks SET status=$1,updated_at=NOW(),completed_at=CASE WHEN $1=$2 THEN NOW() ELSE NULL END WHERE id=$3 RETURNING *",[status,"COMPLETED",req.params.id]);
-    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK",status,r.rows[0].assigned_to_id,r.rows[0].assigned_to_name,"Task #"+r.rows[0].id+" | "+r.rows[0].title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:r.rows[0]});
+    const client=await pool.connect();let item;try{await client.query("BEGIN");
+      const r=await client.query("UPDATE management_tasks SET status=$1,updated_at=NOW(),completed_at=CASE WHEN $1=$2 THEN NOW() ELSE NULL END WHERE id=$3 RETURNING *",[status,"COMPLETED",req.params.id]);item=r.rows[0];
+      await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK",status,item.assigned_to_id,item.assigned_to_name,"Task #"+item.id+" | "+item.title,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
+    }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}res.json({ok:true,item});
   }catch(e){next(e);}});
   router.delete("/tasks/:id",csrf,async(req,res,next)=>{let client;try{
     if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid task ID."});
