@@ -137,21 +137,26 @@ $("testRobloxConnection")?.addEventListener("click",()=>runRobloxDiagnostics("te
 $("directoryDiagnosticsButton")?.addEventListener("click",()=>runRobloxDiagnostics("directoryDiagnosticsButton","directoryDiagnostics"));
 
 async function loadTeamsSettings(){
-  const box=$("teamDirectory");if(!box)return;
-  box.innerHTML='<div class="empty-state">Loading teams…</div>';
-  try{
-    const d=await api("/api/management/teams");managementTeams=Array.isArray(d.teams)?d.teams:[];teamAssignments=new Map();for(const x of (d.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}
-    renderTeamDirectory();
-    if(!teamStaffCache.length){try{const staff=await api("/api/staff");teamStaffCache=staff.members||[];}catch(staffError){$("teamMembersSelect").innerHTML='<div class="empty-state error-state">Teams loaded, but staff could not load: '+escapeHtml(staffError.message)+'</div>';}}
-    
-    if(teamStaffCache.length){try{await syncTeamsByGroupRole();}catch(syncError){console.warn("Team auto-assignment sync failed:",syncError);}}
-    const ranks=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].sort((x,y)=>x.rank-y.rank);for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),prev=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===prev))el.value=prev;}
-    const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
-    teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
-    if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
-    teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
-    renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
-  }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+ const box=$("teamDirectory");if(!box)return;
+ box.innerHTML='<div class="empty-state">Loading teams…</div>';
+ try{
+  const d=await api("/api/management/teams");
+  managementTeams=Array.isArray(d.teams)?d.teams:[];
+  teamAssignments=new Map();
+  for(const x of(d.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}
+  if(!teamStaffCache.length){
+   try{const staff=await api("/api/staff");teamStaffCache=Array.isArray(staff.members)?staff.members:[];}
+   catch(staffError){const memberBox=$("teamMembersSelect");if(memberBox)memberBox.innerHTML='<div class="empty-state error-state">Teams loaded, but the staff list could not load: '+escapeHtml(staffError.message)+'</div>';}
+  }
+  if(teamStaffCache.length){try{await syncTeamsByGroupRole();}catch(syncError){console.warn("Team auto-assignment sync failed:",syncError);}}
+  const ranks=[...new Map(teamStaffCache.map(m=>[String(m.rank),{rank:Number(m.rank),role:String(m.role||("Rank "+m.rank))}])).values()].filter(r=>Number.isInteger(r.rank)&&r.rank>=1&&r.rank<=255).sort((x,y)=>x.rank-y.rank);
+  for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),previous=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===previous))el.value=previous;}
+  const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
+  teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
+  if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
+  teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
+  renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();updateTeamRuleFields();
+ }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';throw e;}
 }
 async function syncTeamsByGroupRole(){if(!teamStaffCache.length)return;for(const team of managementTeams){const mode=String(team.auto_assign_mode||"NONE").toUpperCase();if(!["ABOVE","RANGE"].includes(mode))continue;const min=Number(team.auto_assign_min_rank),max=Number(team.auto_assign_max_rank??255);if(!Number.isInteger(min)||min<1||min>255||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))continue;const matches=teamStaffCache.filter(m=>mode==="ABOVE"?Number(m.rank)>=min:Number(m.rank)>=min&&Number(m.rank)<=max);if(!matches.length)continue;const current=teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(team.id))).map(m=>String(m.id));const additions=matches.map(m=>String(m.id)).filter(id=>!current.includes(id));if(additions.length)await api("/api/management/teams/"+encodeURIComponent(team.id)+"/members",{method:"PUT",body:JSON.stringify({userIds:[...current,...additions]})});}const fresh=await api("/api/management/teams");teamAssignments=new Map();for(const x of(fresh.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}}
 function renderTeamDirectory(){const box=$("teamDirectory");if(!box)return;if(!managementTeams.length){box.innerHTML='<div class="empty-state">No teams yet. Create your first team above.</div>';return;}box.innerHTML='<div class="team-card-grid">'+managementTeams.map(t=>{const mode=t.auto_assign_mode||"NONE",rule=mode==="ABOVE"?"Rank "+t.auto_assign_min_rank+"+":mode==="RANGE"?"Ranks "+t.auto_assign_min_rank+"–"+t.auto_assign_max_rank:(t.group_role_ranks||[]).length?"Selected ranks":"Manual assignment";return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Team")+'</small><em>'+Number(t.member_count||0)+' members · '+escapeHtml(rule)+'</em></div><div class="team-card-actions"><button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></div></article>';}).join("")+'</div>';}
@@ -168,7 +173,24 @@ $("teamSelectVisible")?.addEventListener("click",()=>{document.querySelectorAll(
 $("teamClearVisible")?.addEventListener("click",()=>{document.querySelectorAll("#teamMembersSelect [data-team-member-check]").forEach(el=>teamMemberDraft.delete(String(el.dataset.teamMemberCheck)));renderTeamAssignmentMembers();});
 function updateTeamRuleFields(){const mode=$("teamRuleMode").value;$("teamRuleMaxWrap").classList.toggle("hidden",mode!=="RANGE");$("teamRuleMin").disabled=mode==="NONE";$("teamRuleMax").disabled=mode!=="RANGE";}
 $("teamRuleMode")?.addEventListener("change",updateTeamRuleFields);
-$("createTeam")?.addEventListener("click",async()=>{const btn=$("createTeam");btn.disabled=true;try{const id=$("teamEditId").value,mode=$("teamRuleMode").value,min=$("teamRuleMin").value,max=$("teamRuleMax").value;if(mode!=="NONE"&&(!min||mode==="RANGE"&&(!max||Number(max)<Number(min))))throw new Error("Choose a valid starting and ending rank.");const payload={name:$("teamName").value.trim(),color:$("teamColor").value,description:$("teamDescription").value.trim(),autoAssignMode:mode,autoAssignMinRank:mode==="NONE"?null:Number(min),autoAssignMaxRank:mode==="RANGE"?Number(max):null};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});$("teamEditId").value="";$("teamName").value="";$("teamDescription").value="";$("teamRuleMode").value="NONE";$("teamRuleMin").value="";$("teamRuleMax").value="";$("teamColor").value="#f5c928";$("cancelTeamEdit").classList.add("hidden");updateTeamRuleFields();notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}});
+$("createTeam")?.addEventListener("click",async()=>{
+ const btn=$("createTeam");if(btn.disabled)return;
+ const id=$("teamEditId").value, name=$("teamName").value.trim(), mode=$("teamRuleMode").value;
+ const min=$("teamRuleMin").value,max=$("teamRuleMax").value;
+ if(name.length<2||name.length>60){notice("Team name must be between 2 and 60 characters.","error");$("teamName").focus();return;}
+ if(!["NONE","ABOVE","RANGE"].includes(mode)){notice("Choose a valid automatic assignment option.","error");return;}
+ if(mode!=="NONE"&&(!min||!Number.isInteger(Number(min))||Number(min)<1||Number(min)>255)){notice("Choose a valid starting rank.","error");return;}
+ if(mode==="RANGE"&&(!max||!Number.isInteger(Number(max))||Number(max)<Number(min)||Number(max)>255)){notice("Choose an ending rank equal to or above the starting rank.","error");return;}
+ btn.disabled=true;const oldText=btn.textContent;btn.textContent=id?"Saving…":"Creating…";
+ try{
+  const payload={name,color:$("teamColor").value,description:$("teamDescription").value.trim(),autoAssignMode:mode,autoAssignMinRank:mode==="NONE"?null:Number(min),autoAssignMaxRank:mode==="RANGE"?Number(max):null};
+  const result=await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
+  $("teamEditId").value="";$("teamName").value="";$("teamDescription").value="";$("teamRuleMode").value="NONE";$("teamRuleMin").value="";$("teamRuleMax").value="";$("teamColor").value="#f5c928";$("cancelTeamEdit").classList.add("hidden");btn.textContent="Create team";updateTeamRuleFields();
+  notice(id?"Team updated successfully.":"Team created successfully.","success");
+  try{await loadTeamsSettings();}catch(refreshError){notice((id?"Team updated":"Team created")+" but the team list could not refresh: "+refreshError.message,"error");}
+ }catch(e){notice(e.message||"Could not save the team. Please try again.","error");}
+ finally{btn.disabled=false;if(btn.textContent==="Creating…"||btn.textContent==="Saving…")btn.textContent=oldText;}
+});
 $("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDescription").value="";$("teamRuleMode").value="NONE";$("teamRuleMin").value="";$("teamRuleMax").value="";$("teamColor").value="#f5c928";$("cancelTeamEdit").classList.add("hidden");updateTeamRuleFields();});
 $("teamAssignmentSelect")?.addEventListener("change",()=>{const id=$("teamAssignmentSelect").value;teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(id))).map(m=>String(m.id)));renderTeamAssignmentMembers();});
 $("teamMemberSearch")?.addEventListener("input",renderTeamAssignmentMembers);
