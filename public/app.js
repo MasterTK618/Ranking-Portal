@@ -234,8 +234,9 @@ async function loadManagement(tab){
   }
   if(tab==="punishments"){
     $("punishmentTable").textContent="Loading records…";
-    try{const d=await api("/api/management/punishments"),rows=searchRows(d.items,"punishmentSearch",["username","type","reason","status","created_by_name"]);
-      $("punishmentTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>TYPE</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>'+escapeHtml(i.username)+'</td><td>'+escapeHtml(i.type)+' '+escapeHtml(i.duration||"")+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.created_by_name)+'</td><td>'+actionButtons("punishment",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching punishment records.";
+    try{const d=await api("/api/management/punishments"),rows=searchRows(d.items,"punishmentSearch",["username","type","reason","status","created_by_name","decision_note"]);
+      $("punishmentTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>ACTION</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td><b>'+escapeHtml(i.username)+'</b></td><td>'+escapeHtml(i.type)+' '+escapeHtml(i.duration||"")+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.created_by_name)+'</td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td>'+escapeHtml(i.decision_note||"—")+'</td><td>'+actionButtons("punishment",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching punishment records.";
+      await loadPunishmentAudit();
     }catch(e){$("punishmentTable").textContent=e.message}
   }
   if(tab==="promotions"){
@@ -262,10 +263,18 @@ $("saveActivityAdjust").addEventListener("click",async()=>{
     notice("Activity adjustment saved.","success");["activityUserId","activityUsername","activityMinutes","activityReason"].forEach(id=>$(id).value="");loadManagement("activity");
   }catch(e){notice(e.message,"error")}
 });
+async function loadPunishmentAudit(){
+  const el=$("punishmentAuditTable");if(!el)return;el.textContent="Loading audit log…";
+  try{const d=await api("/api/management/punishments/audit"),items=d.items||[];
+    el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name)+'</td></tr>').join("")+'</tbody></table>':"No discipline actions have been logged yet.";
+  }catch(e){el.textContent=e.message}
+}
+$("refreshPunishmentAudit")?.addEventListener("click",loadPunishmentAudit);
 $("submitPunishment").addEventListener("click",async()=>{
   try{
     const d=await api("/api/management/punishments",{method:"POST",body:JSON.stringify({userId:$("punishUserId").value.trim(),username:$("punishUsername").value.trim(),type:$("punishType").value,duration:$("punishDuration").value.trim(),reason:$("punishReason").value.trim()})});
-    notice(d.item.status==="PENDING"?"Punishment request submitted for approval.":"Punishment record added.","success");loadManagement("punishments");
+    notice(d.item.status==="PENDING"?"Discipline request sent for approval.":"Discipline record issued and logged.","success");
+    ["punishUserId","punishUsername","punishDuration","punishReason"].forEach(id=>$(id).value="");loadManagement("punishments");
   }catch(e){notice(e.message,"error")}
 });
 $("submitPromotion").addEventListener("click",async()=>{
@@ -284,7 +293,7 @@ document.addEventListener("click",async e=>{
   const decision=e.target.closest("[data-decision]");
   if(decision){
     const type=decision.dataset.decision,id=decision.dataset.id,status=decision.dataset.status,route=type==="punishment"?"punishments":type==="promotion"?"promotions":"leaves";
-    try{await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
+    try{const note=type==="punishment"?(prompt("Add an optional review note (leave blank if none):")||""):"";await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status,note})});notice(type+" "+status.toLowerCase()+".","success");loadManagement(route);}
     catch(err){notice(err.message,"error")}return;
   }
   const remove=e.target.closest("[data-delete]");if(!remove)return;
@@ -355,7 +364,11 @@ function drawSessionsCalendar(items){
 async function loadSessions(){
   try{
     if(!staffDirectory.length)await loadStaffDirectory();
-    const d=await api("/api/management/sessions"),all=d.sessions||[];$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
+    const d=await api("/api/management/sessions"),all=d.sessions||[];$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);
+    const now=new Date(),upcoming=all.filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;
+    const thisMonth=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(now)).length;
+    $("sessionSummary").innerHTML='<div class="session-stat"><span>▦</span><small>TOTAL SCHEDULED</small><b>'+all.length+'</b><em>All recorded sessions</em></div><div class="session-stat"><span>◷</span><small>UPCOMING</small><b>'+upcoming+'</b><em>Still to take place</em></div><div class="session-stat"><span>▤</span><small>THIS MONTH</small><b>'+thisMonth+'</b><em>Sessions on the calendar</em></div>';
+    const items=all.filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));
     $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
     const q=($("sessionSearch")?.value||"").trim().toLowerCase(),filter=$("sessionFilter")?.value||"all",visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=new Date();const textMatch=!q||[s.title,s.session_date,s.session_time,s.host_name,s.cohost_name,s.oversee_name,(s.oversee_names||[]).join(" "),s.promoter_name,(s.attendee_names||[]).join(" ")].some(v=>String(v||"").toLowerCase().includes(q));return textMatch&&(filter==="all"||(filter==="upcoming"&&future)||(filter==="past"&&!future));});
     $("sessionList").innerHTML=visible.length?'<table class="data-table"><thead><tr><th>DATE</th><th>SHIFT</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th><th>STATUS</th><th></th></tr></thead><tbody>'+visible.map(s=>'<tr><td>'+escapeHtml(String(s.session_date||"").slice(0,10))+'</td><td><b>'+escapeHtml(s.title)+'</b></td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name||"—")+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml((s.oversee_names||[]).join(", ")||s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td><td><span class="status-pill">'+(new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=new Date()?"Upcoming":"Past")+'</span></td><td>'+(s.canDelete?'<button class="danger-btn" data-delete="session" data-id="'+s.id+'">Delete</button>':"")+'</td></tr>').join("")+'</tbody></table>':(all.length?"No shifts match your search.":"No shifts scheduled yet.");
@@ -363,6 +376,7 @@ async function loadSessions(){
 }
 $("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
 $("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
+$("refreshSessions")?.addEventListener("click",loadSessions);
 $("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);
 $("createSession").addEventListener("click",async()=>{
  const resolveTyped=(inputId,selectId,optional=false)=>{const value=$(inputId).value.trim();if(!value&&optional){$(selectId).value="";return "";}const match=staffDirectory.find(m=>m.username.toLowerCase()===value.toLowerCase());if(!match)throw new Error("Select an exact staff username for "+inputId.replace("session","").replace("Search","")+".");$(selectId).value=match.id;return match.id;};
