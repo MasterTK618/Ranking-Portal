@@ -258,10 +258,22 @@ let staffDirectory=[], calendarCursor=new Date();
 async function loadStaffDirectory(){
   const d=await api("/api/staff");staffDirectory=d.members||[];
   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
-  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true],["sessionAttendees","",false]];
+  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true]];
   configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(!el)return;el.innerHTML=(placeholder?'<option value="">'+placeholder+'</option>':'')+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+' (Rank '+m.rank+')</option>').join("");});
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
   ["punishUsername","promotionUsername","activityUsername"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
+  [["sessionHostSearch","sessionHost"],["sessionCoHostSearch","sessionCoHost"],["sessionOverseeSearch","sessionOversee"],["sessionPromoterSearch","sessionPromoter"]].forEach(([inputId,selectId])=>{
+    const input=$(inputId),select=$(selectId);if(!input||!select)return;
+    input.oninput=()=>{const match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase()&&(selectId!=="sessionOversee"&&selectId!=="sessionPromoter"||m.rank>=245));select.value=match?match.id:"";};
+  });
+  const attendeeSearch=$("sessionAttendeeSearch");
+  if(attendeeSearch)attendeeSearch.oninput=()=>{attendeeSearch.dataset.selectedId=(staffDirectory.find(m=>m.username.toLowerCase()===attendeeSearch.value.trim().toLowerCase())||{}).id||"";};
+  $("addSessionAttendee").onclick=()=>{
+    const input=$("sessionAttendeeSearch"),id=input.dataset.selectedId,member=staffDirectory.find(m=>m.id===id),select=$("sessionAttendees");
+    if(!member){notice("Choose a staff member from the suggestions first.","error");return;}
+    if([...select.options].some(o=>o.value===id)){notice("That attendee is already added.","error");return;}
+    const option=document.createElement("option");option.value=id;option.textContent=member.username+" — "+member.role;option.selected=true;select.appendChild(option);input.value="";input.dataset.selectedId="";
+  };
 }
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
