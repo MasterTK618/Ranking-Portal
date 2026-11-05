@@ -352,8 +352,6 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
 });
 app.get("/api/diagnostics/roblox",requireLogin,async(req,res)=>{
   try{
-    const identity=await getIdentity(req.session.user.id);
-    if(identity.rank<255)return res.status(403).json({error:"Only the group owner can run connection diagnostics."});
     const result={groupId:GROUP_ID,apiKeyConfigured:!!process.env.ROBLOX_API_KEY,publicGroupApi:{ok:false,status:null,error:null},openCloudRoles:{ok:false,roleCount:0,error:null}};
     try{const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID));const data=await response.json().catch(()=>({}));result.publicGroupApi.status=response.status;result.publicGroupApi.ok=response.ok;result.publicGroupApi.groupName=data.name||null;if(!response.ok)result.publicGroupApi.error=data.errors?.[0]?.message||data.message||"Public group request failed.";}catch(e){result.publicGroupApi.error=e.message;}
     try{const roles=await getRoles();result.openCloudRoles.ok=true;result.openCloudRoles.roleCount=roles.length;result.openCloudRoles.roles=roles.map(r=>({name:r.name,rank:r.rank}));}catch(e){result.openCloudRoles.error=e.message;result.openCloudRoles.status=e.status||null;}
