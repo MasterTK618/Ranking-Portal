@@ -169,7 +169,7 @@ app.post("/auth/challenge", async (req,res,next) => {
     const data = await lookup.json();
     const found = data.data?.[0];
     if (!lookup.ok || !found) return res.status(404).json({error:"Roblox username not found."});
-    const code = "LEMONZ-" + random(5).toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7);
+    const emojiPool = ["🍋","⭐","🌙","🍉","🍒","🌼","🧁","🍀","🫧","🍓","🌈","🐝","🍊","💛","🪻","🍇","🦋","☀️","🍪","🎀"];\n    const code = Array.from({length:5},()=>emojiPool[crypto.randomInt(emojiPool.length)]).join(" ");
     req.session.pendingVerification = { id:String(found.id), name:found.name, code, expiresAt:Date.now()+10*60*1000, attempts:0 };
     req.session.save(err => {
       if (err) return next(err);
@@ -194,7 +194,7 @@ app.post("/auth/verify", async (req,res,next) => {
     if (!profileResponse.ok || String(profile.id) !== pending.id) return res.status(502).json({error:"Could not check that Roblox profile right now. Try again."});
     if (!String(profile.description || "").includes(pending.code)) {
       req.session.save(() => {});
-      return res.status(400).json({error:"We couldn't find your code in that Roblox profile description yet. Add the exact code, save your profile, and try again."});
+      return res.status(400).json({error:"We couldn't find your emoji sequence in that Roblox profile description yet. Copy all five emojis, save your profile, and try again."});
     }
     const verifiedUser = { id:pending.id, name:pending.name, picture:null };
     delete req.session.pendingVerification;
