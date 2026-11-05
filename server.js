@@ -232,7 +232,7 @@ app.get("/api/staff", requireLogin, async (req,res,next)=>{
       const data=await response.json().catch(()=>({}));if(response.ok)profiles.push(...(data.data||[]));
     }
     const byId=new Map(profiles.map(p=>[String(p.id),p]));
-    res.json({members:base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.id,displayName:byId.get(m.id)?.displayName||""})).sort((a,b)=>a.username.localeCompare(b.username))});
+    res.json({members:base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.id,displayName:byId.get(m.id)?.displayName||""})).sort((a,b)=>a.username.localeCompare(b.username)),roles:roles.map(r=>({id:r.id,name:r.name,rank:r.rank}))});
   }catch(e){next(e);}
 });
 
