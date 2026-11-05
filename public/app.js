@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[];
+let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set();
 const pageNames = {overview:"Overview",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -145,6 +145,7 @@ async function loadTeamsSettings(){
     const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
     teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.department)+' / '+escapeHtml(t.name)+'</option>').join("");
     if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
+    teamMemberDraft=new Set(teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(teamSelect.value||"")).map(m=>String(m.id)));
     renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();
   }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
 }
@@ -165,36 +166,38 @@ function renderTeamDirectory(){
   const box=$("teamDirectory");if(!box)return;
   if(!managementTeams.length){box.innerHTML='<div class="empty-state">No teams yet. Create your first team above.</div>';return;}
   const departments=[...new Set(managementTeams.map(t=>t.department))];
-  box.innerHTML=departments.map(dept=>'<section class="department-group"><div class="department-heading"><b>'+escapeHtml(dept)+'</b><span>'+managementTeams.filter(t=>t.department===dept).length+' teams</span></div><div class="team-card-grid">'+managementTeams.filter(t=>t.department===dept).map(t=>'<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"No description")+'</small><em>'+Number(t.member_count||0)+' assigned staff</em></div><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></article>').join("")+'</div></section>').join("");
+  box.innerHTML=departments.map(dept=>'<section class="department-group"><div class="department-heading"><b>'+escapeHtml(dept)+'</b><span>'+managementTeams.filter(t=>t.department===dept).length+' teams</span></div><div class="team-card-grid">'+managementTeams.filter(t=>t.department===dept).map(t=>'<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"No description")+'</small><em>'+Number(t.member_count||0)+' assigned staff</em></div><div class="team-card-actions"><button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></article>').join("")+'</div></section>').join("");
 }
 function renderTeamAssignmentMembers(){
-  const teamId=$("teamAssignmentSelect")?.value,select=$("teamMembersSelect");if(!select)return;
-  const q=($("teamMemberSearch")?.value||"").trim().toLowerCase();
-  const selected=teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(teamId||""));
-  select.innerHTML=teamStaffCache.map(m=>{
-    const match=!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q));
-    const elsewhere=teamAssignments.has(String(m.id))&&String(teamAssignments.get(String(m.id)))!==String(teamId);
-    return '<option value="'+escapeHtml(m.id)+'"'+(selected.some(x=>String(x.id)===String(m.id))?' selected':'')+(!match?' hidden':'')+'>'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+(elsewhere?' · assigned elsewhere':'')+'</option>';
-  }).join("");
-  $("teamAssignmentHelp").textContent=teamId?selected.length+" staff currently assigned. Select the members who should belong to this team.":"Select a team to load its current members.";
+ const teamId=$("teamAssignmentSelect")?.value,box=$("teamMembersSelect");if(!box)return;
+ const q=($("teamMemberSearch")?.value||"").trim().toLowerCase();
+ if(!teamId){box.innerHTML='<div class="empty-state">Choose a team to manage its members.</div>';$("teamAssignmentHelp").textContent="Choose a team first.";$("teamSelectedCount").textContent="0 selected";return;}
+ const visible=teamStaffCache.filter(m=>[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)));
+ box.innerHTML=visible.length?visible.map(m=>{const id=String(m.id),assigned=teamAssignments.get(id),checked=teamMemberDraft.has(id),other=assigned&&assigned!==String(teamId);return '<label class="team-member-row"><input type="checkbox" data-team-member-check="'+escapeHtml(id)+'" '+(checked?'checked':'')+'><span class="team-member-avatar">'+escapeHtml(String(m.username||"?").slice(0,1).toUpperCase())+'</span><span class="team-member-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.role||"Staff member")+'</small></span><span class="team-member-current">'+(other?'Currently on another team':checked?'Selected':'Not assigned')+'</span></label>';}).join(""):'<div class="empty-state">No staff matched your search.</div>';
+ $("teamAssignmentHelp").textContent=teamMemberDraft.size+" selected for this team";$("teamSelectedCount").textContent=teamMemberDraft.size+" selected";
 }
+$("teamMembersSelect")?.addEventListener("change",e=>{const input=e.target.closest("[data-team-member-check]");if(!input)return;const id=String(input.dataset.teamMemberCheck);if(input.checked)teamMemberDraft.add(id);else teamMemberDraft.delete(id);renderTeamAssignmentMembers();});
+$("teamSelectVisible")?.addEventListener("click",()=>{document.querySelectorAll("#teamMembersSelect [data-team-member-check]").forEach(el=>teamMemberDraft.add(String(el.dataset.teamMemberCheck)));renderTeamAssignmentMembers();});
+$("teamClearVisible")?.addEventListener("click",()=>{document.querySelectorAll("#teamMembersSelect [data-team-member-check]").forEach(el=>teamMemberDraft.delete(String(el.dataset.teamMemberCheck)));renderTeamAssignmentMembers();});
 $("createTeam")?.addEventListener("click",async()=>{
   const btn=$("createTeam");btn.disabled=true;
   try{const id=$("teamEditId").value;const payload={name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value,groupRoleRank:$("teamGroupRoleRank").value===""?null:Number($("teamGroupRoleRank").value)};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
-    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRank").value="";btn.textContent="＋ Create team";notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
+    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRank").value="";btn.textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
-$("teamAssignmentSelect")?.addEventListener("change",renderTeamAssignmentMembers);
+$("teamAssignmentSelect")?.addEventListener("change",()=>{const id=$("teamAssignmentSelect").value;teamMemberDraft=new Set(teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(id)).map(m=>String(m.id)));renderTeamAssignmentMembers();});
 $("teamMemberSearch")?.addEventListener("input",renderTeamAssignmentMembers);
 $("saveTeamMembers")?.addEventListener("click",async()=>{
   const teamId=$("teamAssignmentSelect").value;if(!teamId){notice("Choose a team first.","error");return;}
   const btn=$("saveTeamMembers");btn.disabled=true;
-  try{const userIds=Array.from($("teamMembersSelect").selectedOptions).map(o=>o.value);await api("/api/management/teams/"+encodeURIComponent(teamId)+"/members",{method:"PUT",body:JSON.stringify({userIds})});notice("Team assignments saved.","success");await loadTeamsSettings();}
+  try{const userIds=[...teamMemberDraft];await api("/api/management/teams/"+encodeURIComponent(teamId)+"/members",{method:"PUT",body:JSON.stringify({userIds})});notice("Team assignments saved.","success");await loadTeamsSettings();}
   catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
+$("cancelTeamEdit")?.addEventListener("click",()=>{$("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";$("teamGroupRoleRank").value="";$("createTeam").textContent="＋ Create team";$("cancelTeamEdit").classList.add("hidden");});
 $("teamDirectory")?.addEventListener("click",async event=>{
   const edit=event.target.closest("[data-team-edit]");
-  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamGroupRoleRank").value=t.group_role_rank??"";$("createTeam").textContent="Save team changes";$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
+  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("teamGroupRoleRank").value=t.group_role_rank??"";$("createTeam").textContent="Save team changes";$("cancelTeamEdit").classList.remove("hidden");$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
+  const manage=event.target.closest("[data-team-manage]");if(manage){const id=manage.dataset.teamManage;$("teamAssignmentSelect").value=id;teamMemberDraft=new Set(teamStaffCache.filter(m=>String(teamAssignments.get(String(m.id))||"")===String(id)).map(m=>String(m.id)));renderTeamAssignmentMembers();$("teamAssignmentSelect").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const btn=event.target.closest("[data-team-delete]");if(!btn)return;
   if(!confirm("Delete this team? Its staff assignments will be cleared."))return;
   try{await api("/api/management/teams/"+encodeURIComponent(btn.dataset.teamDelete),{method:"DELETE"});notice("Team deleted.","success");await loadTeamsSettings();}
