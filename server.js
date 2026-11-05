@@ -516,7 +516,7 @@ app.use("/api/management", createManagementRouter({ pool, getIdentity, requireLo
 app.use(express.static("public", { extensions:["html"] }));
 app.get("*", (req,res) => res.sendFile(require("node:path").join(process.cwd(),"public","index.html")));
 app.use((err,req,res,next) => {
-  console.error("Portal error:", err.message, err.roblox || "");
+  console.error("Portal error:", {message:err.message,code:err.code,stack:err.stack,method:req.method,path:req.originalUrl,roblox:err.roblox||null});
   const status = err.status && err.status < 500 ? err.status : 500;
   res.status(status).json({error:status===500?"Something went wrong while contacting Roblox or the database. Check the backend logs for details.":err.message});
 });
