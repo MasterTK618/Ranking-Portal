@@ -212,7 +212,7 @@ app.get("/api/me", requireLogin, async (req,res) => {
   }
 });
 
-app.get("/api/staff", requireLogin, requireRanker, async (req,res,next)=>{
+app.get("/api/staff", requireLogin, async (req,res,next)=>{
   try{
     const roles=await getRoles(), memberships=[];let token="";
     do{
