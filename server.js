@@ -226,6 +226,22 @@ app.get("/api/me", requireLogin, async (req,res) => {
   }
 });
 
+app.get("/api/group/roles",requireLogin,async(req,res)=>{
+  try{
+    const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles");
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!Array.isArray(data.roles))throw new Error(data.errors?.[0]?.message||data.message||("Roblox returned HTTP "+response.status));
+    const roles=data.roles.map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank)}))
+      .filter(role=>Number.isInteger(role.rank)&&role.rank>=0&&role.rank<=255)
+      .sort((a,b)=>a.rank-b.rank);
+    res.set("Cache-Control","private, max-age=300");
+    res.json({groupId:GROUP_ID,roles,count:roles.length,source:"roblox-group-roles"});
+  }catch(error){
+    console.error("Lemonz group roles failed:",error.message);
+    res.status(502).json({error:"Could not load all group roles from Roblox: "+error.message});
+  }
+});
+
 app.get("/api/staff",requireLogin,async(req,res)=>{
   const staffMinRank = Number(process.env.STAFF_MIN_RANK || 230);
   const diagnostics = {
