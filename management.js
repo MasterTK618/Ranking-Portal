@@ -277,12 +277,17 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({items:r.rows.map(x=>({...x,canDelete:String(x.suggested_by)===String(req.session.user.id)||who.rank>=Number(s.promotion_approve_rank)})),rank:who.rank,settings:s});
     }catch(e){next(e);}
   });
+  router.get("/promotions/audit",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),all=Number(who.rank)>=Number(s.promotion_approve_rank);
+    const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' AND actor_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);res.json({items:r.rows});
+  }catch(e){next(e);}});
   router.post("/promotions",csrf,async(req,res,next)=>{
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
       const b=req.body||{},userId=String(b.userId||""),username=String(b.username||"").trim(),role=String(b.suggestedRole||"").trim(),reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!role||!reason)return res.status(400).json({error:"Complete the member, suggested role, and reason."});
       const r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name) VALUES($1,$2,$3,$4,'PENDING',$5,$6) RETURNING *",
         [userId,username,role,reason,req.session.user.id,req.session.user.name]);
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION","REQUESTED",userId,username,"Suggested role: "+role+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
@@ -292,6 +297,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const r=await pool.query("UPDATE promotion_suggestions SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",
         [status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
       if(!r.rowCount)return res.status(404).json({error:"Pending promotion suggestion not found."});
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",status,String(r.rows[0].user_id),r.rows[0].username,"Suggestion #"+r.rows[0].id+" | "+r.rows[0].suggested_role+(r.rows[0].decision_note?" | "+r.rows[0].decision_note:""),String(req.session.user.id),String(req.session.user.name)]);
       res.json({ok:true,item:r.rows[0]});
     }catch(e){next(e);}
   });
