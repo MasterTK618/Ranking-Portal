@@ -805,13 +805,14 @@ $("addOverseeSlot")?.addEventListener("click",()=>addSessionRoleSlot("createOver
 $("addAttendeeSlot")?.addEventListener("click",()=>addSessionRoleSlot("createAttendeeSlots","Attendee "+($("createAttendeeSlots").children.length+1)));
 $("editAddOverseeSlot")?.addEventListener("click",()=>addSessionRoleSlot("editOverseeSlots","Oversee "+($("editOverseeSlots").children.length+1),{},true));
 $("editAddAttendeeSlot")?.addEventListener("click",()=>addSessionRoleSlot("editAttendeeSlots","Attendee "+($("editAttendeeSlots").children.length+1)));
+$("sessionRepeat")?.addEventListener("change",()=>{$("sessionRepeatUntilWrap").classList.toggle("hidden",$("sessionRepeat").value==="NONE");});
 $("createSession").addEventListener("click",async()=>{
  const hostId=$("sessionHost").value,cohostId=$("sessionCoHost").value,promoterId=$("sessionPromoter").value;
  if(!hostId){notice("Choose a host from the dropdown.","error");return;}
- const body={title:$("sessionTitle").value.trim(),sessionType:$("sessionType").value,date:$("sessionDate").value,time:$("sessionTime").value,hostId,cohostId,overseeSlots:collectSessionRoleSlots("createOverseeSlots"),attendeeSlots:collectSessionRoleSlots("createAttendeeSlots"),promoterId};
+ const body={title:$("sessionTitle").value.trim(),sessionType:$("sessionType").value,date:$("sessionDate").value,time:$("sessionTime").value,hostId,cohostId,overseeSlots:collectSessionRoleSlots("createOverseeSlots"),attendeeSlots:collectSessionRoleSlots("createAttendeeSlots"),promoterId,recurrenceRule:$("sessionRepeat").value,recurrenceUntil:$("sessionRepeatUntil").value};
  if(!body.title||!body.date||!body.time){notice("Enter a shift name, date, and time.","error");return;}
  const btn=$("createSession");btn.disabled=true;
- try{await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});notice("Shift created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
+ try{const created=await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});notice(created.createdCount>1?created.createdCount+" recurring sessions created.":"Shift created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
 });
 
 
