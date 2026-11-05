@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-const pageNames = {overview:"Overview",rank:"Rank members",members:"Members",logs:"Ranking logs",settings:"Settings",management:"Management"};
+const pageNames = {overview:"Overview",rank:"Ranking",members:"Members",logs:"Ranking Logs",sessions:"Sessions",activity:"Activity",punishments:"Punishments",promotions:"Promotion Suggestions",leaves:"Time Off",settings:"Settings"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
@@ -20,7 +20,7 @@ function showPage(page) {
   if(page==="logs") loadLogs();
   if(page==="rank") loadRoles();
   if(page==="settings") loadGameSettings();
-  if(page==="management") loadManagement("activity");
+  if(page==="sessions") loadSessions();\n  if(page==="activity") loadManagement("activity");\n  if(page==="punishments") loadManagement("punishments");\n  if(page==="promotions") loadManagement("promotions");\n  if(page==="leaves") loadManagement("leaves");
 }
 document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go)));
@@ -180,7 +180,7 @@ function managementTab(tab){
   ["activity","punishments","promotions","leaves"].forEach(k=>$("m"+k[0].toUpperCase()+k.slice(1)).classList.toggle("hidden",k!==tab));
   loadManagement(tab);
 }
-document.querySelectorAll("[data-mtab]").forEach(b=>b.addEventListener("click",()=>managementTab(b.dataset.mtab)));
+
 function dateOnly(v){return v?String(v).slice(0,10):"—"}
 function actionButtons(type,item,rank,settings){
   const field=type==="punishment"?"punishment_approve_rank":type==="promotion"?"promotion_approve_rank":"leave_approve_rank";
@@ -252,4 +252,32 @@ document.addEventListener("click",async e=>{
     await api(`/api/management/${route}/${encodeURIComponent(id)}/decision`,{method:"POST",body:JSON.stringify({status})});
     notice(`${type[0].toUpperCase()+type.slice(1)} ${status.toLowerCase()}.`,"success");loadManagement(route);
   }catch(err){notice(err.message,"error")}
+});
+
+
+let staffDirectory=[], calendarCursor=new Date();
+async function loadStaffDirectory(){
+  const d=await api("/api/staff");staffDirectory=d.members||[];
+  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true],["sessionAttendees","",false]];
+  configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(!el)return;el.innerHTML=(placeholder?'<option value="">'+placeholder+'</option>':'')+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+' (Rank '+m.rank+')</option>').join("");});
+  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
+  ["punishUsername","promotionUsername","activityUsername"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
+}
+function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
+function drawSessionsCalendar(items){
+  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=first.getDay(),days=new Date(y,m+1,0).getDate(),cells=[];
+  for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside"></div>');
+  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day"><b>'+day+'</b>'+events.map(s=>'<div class="calendar-event">'+escapeHtml(s.title)+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+'</div>').join("")+'</div>');}
+  $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
+}
+async function loadSessions(){
+  try{if(!staffDirectory.length)await loadStaffDirectory();const d=await api("/api/sessions");const items=(d.sessions||[]).filter(s=>String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor));$("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);$("sessionList").innerHTML=(d.sessions||[]).length?'<table class="data-table"><thead><tr><th>DATE</th><th>SESSION</th><th>TIME</th><th>HOST</th><th>CO-HOST</th><th>OVERSEE</th><th>PROMOTER</th><th>ATTENDEES</th></tr></thead><tbody>'+d.sessions.map(s=>'<tr><td>'+escapeHtml(String(s.session_date).slice(0,10))+'</td><td>'+escapeHtml(s.title)+'</td><td>'+escapeHtml(String(s.session_time||"").slice(0,5))+'</td><td>'+escapeHtml(s.host_name)+'</td><td>'+escapeHtml(s.cohost_name||"—")+'</td><td>'+escapeHtml(s.oversee_name||"—")+'</td><td>'+escapeHtml(s.promoter_name||"—")+'</td><td>'+escapeHtml((s.attendee_names||[]).join(", "))+'</td></tr>').join("")+'</tbody></table>':'No sessions scheduled yet.';}catch(e){$("sessionList").textContent=e.message;}
+}
+$("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
+$("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
+$("createSession").addEventListener("click",async()=>{
+ const attendees=[...$("sessionAttendees").selectedOptions].map(o=>o.value).filter(Boolean);
+ const body={title:$("sessionTitle").value.trim(),date:$("sessionDate").value,time:$("sessionTime").value,hostId:$("sessionHost").value,cohostId:$("sessionCoHost").value,overseeId:$("sessionOversee").value,promoterId:$("sessionPromoter").value,attendeeIds:attendees};
+ const btn=$("createSession");btn.disabled=true;
+ try{await api("/api/sessions",{method:"POST",body:JSON.stringify(body)});notice("Session created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
 });
