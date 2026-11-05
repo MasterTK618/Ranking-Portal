@@ -248,7 +248,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||""),status=String(b.status||"PLANNED"),statusNote=String(b.statusNote||"").trim().slice(0,500),sessionType=String(b.sessionType||"PROMOTIONAL");
     const hostId=String(b.hostId||""),cohostId=String(b.cohostId||""),promoterId=String(b.promoterId||"");
     const overseeSlots=Array.isArray(b.overseeSlots)?b.overseeSlots.map((x,i)=>({label:String(x?.label||("Oversee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})):[];
-    const attendeeSlots=Array.isArray(b.attendeeSlots)?b.attendeeSlots.map((x,i)=>({label:String(x?.label||("Attendee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})).filter(x=>x.userId):[];
+    const attendeeSlots=Array.isArray(b.attendeeSlots)?b.attendeeSlots.map((x,i)=>({label:String(x?.label||("Attendee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})):[];
     const overseeIds=[...new Set((overseeSlots.length?overseeSlots.map(x=>x.userId).filter(Boolean):(Array.isArray(b.overseeIds)?b.overseeIds.map(String):[])).filter(Boolean))],attendeeIds=[...new Set((attendeeSlots.length?attendeeSlots.map(x=>x.userId).filter(Boolean):(Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[])).filter(Boolean))];
     const ids=[hostId,cohostId,promoterId,...overseeIds,...attendeeIds].filter(Boolean),parsed=new Date(date+"T00:00:00.000Z");
     if(!title||title.length>100||! /^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||! /^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!hostId||!["PLANNED","ONGOING","DELAYED","CANCELED","COMPLETED"].includes(status)||!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(sessionType))return res.status(400).json({error:"Check the session name, date, time, type, status, and host."});
@@ -274,10 +274,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.post("/sessions",csrf,async(req,res,next)=>{try{
     const allowed=await gate(req,res,"session_create_rank");if(!allowed)return;
     const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
-    const attendeeSlots=Array.isArray(b.attendeeSlots)?b.attendeeSlots.map((x,i)=>({label:String(x?.label||("Attendee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})).filter(x=>x.userId):[];
-    const overseeSlots=Array.isArray(b.overseeSlots)?b.overseeSlots.map((x,i)=>({label:String(x?.label||("Oversee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})).filter(x=>x.userId):[];
+    const attendeeSlots=Array.isArray(b.attendeeSlots)?b.attendeeSlots.map((x,i)=>({label:String(x?.label||("Attendee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})):[];
+    const overseeSlots=Array.isArray(b.overseeSlots)?b.overseeSlots.map((x,i)=>({label:String(x?.label||("Oversee "+(i+1))).trim().slice(0,40),userId:String(x?.userId||"")})):[];
     const attendeeIds=attendeeSlots.length?attendeeSlots.map(x=>x.userId).filter(Boolean):(Array.isArray(b.attendeeIds)?b.attendeeIds.map(String):[]);
-    const overseeIds=overseeSlots.length?overseeSlots.map(x=>x.userId):(Array.isArray(b.overseeIds)?b.overseeIds.map(String):(b.overseeId?[String(b.overseeId)]:[]));
+    const overseeIds=overseeSlots.length?overseeSlots.map(x=>x.userId).filter(Boolean):(Array.isArray(b.overseeIds)?b.overseeIds.map(String):(b.overseeId?[String(b.overseeId)]:[]));
     const ids=[b.hostId,b.cohostId,b.promoterId,...overseeIds,...attendeeIds].filter(Boolean).map(String);
     const parsedSessionDate=new Date(date+"T00:00:00.000Z");if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedSessionDate.getTime())||parsedSessionDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a valid session name, date, time, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
