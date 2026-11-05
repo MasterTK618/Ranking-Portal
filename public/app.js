@@ -109,14 +109,14 @@ async function loadManagementSettings(){
   try{
     const d=await api("/api/management/settings");
     const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",session_approve_rank:"sessionApproveRank",session_status_rank:"sessionStatusRank",notification_view_rank:"notificationViewRank",analytics_view_rank:"analyticsViewRank",quota_hours_week:"quotaHoursWeek",quota_sessions_week:"quotaSessionsWeek",quota_tasks_week:"quotaTasksWeek",notifications_enabled:"notificationsEnabled",recurring_sessions_enabled:"recurringSessionsEnabled"};
-    Object.entries(map).forEach(([key,id])=>$(id).value=d.settings[key]);
+    Object.entries(map).forEach(([key,id])=>{const el=$(id);if(el.type==="checkbox")el.checked=Number(d.settings[key])!==0;else el.value=d.settings[key];});
   }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
 }
 $("saveManagementSettings").addEventListener("click",async()=>{
   const btn=$("saveManagementSettings");btn.disabled=true;btn.textContent="Saving…";
   try{
     const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",session_approve_rank:"sessionApproveRank",session_status_rank:"sessionStatusRank",notification_view_rank:"notificationViewRank",analytics_view_rank:"analyticsViewRank",quota_hours_week:"quotaHoursWeek",quota_sessions_week:"quotaSessionsWeek",quota_tasks_week:"quotaTasksWeek",notifications_enabled:"notificationsEnabled",recurring_sessions_enabled:"recurringSessionsEnabled"};
-    const values={};Object.entries(map).forEach(([key,id])=>values[key]=Number($(id).value));
+    const values={};Object.entries(map).forEach(([key,id])=>{const el=$(id);values[key]=el.type==="checkbox"?(el.checked?1:0):Number(el.value);});
     await api("/api/management/settings",{method:"PUT",body:JSON.stringify(values)});
     notice("Management permissions saved.","success");
   }catch(e){notice(e.message,"error")}
