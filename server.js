@@ -14,6 +14,19 @@ const GROUP_ID = process.env.ROBLOX_GROUP_ID || "16597698";
 const MIN_RANK = Number(process.env.MIN_RANK || 245);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined });
 
+async function ensureWebSessionSchema() {
+  // Create the connect-pg-simple table ourselves with a table-specific PK name.
+  // Its automatic schema uses the generic constraint name "session_pkey", which
+  // can collide with an older session table already present in this database.
+  await pool.query(`CREATE TABLE IF NOT EXISTS web_sessions (
+    sid VARCHAR NOT NULL,
+    sess JSON NOT NULL,
+    expire TIMESTAMP(6) NOT NULL,
+    CONSTRAINT web_sessions_pkey PRIMARY KEY (sid)
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS web_sessions_expire_idx ON web_sessions(expire)");
+}
+
 const required = ["SESSION_SECRET","DATABASE_URL","ROBLOX_API_KEY","INGAME_API_SECRET"];
 const missing = required.filter(k => !process.env[k]);
 if (missing.length) console.warn("Missing environment variables:", missing.join(", "));
@@ -23,7 +36,7 @@ app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc:["'self'"], s
 app.use(express.json({ limit: "30kb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
-  store: new PgSession({ pool, tableName: "web_sessions", createTableIfMissing: true }),
+  store: new PgSession({ pool, tableName: "web_sessions", createTableIfMissing: false }),
   name: "lemonz.sid", secret: process.env.SESSION_SECRET || "development-only-change-me",
   resave: false, saveUninitialized: false,
   cookie: { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 8 * 60 * 60 * 1000 }
@@ -490,7 +503,7 @@ app.use((err,req,res,next) => {
   const status = err.status && err.status < 500 ? err.status : 500;
   res.status(status).json({error:status===500?"Something went wrong while contacting Roblox or the database. Check the backend logs for details.":err.message});
 });
-ensureSchema().then(() => ensureManagementSchema(pool)).then(() => {
+ensureWebSessionSchema().then(() => ensureSchema()).then(() => ensureManagementSchema(pool)).then(() => {
   app.listen(PORT, () => console.log(`Lemonz Ranking Portal listening on ${PORT}`));
 }).catch(err => {
   console.error("Database setup failed:",err);
