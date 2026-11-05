@@ -4,3 +4,13 @@ body.dark{--bg:#171715;--panel:#22221f;--panel2:#292923;--text:#f1f0e9;--muted:#
 @media(max-width:900px){.sidebar{width:205px}.main{margin-left:205px;padding:28px 25px}.login-panel{grid-template-columns:1fr}.login-art{min-height:230px}.lemon-graphic{font-size:100px}.stat-grid{grid-template-columns:1fr 1fr}.stat-card:last-child{grid-column:span 2}}@media(max-width:650px){.sidebar{position:static;width:auto;height:auto;padding:14px;display:block;border-right:0;border-bottom:1px solid var(--line)}.brand{margin:0 0 12px}.side-label,.sidebar-bottom{display:none}.sidebar .nav-item{display:inline-flex;padding:9px;font-size:10px;margin-right:3px}.sidebar .nav-item span{display:none}.main{margin:0;padding:20px 15px;min-height:calc(100vh - 120px)}.topbar{align-items:flex-start;gap:12px}.topbar h1{font-size:22px}.top-actions{flex-direction:column;align-items:flex-end;gap:7px}.live-pill{display:none}.login-copy{padding:40px 28px}.login-copy h2{font-size:34px}.login-art{min-height:180px}.stat-grid{grid-template-columns:1fr}.stat-card:last-child{grid-column:auto}.quick-grid{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.search-row{flex-direction:column}.form-footer{align-items:flex-start;gap:12px;flex-direction:column}.welcome-row{align-items:flex-start;gap:12px;flex-direction:column}}
 
 .setting-check{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--text);font-size:12px;font-weight:600}.setting-check input{width:16px;height:16px;accent-color:#e2b800;flex:0 0 auto}.content-card .muted{display:block;margin-top:18px;font-size:11px;line-height:1.6;color:var(--muted)}
+
+
+.management-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.management-tabs .active{background:#fff2bd;border-color:#e7c33c;color:#604900}
+body.dark .management-tabs .active{background:#393216;border-color:#927817;color:#f5d65d}
+.management-panel .content-card h3{font-size:15px;margin:0 0 8px}
+.management-panel .content-card>p{font-size:11px;line-height:1.6}
+.management-rank-grid{margin-top:16px}
+.management-rank-grid label{display:block;font-size:9px;letter-spacing:1.1px;font-weight:800;color:var(--muted);margin:5px 0 9px}
+.management-panel .data-table td{vertical-align:top;min-width:100px}
