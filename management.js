@@ -125,7 +125,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/session-requests",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank);
     const result=canReview?await pool.query("SELECT * FROM session_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM session_requests WHERE requested_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
-    res.json({items:result.rows,canReview,rank:Number(who.rank),settings:cfg});
+    res.json({items:result.rows.map(x=>({...x,canCancel:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview)})),canReview,rank:Number(who.rank),settings:cfg});
   }catch(e){next(e);}});
   router.post("/session-requests",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||"");
@@ -138,6 +138,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await gate(req,res,"session_approve_rank");if(!who)return;const status=String(req.body?.status||""),note=String(req.body?.note||"").trim().slice(0,500);if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});if(status==="REJECTED"&&!note)return res.status(400).json({error:"Add a reason when declining a session request."});
     const result=await pool.query("UPDATE session_requests SET status=$1,reviewed_by=$2,reviewed_by_name=$3,review_note=$4,reviewed_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",[status,String(req.session.user.id),String(req.session.user.name),note,req.params.id]);if(!result.rowCount)return res.status(404).json({error:"Pending session request not found."});
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",status,String(result.rows[0].requested_by),result.rows[0].requested_by_name,"Request #"+result.rows[0].id+" | "+result.rows[0].session_type+" | "+result.rows[0].title+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true,item:result.rows[0]});
+  }catch(e){next(e);}});
+  router.delete("/session-requests/:id",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canManage=Number(who.rank)>=Number(cfg.session_approve_rank);
+    const result=await pool.query("DELETE FROM session_requests WHERE id=$1 AND status='PENDING' AND (requested_by=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
+    if(!result.rowCount)return res.status(403).json({error:"Only the requester or an authorized reviewer can cancel a pending session request."});
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUEST_CANCELED",String(result.rows[0].requested_by),result.rows[0].requested_by_name,"Request #"+result.rows[0].id+" | "+result.rows[0].title,String(req.session.user.id),String(req.session.user.name)]);res.json({ok:true});
   }catch(e){next(e);}});
   router.get("/session-requests/audit",async(req,res,next)=>{try{const who=await gate(req,res,"session_approve_rank");if(!who)return;const result=await pool.query("SELECT * FROM management_audit_logs WHERE category='SESSION' ORDER BY created_at DESC LIMIT 300");res.json({items:result.rows});}catch(e){next(e);}});
   router.patch("/sessions/:id/status",csrf,async(req,res,next)=>{try{
