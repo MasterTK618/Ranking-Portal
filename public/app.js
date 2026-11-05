@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set();
+let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[];
 const pageNames = {overview:"Overview",views:"Views & Insights",rank:"Group Ranking",members:"Staff Directory",logs:"Ranking History",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -147,11 +147,11 @@ async function loadTeamsSettings(){
   for(const x of(d.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}
   let staffLoadError=null,groupRoles=[];
   const roleResult=await api("/api/group/roles");
-  groupRoles=Array.isArray(roleResult.roles)?roleResult.roles:[];
+  groupRoles=Array.isArray(roleResult.roles)?roleResult.roles:[];groupRoleCache=groupRoles;
   if(!groupRoles.length)throw new Error("Roblox returned no group roles. Check the configured group ID.");
   try{const staff=await api("/api/staff");teamStaffCache=Array.isArray(staff.members)?staff.members:[];}catch(staffError){staffLoadError=staffError;teamStaffCache=[];}
   if(teamStaffCache.length){try{await syncTeamsByGroupRole();}catch(syncError){console.warn("Team auto-assignment sync failed:",syncError);}}
-  const ranks=groupRoles.map(r=>({rank:Number(r.rank),role:String(r.name||("Rank "+r.rank))})).filter(r=>Number.isInteger(r.rank)&&r.rank>=0&&r.rank<=255).sort((x,y)=>x.rank-y.rank);
+  const ranks=groupRoles.map(r=>({rank:Number(r.rank),role:String(r.name||("Rank "+r.rank))})).filter(r=>Number.isInteger(r.rank)&&r.rank>=0&&r.rank<=255).sort((x,y)=>x.rank-y.rank);if($("teamRoleCount"))$("teamRoleCount").textContent=ranks.length+" group roles available";
   for(const id of ["teamRuleMin","teamRuleMax"]){const el=$(id),previous=el.value;el.innerHTML='<option value="">Choose rank…</option>'+ranks.map(r=>'<option value="'+r.rank+'">'+escapeHtml(r.role)+' · Rank '+r.rank+'</option>').join("");if(ranks.some(r=>String(r.rank)===previous))el.value=previous;}
   const teamSelect=$("teamAssignmentSelect"),previous=teamSelect.value;
   teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
@@ -618,7 +618,8 @@ async function loadStaffDirectory(force=false){
   }catch{}
 
   renderStaffDirectory();if(!staffDirectory.length){const z=d.diagnostics||{};status.textContent="No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+". Check STAFF_MIN_RANK and the group ID."; }
-  const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
+  try{if(!groupRoleCache.length){const groupRoleData=await api("/api/group/roles");groupRoleCache=groupRoleData.roles||[];}}catch(roleError){console.warn("Complete group role list unavailable:",roleError);}
+  const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(groupRoleCache.length?groupRoleCache:d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
   ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
   const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionPromoter","Choose promoter…",true]];
