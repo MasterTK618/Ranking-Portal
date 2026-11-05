@@ -257,6 +257,14 @@ async function loadOverviewInsights(){
   const max=Math.max(1,...buckets.map(x=>x.count));
   chart.innerHTML=buckets.map(x=>'<div class="chart-column" title="'+x.count+' active staff"><div class="chart-bar" style="height:'+Math.max(3,x.count/max*100)+'%"></div><small>'+x.label+'</small></div>').join("");
  }else chart.innerHTML='<div class="chart-empty">No activity data is available for your account.</div>';
+ const homeBoard=$("overviewLeaderboard");
+ if(homeBoard){
+  if(activity&&activity.canViewAll!==false){
+   const byId=new Map(roster.map(x=>[String(x.user_id??x.id??""),x]));
+   const ranked=staff.map(m=>{const r=byId.get(String(m.id??m.user_id??""))||{};return {...m,id:String(m.id??m.user_id??""),username:m.username||r.username||"Staff member",seconds:Number(r.seconds||0),last_seen:r.last_seen||null};}).filter(m=>/^\d+$/.test(m.id)).sort((a,b)=>b.seconds-a.seconds||String(a.username).localeCompare(String(b.username)));
+   homeBoard.innerHTML=ranked.length?buildLeaderboard(ranked,5):'<div class="chart-empty">No staff activity has been recorded yet.</div>';
+  }else homeBoard.innerHTML='<div class="chart-empty">The group leaderboard is not available with your current activity permissions.</div>';
+ }
  upcomingBox.innerHTML=next.length?next.slice(0,4).map(x=>{const date=new Date(String(x.session_date).slice(0,10)+"T00:00:00");return '<div class="overview-session"><div class="overview-date">'+date.toLocaleDateString(undefined,{month:"short"}).toUpperCase()+'<b>'+date.getDate()+'</b></div><div><strong>'+escapeHtml(x.title)+'</strong><small>'+escapeHtml(String(x.session_time||"").slice(0,5))+' · '+escapeHtml(x.host_name||"Host pending")+'</small></div><span class="status-pill">'+escapeHtml(x.status)+'</span></div>';}).join(""):'<div class="chart-empty">No upcoming sessions are scheduled.</div>';
 }
 $("refreshOverviewInsights")?.addEventListener("click",()=>loadOverviewInsights().catch(e=>notice(e.message,"error")));
@@ -340,55 +348,51 @@ function actionButtons(type,item,rank,settings){
   return '<div class="table-actions">'+decision+remove+'</div>';
 }
 function searchRows(items,id,fields){const q=($(id)?.value||"").trim().toLowerCase();return !q?items:items.filter(x=>fields.some(k=>String(x[k]??"").toLowerCase().includes(q)));}
+function buildLeaderboard(roster,limit=5){
+ const shown=roster.slice(0,limit);
+ const avatar=(x,size)=>x.avatarUrl?'<img class="'+size+'" src="'+escapeHtml(x.avatarUrl)+'" alt="'+escapeHtml(x.username||"Staff avatar")+'" loading="lazy">':'<span class="'+size+' avatar-fallback">'+escapeHtml((x.username||"?").slice(0,1).toUpperCase())+'</span>';
+ const podium=[shown[1],shown[0],shown[2]].filter(Boolean).map(x=>{
+  const place=roster.indexOf(x)+1;
+  return '<button type="button" class="leader-podium-card podium-place-'+place+'" data-leader-user="'+escapeHtml(x.id)+'" aria-label="Open '+escapeHtml(x.username)+' profile, leaderboard place '+place+'"><span class="podium-medal">'+(place===1?"♛":place===2?"Ⅱ":"Ⅲ")+'</span>'+avatar(x,"podium-avatar")+'<b class="podium-name">'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small><strong>'+(x.seconds/3600).toFixed(1)+'<small> hrs</small></strong><span class="podium-base">'+place+'</span></button>';
+ }).join("");
+ const rows=shown.slice(3).map((x,i)=>{
+  const place=i+4,active=x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000;
+  return '<button type="button" class="views-leader-row leader-profile-link" data-leader-user="'+escapeHtml(x.id)+'"><span class="views-leader-rank">'+place+'</span>'+avatar(x,"leader-avatar")+'<div class="leader-member-copy"><b>'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small></div><span class="leader-activity '+(active?"is-active":"")+'">'+(active?"Active":x.last_seen?"Tracked":"No recent data")+'</span><strong>'+(x.seconds/3600).toFixed(1)+'h</strong><span class="leader-open-profile">Profile ↗</span></button>';
+ }).join("");
+ return '<div class="leader-summary"><span>'+roster.length+' staff ranked</span><span>All-time recorded in-game time</span></div><div class="leader-podium">'+podium+'</div>'+(rows?'<div class="leader-table-head"><span>PLACE</span><span></span><span>STAFF MEMBER</span><span>ACTIVITY</span><span>HOURS</span><span></span></div>'+rows:'')+(roster.length>limit?'<div class="leader-footer"><button type="button" class="quiet-btn" data-leader-see-all>See all '+roster.length+' staff members →</button></div>':"");
+}
+let cachedLeaderboard=[];
 async function loadViews(){
  const stats=$("viewsStats"),teams=$("viewsTeams"),sessions=$("viewsSessions"),leader=$("viewsLeaderboard");
  const showError=(el,label,error)=>{if(el)el.innerHTML='<div class="empty-state error-state">'+escapeHtml(label+": "+error.message)+'</div>';};
  [stats,teams,sessions,leader].forEach(el=>{if(el)el.setAttribute("aria-busy","true");});
  try{
   const results=await Promise.allSettled([api("/api/staff"),api("/api/management/activity"),api("/api/management/sessions"),api("/api/management/teams")]);
-  const labels=["staff roster","activity","sessions","teams"],failed=results.map((r,i)=>r.status==="rejected"?labels[i]+": "+r.reason.message:null).filter(Boolean);
   const value=i=>results[i].status==="fulfilled"?results[i].value:null;
   const staffData=value(0),activityData=value(1),sessionData=value(2),teamData=value(3);
+  const labels=["staff roster","activity","sessions","teams"],failed=results.map((r,i)=>r.status==="rejected"?labels[i]+": "+r.reason.message:null).filter(Boolean);
   if(!staffData)showError(stats,"Could not load overview",results[0].reason);
   else{
    const staff=staffData.members||[],activity=activityData?.members||[],allSessions=sessionData?.sessions||[];
-   const activityById=new Map(activity.map(x=>[String(x.user_id),x]));
    const active=activity.filter(x=>x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000).length;
    const hours=(activity.reduce((n,x)=>n+Number(x.seconds||0),0)/3600).toFixed(1);
    const upcoming=allSessions.filter(x=>["PLANNED","DELAYED"].includes(x.status)&&new Date(String(x.session_date).slice(0,10)+"T"+String(x.session_time||"00:00").slice(0,5)+":00")>=new Date()).length;
    stats.innerHTML=[["STAFF MEMBERS",staff.length],["ACTIVE STAFF",activityData?active:"—"],["IN-GAME HOURS",activityData?hours:"—"],["UPCOMING SESSIONS",sessionData?upcoming:"—"]].map(x=>'<article class="views-stat"><small>'+x[0]+'</small><b>'+x[1]+'</b><span>'+((x[0]==="ACTIVE STAFF"||x[0]==="IN-GAME HOURS")&&!activityData?"Activity unavailable":"Live portal data")+'</span></article>').join("");
-   if(activityData){
-    const activity=Array.isArray(activityData.members)?activityData.members:[];
-    const activityById=new Map(activity.map(x=>[String(x.user_id??x.id??""),x]).filter(x=>x[0]));
-    const roster=(staffData.members||[]).map(m=>{
-      const id=String(m.id??m.user_id??"");
-      const a=activityById.get(id)||{};
-      return {...m,id,seconds:Number(a.seconds||0),last_seen:a.last_seen||null,shifts_attended:Number(a.shifts_attended||0)};
-    }).filter(m=>/^\d+$/.test(m.id)).sort((x,y)=>y.seconds-x.seconds||String(x.username||"").localeCompare(String(y.username||"")));
-    const avatar=(x,sizeClass)=>x.avatarUrl?'<img class="'+sizeClass+'" src="'+escapeHtml(x.avatarUrl)+'" alt="'+escapeHtml(x.username||"Staff avatar")+'" loading="lazy">':'<span class="'+sizeClass+' avatar-fallback">'+escapeHtml((x.username||"?").slice(0,1).toUpperCase())+'</span>';
-    const podium=([roster[1],roster[0],roster[2]].filter(Boolean)).map(x=>{
-      const place=roster.indexOf(x)+1;
-      return '<button type="button" class="leader-podium-card podium-place-'+place+'" data-leader-user="'+escapeHtml(x.id)+'" aria-label="Open '+escapeHtml(x.username)+' profile, leaderboard place '+place+'"><span class="podium-medal">'+(place===1?"♛":place===2?"Ⅱ":"Ⅲ")+'</span>'+avatar(x,"podium-avatar")+'<b class="podium-name">'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small><strong>'+(x.seconds/3600).toFixed(1)+'<small> hrs</small></strong><span class="podium-base">'+place+'</span></button>';
-    }).join("");
-    const remaining=roster.slice(3,10).map((x,i)=>{
-      const place=i+4,activeNow=x.last_seen&&Date.now()-new Date(x.last_seen).getTime()<7*86400000;
-      return '<button type="button" class="views-leader-row leader-profile-link" data-leader-user="'+escapeHtml(x.id)+'"><span class="views-leader-rank">'+place+'</span>'+avatar(x,"leader-avatar")+'<div class="leader-member-copy"><b>'+escapeHtml(x.username||"Staff member")+'</b><small>'+escapeHtml(x.role||("Rank "+(x.rank||"—")))+'</small></div><span class="leader-activity '+(activeNow?"is-active":"")+'">'+(activeNow?"Active":x.last_seen?"Tracked":"No recent data")+'</span><strong>'+(x.seconds/3600).toFixed(1)+'h</strong><span class="leader-open-profile">Profile ↗</span></button>';
-    }).join("");
-    leader.innerHTML=roster.length?'<div class="leader-summary"><span>'+roster.length+' staff ranked</span><span>All-time recorded in-game time</span></div><div class="leader-podium">'+podium+'</div><div class="leader-list-heading"><div><b>Leaderboard</b><small>Places 4–10 · Select a staff member to view their profile</small></div></div>'+(remaining?'<div class="leader-table-head"><span>PLACE</span><span></span><span>STAFF MEMBER</span><span>ACTIVITY</span><span>HOURS</span><span></span></div>'+remaining:''):'<div class="empty-state">No staff members were returned by the group directory. Refresh the staff directory and try again.</div>';
-   }else{
-    const message=activityData?.canViewAll===false?"Your current permission level only allows you to view your own activity. Ask an owner to grant leaderboard viewing access.":results[1].reason?.message||"Activity data could not be loaded.";
-    showError(leader,"Leaderboard unavailable",new Error(message));
-   }
+   if(activityData&&activityData.canViewAll!==false){
+    const byId=new Map(activity.map(x=>[String(x.user_id??x.id??""),x]).filter(x=>x[0]));
+    cachedLeaderboard=staff.map(m=>{const id=String(m.id??m.user_id??""),r=byId.get(id)||{};return {...m,id,username:m.username||r.username||"Staff member",seconds:Number(r.seconds||0),last_seen:r.last_seen||null,shifts_attended:Number(r.shifts_attended||0)};}).filter(m=>/^\d+$/.test(m.id)).sort((x,y)=>y.seconds-x.seconds||String(x.username).localeCompare(String(y.username)));
+    leader.innerHTML=cachedLeaderboard.length?buildLeaderboard(cachedLeaderboard,5):'<div class="empty-state">No staff members were returned by the group directory.</div>';
+   }else{cachedLeaderboard=[];showError(leader,"Leaderboard unavailable",new Error(activityData?.canViewAll===false?"Your current rank does not have permission to view the group leaderboard. Ask an owner to grant activity viewing access.":results[1].reason?.message||"Activity data could not be loaded."));}
   }
-  if(teamData){const allTeams=teamData.teams||[];teams.innerHTML=allTeams.length?allTeams.map(t=>'<div class="views-team-row"><span class="views-team-dot" style="background:'+escapeHtml(t.color||"#f5c928")+'"></span><div><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Lemonz team")+'</small></div><strong>'+Number(t.member_count||0)+'</strong></div>').join(""):'<div class="empty-state">No teams have been created yet.</div>';}else showError(teams,"Could not load teams",results[3].reason);
-  if(sessionData){const allSessions=sessionData.sessions||[],counts=[["Planned","PLANNED"],["On-going","ONGOING"],["Delayed","DELAYED"],["Completed","COMPLETED"],["Canceled","CANCELED"]].map(([label,status])=>[label,allSessions.filter(x=>x.status===status).length]),max=Math.max(1,...counts.map(x=>x[1]));sessions.innerHTML=counts.map(x=>'<div class="views-pipeline-row"><span>'+x[0]+'</span><div><i style="width:'+Math.round(x[1]/max*100)+'%"></i></div><b>'+x[1]+'</b></div>').join("");}else showError(sessions,"Could not load sessions",results[2].reason);
+  if(teamData){const all=teamData.teams||[];teams.innerHTML=all.length?all.map(t=>'<div class="views-team-row"><span class="views-team-dot" style="background:'+escapeHtml(t.color||"#f5c928")+'"></span><div><b>'+escapeHtml(t.name)+'</b><small>'+escapeHtml(t.description||"Lemonz team")+'</small></div><strong>'+Number(t.member_count||0)+'</strong></div>').join(""):'<div class="empty-state">No teams have been created yet.</div>';}else showError(teams,"Could not load teams",results[3].reason);
+  if(sessionData){const all=sessionData.sessions||[],counts=[["Planned","PLANNED"],["On-going","ONGOING"],["Delayed","DELAYED"],["Completed","COMPLETED"],["Canceled","CANCELED"]].map(([label,status])=>[label,all.filter(x=>x.status===status).length]),max=Math.max(1,...counts.map(x=>x[1]));sessions.innerHTML=counts.map(x=>'<div class="views-pipeline-row"><span>'+x[0]+'</span><div><i style="width:'+Math.round(x[1]/max*100)+'%"></i></div><b>'+x[1]+'</b></div>').join("");}else showError(sessions,"Could not load sessions",results[2].reason);
   if(failed.length)notice("Some insight panels could not load: "+failed.join(" · "),"error");
  }catch(e){showError(stats,"Insights unavailable",e);}
  finally{[stats,teams,sessions,leader].forEach(el=>{if(el)el.removeAttribute("aria-busy");});}
 }
 $("viewsLeaderboard")?.addEventListener("click",async e=>{
- const card=e.target.closest("[data-leader-user]");if(!card)return;
- const id=String(card.dataset.leaderUser||"");if(!/^\\d+$/.test(id)){notice("This leaderboard entry does not have a valid Roblox user ID.","error");return;}
+ const all=e.target.closest("[data-leader-see-all]");if(all){showPage("members");await loadStaffDirectory(true);$("directorySearch").value="";renderStaffDirectory();return;}const card=e.target.closest("[data-leader-user]");if(!card)return;
+ const id=String(card.dataset.leaderUser||"");if(!/^\d+$/.test(id)){notice("This leaderboard entry does not have a valid Roblox user ID.","error");return;}
  card.disabled=true;showPage("members");
  try{await showStaffProfile(id);}finally{card.disabled=false;}
 });
