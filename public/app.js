@@ -20,7 +20,11 @@ function showPage(page) {
   if(page==="logs") loadLogs();
   if(page==="rank") loadRoles();
   if(page==="settings") loadGameSettings();
-  if(page==="sessions") loadSessions();\n  if(page==="activity") loadManagement("activity");\n  if(page==="punishments") loadManagement("punishments");\n  if(page==="promotions") loadManagement("promotions");\n  if(page==="leaves") loadManagement("leaves");
+  if(page==="sessions") loadSessions();
+  if(page==="activity") loadManagement("activity");
+  if(page==="punishments") loadManagement("punishments");
+  if(page==="promotions") loadManagement("promotions");
+  if(page==="leaves") loadManagement("leaves");
 }
 document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go)));
@@ -111,7 +115,7 @@ $("saveManagementSettings").addEventListener("click",async()=>{
     await api("/api/management/settings",{method:"PUT",body:JSON.stringify(values)});
     notice("Management permissions saved.","success");
   }catch(e){notice(e.message,"error")}
-  finally{btn.disabled=false;btn.textContent="Save management permissions"}
+  finally{btn.disabled=false;btn.textContent="Save permissions"}
 });
 
 async function loadGameSettings(){
