@@ -162,8 +162,8 @@ function renderTeamAssignmentMembers(){
 }
 $("createTeam")?.addEventListener("click",async()=>{
   const btn=$("createTeam");btn.disabled=true;
-  try{await api("/api/management/teams",{method:"POST",body:JSON.stringify({name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value})});
-    $("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";notice("Team created.","success");await loadTeamsSettings();
+  try{const id=$("teamEditId").value;const payload={name:$("teamName").value,department:$("teamDepartment").value,description:$("teamDescription").value,color:$("teamColor").value};await api(id?"/api/management/teams/"+encodeURIComponent(id):"/api/management/teams",{method:id?"PUT":"POST",body:JSON.stringify(payload)});
+    $("teamEditId").value="";$("teamName").value="";$("teamDepartment").value="";$("teamDescription").value="";$("teamColor").value="#f5c928";btn.textContent="＋ Create team";notice(id?"Team updated.":"Team created.","success");await loadTeamsSettings();
   }catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
 $("teamAssignmentSelect")?.addEventListener("change",renderTeamAssignmentMembers);
@@ -175,6 +175,8 @@ $("saveTeamMembers")?.addEventListener("click",async()=>{
   catch(e){notice(e.message,"error")}finally{btn.disabled=false;}
 });
 $("teamDirectory")?.addEventListener("click",async event=>{
+  const edit=event.target.closest("[data-team-edit]");
+  if(edit){const t=managementTeams.find(x=>String(x.id)===String(edit.dataset.teamEdit));if(!t)return;$("teamEditId").value=t.id;$("teamName").value=t.name;$("teamDepartment").value=t.department;$("teamDescription").value=t.description||"";$("teamColor").value=t.color||"#f5c928";$("createTeam").textContent="Save team changes";$("teamName").focus();$("teamName").scrollIntoView({behavior:"smooth",block:"center"});return;}
   const btn=event.target.closest("[data-team-delete]");if(!btn)return;
   if(!confirm("Delete this team? Its staff assignments will be cleared."))return;
   try{await api("/api/management/teams/"+encodeURIComponent(btn.dataset.teamDelete),{method:"DELETE"});notice("Team deleted.","success");await loadTeamsSettings();}
