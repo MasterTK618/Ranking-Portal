@@ -310,8 +310,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const activity=await pool.query("SELECT COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0) AS seconds,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
       const notes=await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
+      const tasks=await pool.query("SELECT id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
+      const promotions=await pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const viewer=await identity(req);
-      res.json({canAddNotes:Number(viewer?.rank||0)>=238,canModerateNotes:Number(viewer?.rank||0)>=245,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows});
+      res.json({canAddNotes:Number(viewer?.rank||0)>=238,canModerateNotes:Number(viewer?.rank||0)>=245,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
     }catch(e){next(e);}
   });
 
@@ -512,6 +514,16 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/quotas",async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),rules=await pool.query("SELECT * FROM management_quotas WHERE enabled=TRUE ORDER BY scope,scope_id,min_rank");res.json({defaults:{hours:Number(cfg.quota_hours_week),sessions:Number(cfg.quota_sessions_week),tasks:Number(cfg.quota_tasks_week)},rules:rules.rows,canManage:Number(who.rank)>=255});}catch(e){next(e);}});
   router.put("/quotas",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who||who.rank<255)return res.status(403).json({error:"Only the group owner can configure quotas."});const b=req.body||{},scope=String(b.scope||"GLOBAL"),scopeId=String(b.scopeId||""),min=Number(b.minRank||1),max=Number(b.maxRank||255),hours=Number(b.hours),sessions=Number(b.sessions),tasks=Number(b.tasks);if(!["GLOBAL","TEAM","RANK"].includes(scope)||scope==="GLOBAL"&&scopeId||scope!=="GLOBAL"&&!scopeId||!Number.isInteger(min)||!Number.isInteger(max)||min<1||max>255||min>max||!Number.isFinite(hours)||hours<0||hours>168||![sessions,tasks].every(x=>Number.isInteger(x)&&x>=0&&x<=100))return res.status(400).json({error:"Check quota scope, rank range, and weekly targets."});const r=await pool.query("INSERT INTO management_quotas(scope,scope_id,min_rank,max_rank,hours_per_week,sessions_per_week,tasks_per_week,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(scope,scope_id,min_rank,max_rank) DO UPDATE SET hours_per_week=EXCLUDED.hours_per_week,sessions_per_week=EXCLUDED.sessions_per_week,tasks_per_week=EXCLUDED.tasks_per_week,enabled=TRUE,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING *",[scope,scopeId,min,max,hours,sessions,tasks,String(req.session.user.id)]);res.json({ok:true,rule:r.rows[0]});}catch(e){next(e);}});
 
+
+  router.get("/teams/:id/dashboard",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const team=await pool.query("SELECT id,name,color FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
+    const members=await pool.query("SELECT user_id FROM management_team_members WHERE team_id=$1",[req.params.id]),ids=members.rows.map(x=>x.user_id);
+    const activity=ids.length?await pool.query("SELECT user_id,COALESCE(SUM(seconds),0)::BIGINT AS seconds,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=ANY($1::text[]) GROUP BY user_id",[ids]):{rows:[]};
+    const tasks=ids.length?await pool.query("SELECT status,COUNT(*)::INTEGER AS count FROM management_tasks WHERE assigned_to_id=ANY($1::text[]) GROUP BY status",[ids]):{rows:[]};
+    const shifts=ids.length?await pool.query("SELECT COUNT(*)::INTEGER AS count FROM staff_shifts WHERE host_id=ANY($1::text[]) OR cohost_id=ANY($1::text[]) OR promoter_id=ANY($1::text[])",[ids]):{rows:[{count:0}]};
+    res.json({team:team.rows[0],members:ids,activity:activity.rows,tasks:tasks.rows,sessionCount:Number(shifts.rows[0]?.count||0)});
+  }catch(e){next(e);}});
   return router;
 }
 
