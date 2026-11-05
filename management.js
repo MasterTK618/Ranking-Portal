@@ -68,8 +68,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
 
   router.get("/sessions",async(req,res,next)=>{try{
-    const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
-    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number((req.identity?.rank)||0)>=255}))});
+    const who=await identity(req);const result=await pool.query("SELECT * FROM portal_sessions ORDER BY session_date NULLS LAST,session_time NULLS LAST,created_at DESC");
+    res.json({sessions:result.rows.map(row=>({...row,canDelete:String(row.created_by)===String(req.session.user.id)||Number(who?.rank||0)>=255}))});
   }catch(e){next(e);}});
   router.post("/sessions",csrf,async(req,res,next)=>{try{
     const b=req.body||{},title=String(b.title||"").trim(),date=String(b.date||""),time=String(b.time||"");
