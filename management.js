@@ -92,6 +92,15 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=await pool.query("UPDATE management_teams SET name=$1,department=$2,description=$3,color=$4,group_role_rank=$5,updated_at=NOW() WHERE id=$6 RETURNING *",[name,department,description,color,groupRoleRank,req.params.id]);
     if(!r.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true,team:r.rows[0]});
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"That team already exists in this department."});next(e);}});
+  router.put("/teams/member/:userId",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
+    const userId=String(req.params.userId);if(!/^\\d+$/.test(userId))return res.status(400).json({error:"Invalid Roblox user ID."});
+    const teamId=req.body?.teamId==null||req.body.teamId===""?null:String(req.body.teamId);
+    if(teamId!==null){const team=await pool.query("SELECT id FROM management_teams WHERE id=$1",[teamId]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});}
+    await pool.query("DELETE FROM management_team_members WHERE user_id=$1",[userId]);
+    if(teamId!==null)await pool.query("INSERT INTO management_team_members(user_id,team_id,assigned_by) VALUES($1,$2,$3)",[userId,teamId,String(req.session.user.id)]);
+    res.json({ok:true,userId,teamId});
+  }catch(e){next(e);}});
   router.put("/teams/:id/members",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to teams."});
     const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\d+$/.test(x)))]:[];
@@ -105,15 +114,15 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=await pool.query("DELETE FROM management_teams WHERE id=$1 RETURNING id",[req.params.id]);if(!r.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true});
   }catch(e){next(e);}});
   router.get("/knowledge",async(req,res,next)=>{try{
-    const who=await identity(req);const r=await pool.query("SELECT id,title,kind,url,content,min_rank,category,created_by_name,updated_by_name,created_at,updated_at FROM knowledge_hub_items WHERE min_rank <= $1 ORDER BY category,title",[who?.rank||0]);
+    const who=await identity(req);const r=await pool.query("SELECT k.id,k.title,k.kind,k.url,k.content,k.min_rank,k.category,k.team_id,t.name AS team_name,t.department AS team_department,k.created_by_name,k.updated_by_name,k.created_at,k.updated_at FROM knowledge_hub_items k LEFT JOIN management_teams t ON t.id=k.team_id WHERE k.min_rank <= $1 AND (k.team_id IS NULL OR EXISTS(SELECT 1 FROM management_team_members tm WHERE tm.team_id=k.team_id AND tm.user_id=$2) OR $3=TRUE) ORDER BY k.category,k.title",[who?.rank||0,String(req.session.user.id),Number(who?.rank||0)>=255]);
     res.json({items:r.rows,rank:who?.rank||0,canManage:(who?.rank||0)>=Number((await settings()).knowledge_manage_rank)});
   }catch(e){next(e);}});
   router.post("/knowledge",csrf,async(req,res,next)=>{try{
     const who=await gate(req,res,"knowledge_manage_rank");if(!who)return;
-    const b=req.body||{},title=String(b.title||"").trim(),kind=String(b.kind||"document"),category=String(b.category||"General").trim().slice(0,50),content=String(b.content||"").trim(),url=String(b.url||"").trim(),minRank=Number(b.minRank||1);
-    if(!title||title.length>120||!["link","document"].includes(kind)||!Number.isInteger(minRank)||minRank<1||minRank>255||!content||content.length>30000)return res.status(400).json({error:"Enter a title, valid type, content, and rank between 1 and 255."});
+    const b=req.body||{},title=String(b.title||"").trim(),kind=String(b.kind||"document"),category=String(b.category||"General").trim().slice(0,50),content=String(b.content||"").trim(),url=String(b.url||"").trim(),minRank=Number(b.minRank||1),teamId=b.teamId==null||b.teamId===""?null:Number(b.teamId);
+    if(!title||title.length>120||!["link","document"].includes(kind)||!Number.isInteger(minRank)||minRank<1||minRank>255||!content||content.length>30000||(teamId!==null&&(!Number.isInteger(teamId)||teamId<1)))return res.status(400).json({error:"Enter a title, valid type, content, rank, and team."});
     if(kind==="link"){try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Enter a valid http or https link."});}}
-    const r=await pool.query("INSERT INTO knowledge_hub_items(title,kind,url,content,min_rank,category,created_by,created_by_name,updated_by,updated_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$7,$8) RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,String(req.session.user.id),req.session.user.name]);
+    const r=await pool.query("INSERT INTO knowledge_hub_items(title,kind,url,content,min_rank,category,team_id,created_by,created_by_name,updated_by,updated_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$8,$9) RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,teamId,String(req.session.user.id),req.session.user.name]);
     res.json({ok:true,item:r.rows[0]});
   }catch(e){next(e);}});
   router.put("/knowledge/:id",csrf,async(req,res,next)=>{try{
@@ -121,7 +130,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const b=req.body||{},title=String(b.title||"").trim(),kind=String(b.kind||"document"),category=String(b.category||"General").trim().slice(0,50),content=String(b.content||"").trim(),url=String(b.url||"").trim(),minRank=Number(b.minRank||1);
     if(!title||title.length>120||!["link","document"].includes(kind)||!Number.isInteger(minRank)||minRank<1||minRank>255||!content||content.length>30000)return res.status(400).json({error:"Enter a title, valid type, content, and rank between 1 and 255."});
     if(kind==="link"){try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Enter a valid http or https link."});}}
-    const r=await pool.query("UPDATE knowledge_hub_items SET title=$1,kind=$2,url=$3,content=$4,min_rank=$5,category=$6,updated_by=$7,updated_by_name=$8,updated_at=NOW() WHERE id=$9 RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,String(req.session.user.id),req.session.user.name,req.params.id]);
+    const r=await pool.query("UPDATE knowledge_hub_items SET title=$1,kind=$2,url=$3,content=$4,min_rank=$5,category=$6,team_id=$7,updated_by=$8,updated_by_name=$9,updated_at=NOW() WHERE id=$10 RETURNING *",[title,kind,kind==="link"?url:null,content,minRank,category,teamId,String(req.session.user.id),req.session.user.name,req.params.id]);
     if(!r.rowCount)return res.status(404).json({error:"Knowledge item not found."});res.json({ok:true,item:r.rows[0]});
   }catch(e){next(e);}});
   router.delete("/knowledge/:id",csrf,async(req,res,next)=>{try{
@@ -434,9 +443,10 @@ async function ensureManagementSchema(pool) {
   await pool.query("CREATE INDEX IF NOT EXISTS session_requests_status_created_idx ON session_requests(status,created_at DESC)");
   await pool.query(`CREATE TABLE IF NOT EXISTS knowledge_hub_items (
     id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,kind TEXT NOT NULL,url TEXT,content TEXT NOT NULL DEFAULT '',
-    min_rank INTEGER NOT NULL DEFAULT 1,category TEXT NOT NULL DEFAULT 'General',
+    min_rank INTEGER NOT NULL DEFAULT 1,category TEXT NOT NULL DEFAULT 'General',team_id BIGINT REFERENCES management_teams(id) ON DELETE SET NULL,
     created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,updated_by TEXT NOT NULL,updated_by_name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query("ALTER TABLE knowledge_hub_items ADD COLUMN IF NOT EXISTS team_id BIGINT REFERENCES management_teams(id) ON DELETE SET NULL");
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_sessions (
     id BIGSERIAL PRIMARY KEY, session_key TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, username TEXT NOT NULL,
     started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ, seconds INTEGER NOT NULL DEFAULT 0)`);
