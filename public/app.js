@@ -450,7 +450,7 @@ async function loadSessions(){
   const visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now;return filter==="all"||(filter==="upcoming"&&future&&["PLANNED","DELAYED"].includes(s.status))||(filter==="past"&&(!future||["CANCELED","COMPLETED"].includes(s.status)));});
   renderSessionTable(visible,$("sessionList"),q);
   const historyFilter=$("sessionHistoryFilter")?.value||"all",historyQ=$("sessionHistorySearch")?.value||"";
-  const history=all.filter(s=>["COMPLETED","CANCELED","DELAYED"].includes(s.status)&&(historyFilter==="all"||s.status===historyFilter));
+  const history=all.filter(s=>{const ended=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")<now||["COMPLETED","CANCELED","DELAYED"].includes(s.status);return ended&&(historyFilter==="all"||s.status===historyFilter);});
   renderSessionTable(history,$("sessionHistoryList"),historyQ);
  }catch(e){$("sessionList").innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
 }
