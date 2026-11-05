@@ -235,7 +235,8 @@ async function loadOverviewInsights(){
  upcomingBox.innerHTML=next.length?next.slice(0,4).map(x=>{const date=new Date(String(x.session_date).slice(0,10)+"T00:00:00");return '<div class="overview-session"><div class="overview-date">'+date.toLocaleDateString(undefined,{month:"short"}).toUpperCase()+'<b>'+date.getDate()+'</b></div><div><strong>'+escapeHtml(x.title)+'</strong><small>'+escapeHtml(String(x.session_time||"").slice(0,5))+' · '+escapeHtml(x.host_name||"Host pending")+'</small></div><span class="status-pill">'+escapeHtml(x.status)+'</span></div>';}).join(""):'<div class="chart-empty">No upcoming sessions are scheduled.</div>';
 }
 $("refreshOverviewInsights")?.addEventListener("click",()=>loadOverviewInsights().catch(e=>notice(e.message,"error")));
-\nasync function refreshOverview(){
+
+async function refreshOverview(){
   const data=await api("/api/me");sessionData=data;
   $("welcomeName").textContent=data.user.name;
   $("myRole").textContent=data.identity.roleName;
@@ -255,7 +256,8 @@ $("refreshOverviewInsights")?.addEventListener("click",()=>loadOverviewInsights(
     document.querySelectorAll(".nav-item").forEach(b=>b.classList.remove("hidden"));
     $("settingsNav").classList.toggle("hidden",data.identity.rank<255);
     $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
-    try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}\n    loadOverviewInsights().catch(()=>{});
+    try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}
+    loadOverviewInsights().catch(()=>{});
   }
   $("loginButton").classList.add("hidden");$("logoutButton").classList.remove("hidden");$("userBox").classList.remove("hidden");
 }
