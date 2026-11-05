@@ -65,11 +65,11 @@
 <div><label for="teamName">TEAM NAME</label><input id="teamName" maxlength="60" placeholder="e.g. Training Team"></div>
 <div><label for="teamDepartment">DEPARTMENT</label><input id="teamDepartment" maxlength="60" placeholder="e.g. Human Resources"></div>
 <div><label for="teamColor">TEAM COLOR</label><input id="teamColor" type="color" value="#f5c928"></div>
-<div><label for="teamGroupRoleRank">AUTO-ASSIGN BY GROUP RANK</label><input id="teamGroupRoleRank" type="number" min="1" max="255" placeholder="Optional"><small class="field-help">Exact Roblox group rank. Matching members are assigned when the staff directory refreshes.</small></div>
+<div><label for="teamGroupRoleRanks">AUTO-ASSIGN THESE GROUP ROLES</label><select id="teamGroupRoleRanks" multiple size="5" aria-label="Select one or more Roblox group roles"></select><small class="field-help">Hold Ctrl (Windows) or Command (Mac) to select multiple roles. Matching staff are added without removing their other team memberships.</small></div>
 <div class="full-width"><label for="teamDescription">TEAM RESPONSIBILITIES</label><input id="teamDescription" maxlength="300" placeholder="What does this team handle?"></div></div>
 <div class="form-footer"><button id="cancelTeamEdit" class="quiet-btn hidden" type="button">Cancel edit</button><button id="createTeam" class="primary-btn">＋ Create team</button></div></details>
 <div class="team-management-layout">
-<section class="team-assignment-panel"><div class="team-panel-heading"><h3>Assign staff</h3><p>Choose a team and tick the members who should belong to it. Save when finished.</p></div>
+<section class="team-assignment-panel"><div class="team-panel-heading"><h3>Assign staff</h3><p>Choose a team and tick the staff who should belong to it. A staff member can belong to several teams.</p></div>
 <label for="teamAssignmentSelect">SELECT TEAM</label><select id="teamAssignmentSelect"><option value="">Choose a team…</option></select>
 <input id="teamMemberSearch" class="team-member-search" placeholder="Search username, display name, or role…">
 <div class="team-member-tools"><span id="teamAssignmentHelp">Choose a team to see its members.</span><button id="teamSelectVisible" class="quiet-btn" type="button">Select visible</button><button id="teamClearVisible" class="quiet-btn" type="button">Clear visible</button></div>
