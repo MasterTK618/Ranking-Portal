@@ -175,8 +175,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||""),hostId=String(b.hostId||""),cohostId=String(b.cohostId||"");
     if(!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(type)||title.length<3||title.length>100||details.length<10||details.length>2000)return res.status(400).json({error:"Choose a session type, enter a clear title, and provide at least 10 characters of details."});
-    const parsedDate=new Date(date+"T00:00:00.000Z");if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==date||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
-    if(!/^\\d+$/.test(hostId)||cohostId&&!/^\\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
+    const parsedDate=new Date(date+"T00:00:00.000Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
+    if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
     const staff=await Promise.all([hostId,...(cohostId?[cohostId]:[])].map(async id=>({id,who:await getIdentity(id)})));
     if(staff.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"The host and co-host must be current Lemonz staff members."});
     const userNames=await Promise.all(staff.map(async x=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,u.name||x.id];}));
@@ -220,7 +220,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const cfg=await settings(),found=await pool.query("SELECT * FROM staff_shifts WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Session not found."});
     if(String(found.rows[0].created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(cfg.session_status_rank))return res.status(403).json({error:"You cannot edit this session's roles."});
     const hostId=String(req.body?.hostId||""),cohostId=String(req.body?.cohostId||"");
-    if(!/^\\d+$/.test(hostId)||cohostId&&!/^\\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
+    if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
     const ids=[hostId,...(cohostId?[cohostId]:[])],checks=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
     if(checks.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"Host and co-host must be current Lemonz staff members."});
     const names=await Promise.all(ids.map(async id=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];})),map=Object.fromEntries(names);
