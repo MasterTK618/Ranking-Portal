@@ -746,3 +746,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 @media(max-width:760px){.page{padding:20px 14px 34px}.card,.panel,.workspace-card{padding:16px}.page-intro{flex-direction:column}.data-table{display:block;overflow-x:auto;white-space:nowrap}}
 
 .team-role-explainer{color:var(--muted);font-size:11px;line-height:1.5}.team-role-count{display:inline-flex;align-items:center;border:1px solid rgba(245,201,40,.25);background:rgba(245,201,40,.08);color:#f5c928;padding:6px 9px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap}.team-role-source{font-size:9px;color:#f5c928;border:1px solid rgba(245,201,40,.2);padding:3px 6px;border-radius:999px;white-space:nowrap}
+
+/* Staff profile team membership editor */
+.profile-team-toolbar{display:flex;gap:10px;align-items:center;margin:16px 0 12px}.profile-team-toolbar input{flex:1;min-width:140px}
+.profile-team-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;max-height:380px;overflow:auto;padding:2px}
+.profile-team-option{display:flex;align-items:center;gap:10px;min-width:0;padding:13px 14px;border:1px solid var(--stroke-soft,rgba(255,255,255,.09));border-radius:12px;background:rgba(255,255,255,.018);cursor:pointer;transition:border-color .15s,background .15s}
+.profile-team-option:has(input:checked){border-color:rgba(245,201,40,.45);background:rgba(245,201,40,.065)}
+.profile-team-option input{accent-color:var(--yellow,#f5c928);width:16px;height:16px;flex:0 0 auto}
+.profile-team-swatch{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+.profile-team-option-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}.profile-team-option-copy b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile-team-option-copy small{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-team-option-state{font-size:9px;color:var(--muted);white-space:nowrap}
+.profile-team-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--stroke-soft,rgba(255,255,255,.09))}
+.staff-card-side{display:flex;align-items:center;gap:8px}
+@media(max-width:700px){.profile-team-choices{grid-template-columns:1fr}.profile-team-footer{align-items:stretch;flex-direction:column}.profile-team-toolbar{flex-wrap:wrap}}
