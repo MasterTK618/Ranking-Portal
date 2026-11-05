@@ -256,33 +256,37 @@ document.addEventListener("click",async e=>{
 
 
 let staffDirectory=[], calendarCursor=new Date();
-async function loadStaffDirectory(){
-  const d=await api("/api/staff");staffDirectory=d.members||[];
-  if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" staff members";
-  if($("directoryResult")){
-    const q=($("directorySearch")?.value||"").trim().toLowerCase();
-    const list=staffDirectory.filter(m=>!q||m.username.toLowerCase().includes(q)||m.role.toLowerCase().includes(q));
-    $("directoryResult").innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><span class="avatar-circle">'+escapeHtml(m.username.slice(0,1).toUpperCase())+'</span><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("")||'<p class="muted">No matching staff members.</p>';
-    $("directoryResult").onclick=e=>{const b=e.target.closest("[data-staff-id]");if(b)showStaffProfile(b.dataset.staffId);};
-  }
-  const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
-  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true]];
-  configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(!el)return;el.innerHTML=(placeholder?'<option value="">'+placeholder+'</option>':'')+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+' (Rank '+m.rank+')</option>').join("");});
-  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
-  ["punishUsername","promotionUsername","activityUsername"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
-  [["sessionHostSearch","sessionHost"],["sessionCoHostSearch","sessionCoHost"],["sessionOverseeSearch","sessionOversee"],["sessionPromoterSearch","sessionPromoter"]].forEach(([inputId,selectId])=>{
-    const input=$(inputId),select=$(selectId);if(!input||!select)return;
-    input.oninput=()=>{const match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase()&&(selectId!=="sessionOversee"&&selectId!=="sessionPromoter"||m.rank>=245));select.value=match?match.id:"";};
-  });
-  const attendeeSearch=$("sessionAttendeeSearch");
-  if(attendeeSearch)attendeeSearch.oninput=()=>{attendeeSearch.dataset.selectedId=(staffDirectory.find(m=>m.username.toLowerCase()===attendeeSearch.value.trim().toLowerCase())||{}).id||"";};
-  $("addSessionAttendee").onclick=()=>{
-    const input=$("sessionAttendeeSearch"),id=input.dataset.selectedId,member=staffDirectory.find(m=>m.id===id),select=$("sessionAttendees");
-    if(!member){notice("Choose a staff member from the suggestions first.","error");return;}
-    if([...select.options].some(o=>o.value===id)){notice("That attendee is already added.","error");return;}
-    const option=document.createElement("option");option.value=id;option.textContent=member.username+" — "+member.role;option.selected=true;select.appendChild(option);input.value="";input.dataset.selectedId="";
-  };
+function renderStaffDirectory(){
+ const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
+ const q=(search?.value||"").trim().toLowerCase();
+ const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)));
+ $("staffCount").textContent=staffDirectory.length+" staff members · Rank 230+";
+ status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search.";
+ result.innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("");
 }
+async function loadStaffDirectory(force=false){
+ const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
+ if(status)status.textContent="Loading staff ranked 230+…";
+ if(staffDirectory.length&&!force){renderStaffDirectory();return;}
+ if($("directoryButton"))$("directoryButton").disabled=true;
+ try{
+  const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];
+  renderStaffDirectory();if(!staffDirectory.length)status.textContent="No staff returned. Check the group API connection and rank filter.";
+  const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
+  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
+  ["punishUsername","promotionUsername","activityUsername","sessionHostSearch","sessionCoHostSearch","sessionOverseeSearch","sessionPromoterSearch","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
+  const configs=[["sessionHost","Choose host…",false],["sessionCoHost","No co-host",false],["sessionOversee","Choose oversee…",true],["sessionPromoter","Choose promoter…",true]];
+  configs.forEach(([id,placeholder,senior])=>{const el=$(id);if(el)el.innerHTML='<option value="">'+placeholder+'</option>'+staffDirectory.filter(m=>!senior||m.rank>=245).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' — '+escapeHtml(m.role)+'</option>').join("");});
+ }catch(e){
+  if(status)status.textContent="Could not load staff: "+e.message;
+  if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(e.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
+  $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
+ }finally{if($("directoryButton"))$("directoryButton").disabled=false;}
+}
+$("directoryButton")?.addEventListener("click",()=>loadStaffDirectory(true));
+$("directorySearch")?.addEventListener("input",renderStaffDirectory);
+$("directoryResult")?.addEventListener("click",e=>{const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
+
 async function showStaffProfile(id){
   const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML="<p>Loading staff profile…</p>";
   try{
