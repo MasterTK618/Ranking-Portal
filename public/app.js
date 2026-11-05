@@ -113,10 +113,31 @@ async function populateGroupRoleDropdowns(){
  const list=[...groupRoleCache].sort((x,y)=>Number(x.rank)-Number(y.rank));
  for(const el of selects){const old=el.value;el.innerHTML=list.map(r=>`<option value="${Number(r.rank)}">${escapeHtml(r.name||("Rank "+r.rank))} · Rank ${Number(r.rank)}</option>`).join("");if(list.some(r=>String(r.rank)===old))el.value=old;}
 }
+async function loadQuotaRules(){
+ const list=$("quotaRuleList");if(!list)return;
+ try{
+  const [d,t]=await Promise.all([api("/api/management/quotas"),api("/api/management/teams")]);
+  const teams=t.teams||[];$("quotaTeam").innerHTML='<option value="">Choose team…</option>'+teams.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
+  $("quotaRuleManager")?.classList.toggle("hidden",!d.canManage);
+  list.innerHTML=(d.rules||[]).length?(d.rules||[]).map(x=>'<div class="quota-rule-row"><b>'+escapeHtml(x.scope==="GLOBAL"?"Everyone":x.scope==="TEAM"?(teams.find(t=>String(t.id)===String(x.scope_id))?.name||"Team"):("Roles "+x.min_rank+"–"+x.max_rank))+'</b><span>'+Number(x.hours_per_week)+'h · '+x.sessions_per_week+' sessions · '+x.tasks_per_week+' tasks / week</span></div>').join(""):'<p class="muted">No custom quota rules yet. Default targets apply.</p>';
+ }catch(e){list.textContent=e.message;}
+}
+function updateQuotaScope(){const scope=$("quotaScope").value;$("quotaTeamWrap").classList.toggle("hidden",scope!=="TEAM");$("quotaMinWrap").classList.toggle("hidden",scope!=="RANK");$("quotaMaxWrap").classList.toggle("hidden",scope!=="RANK");}
+$("quotaScope")?.addEventListener("change",updateQuotaScope);
+$("saveQuotaRule")?.addEventListener("click",async()=>{
+ const b=$("saveQuotaRule"),scope=$("quotaScope").value;b.disabled=true;
+ try{
+  const payload={scope,scopeId:scope==="TEAM"?$("quotaTeam").value:"",minRank:scope==="RANK"?Number($("quotaMinRank").value):1,maxRank:scope==="RANK"?Number($("quotaMaxRank").value):255,hours:Number($("quotaRuleHours").value),sessions:Number($("quotaRuleSessions").value),tasks:Number($("quotaRuleTasks").value)};
+  if(scope==="TEAM"&&!payload.scopeId)throw new Error("Choose a team for this quota rule.");
+  if(scope==="RANK"&&(!payload.minRank||!payload.maxRank||payload.minRank>payload.maxRank))throw new Error("Choose a valid starting and ending role.");
+  await api("/api/management/quotas",{method:"PUT",body:JSON.stringify(payload)});notice("Custom quota rule saved.","success");await loadQuotaRules();
+ }catch(e){notice(e.message,"error");}finally{b.disabled=false;}
+});
 async function loadManagementSettings(){
   try{
     await populateGroupRoleDropdowns();
     const d=await api("/api/management/settings");
+    await loadQuotaRules();updateQuotaScope();
     const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",session_approve_rank:"sessionApproveRank",session_status_rank:"sessionStatusRank",notification_view_rank:"notificationViewRank",analytics_view_rank:"analyticsViewRank",quota_hours_week:"quotaHoursWeek",quota_sessions_week:"quotaSessionsWeek",quota_tasks_week:"quotaTasksWeek",notifications_enabled:"notificationsEnabled",recurring_sessions_enabled:"recurringSessionsEnabled",auto_approve_requests_enabled:"autoApproveRequestsEnabled",auto_approve_requests_rank:"autoApproveRequestsRank"};
     Object.entries(map).forEach(([key,id])=>{const el=$(id);if(el.type==="checkbox")el.checked=Number(d.settings[key])!==0;else el.value=d.settings[key];});if($("autoApproveRequestsRankValue"))$("autoApproveRequestsRankValue").textContent=$("autoApproveRequestsRank")?.value||"249";
   }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
