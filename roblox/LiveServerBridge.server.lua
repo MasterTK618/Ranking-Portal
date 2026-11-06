@@ -13,6 +13,40 @@ local joined,muted,ranks={},{},{}
 local loggedMessages={}
 local remote=ReplicatedStorage:FindFirstChild("LemonzPortalNotice") or Instance.new("RemoteEvent")
 remote.Name="LemonzPortalNotice";remote.Parent=ReplicatedStorage
+local chatRemote=ReplicatedStorage:FindFirstChild("LemonzPortalChatLog") or Instance.new("RemoteEvent")
+chatRemote.Name="LemonzPortalChatLog";chatRemote.Parent=ReplicatedStorage
+local recentChatIds,chatRate={},{}
+chatRemote.OnServerEvent:Connect(function(reporter,channelName,messageId,clientText)
+ if typeof(channelName)~="string" or (channelName~="RBXGeneral" and channelName~="General") then return end
+ if typeof(messageId)~="string" or #messageId<1 or #messageId>100 then return end
+ if typeof(clientText)~="string" or #clientText<1 or #clientText>1000 then return end
+ local now=os.clock()
+ local rate=chatRate[reporter.UserId] or {window=now,count=0}
+ if now-rate.window>=10 then rate={window=now,count=0} end
+ rate.count+=1;chatRate[reporter.UserId]=rate
+ if rate.count>8 then return end
+ local key=tostring(reporter.UserId)..":"..messageId
+ if recentChatIds[key] then return end
+ recentChatIds[key]=true
+ task.delay(300,function() recentChatIds[key]=nil end)
+ task.spawn(function()
+  local ok,filtered=pcall(function()
+   local result=TextService:FilterStringAsync(clientText,reporter.UserId)
+   return result:GetNonChatStringForBroadcastAsync()
+  end)
+  if not ok or typeof(filtered)~="string" or filtered=="" then
+   warn("[Lemonz Portal] Chat log skipped: Roblox text filtering failed for "..reporter.Name)
+   return
+  end
+  local response=call("/api/management/chat-log","POST",{
+   serverId=SERVER_ID,placeId=tostring(game.PlaceId),userId=tostring(reporter.UserId),
+   username=reporter.Name,displayName=reporter.DisplayName,channel=channelName,
+   messageId=messageId,message=filtered:sub(1,500)
+  })
+  if not response then warn("[Lemonz Portal] Chat log could not be saved. Check the HTTP/API response above.") end
+ end)
+end)
+print("[Lemonz Portal] Chat logging receiver is ready.")
 local function call(path,method,data)
  if GAME_SECRET=="" or GAME_SECRET=="PASTE_THE_SAME_INGAME_API_SECRET_HERE" then return nil end
  local ok,r=pcall(function() return HttpService:RequestAsync({Url=URL..path,Method=method,Headers={["Content-Type"]="application/json",["x-lemonz-game-key"]=GAME_SECRET},Body=data and HttpService:JSONEncode(data) or nil}) end)
@@ -26,38 +60,17 @@ local function report()
  end
  call("/api/management/live/heartbeat","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),players=list})
 end
+-- Keep mute enforcement in the server delivery callback.
+-- Message logging is handled by the sender's client after Roblox accepts and filters the message.
 local function filter(channel)
- if channel:IsA("TextChannel") then pcall(function()
-  channel.ShouldDeliverCallback=function(message)
-   local source=message.TextSource
-   if source and (channel.Name=="RBXGeneral" or channel.Name=="General") then
-    local userId=source.UserId
-    local messageId=tostring(message.MessageId or "")
-    if messageId~="" and not loggedMessages[messageId] then
-     loggedMessages[messageId]=true
-     local sender=Players:GetPlayerByUserId(userId)
-     local rawText=tostring(message.Text or ""):sub(1,500)
-     if sender and rawText~="" then
-      task.spawn(function()
-       -- ShouldDeliverCallback runs before Roblox's normal delivery filtering.
-       -- Apply Roblox's broadcast filter ourselves and never store raw chat text.
-       local ok,filtered=pcall(function()
-        local result=TextService:FilterStringAsync(rawText,userId)
-        return result:GetNonChatStringForBroadcastAsync()
-       end)
-       if ok and filtered and filtered~="" then
-        call("/api/management/chat-log","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),userId=tostring(userId),username=sender.Name,displayName=sender.DisplayName,channel=channel.Name,messageId=messageId,message=filtered:sub(1,500)})
-       else
-        warn("[Lemonz Portal] Chat log message was skipped because Roblox filtering failed.")
-       end
-      end)
-     end
-     task.delay(300,function() loggedMessages[messageId]=nil end)
-    end
+ if channel:IsA("TextChannel") then
+  pcall(function()
+   channel.ShouldDeliverCallback=function(message,recipientSource)
+    local source=message.TextSource
+    return not(source and muted[source.UserId])
    end
-   return not(source and muted[source.UserId])
-  end
- end) end
+  end)
+ end
 end
 for _,v in ipairs(TextChatService:GetDescendants()) do filter(v) end
 TextChatService.DescendantAdded:Connect(filter)
