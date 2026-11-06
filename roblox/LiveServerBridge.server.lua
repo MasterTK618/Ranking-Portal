@@ -44,9 +44,9 @@ local function execute(c)
  else return false,"Unsupported command." end
  return true,"Executed "..action
 end
-Players.PlayerAdded:Connect(function(p) joined[p]=DateTime.now():ToIsoDate();task.defer(report) end)
+Players.PlayerAdded:Connect(function(p) joined[p]=tostring(DateTime.now().UnixTimestamp);task.defer(report) end)
 Players.PlayerRemoving:Connect(function(p) call("/api/management/live/leave","POST",{serverId=SERVER_ID,userId=tostring(p.UserId)});joined[p]=nil;muted[p.UserId]=nil end)
-for _,p in ipairs(Players:GetPlayers()) do joined[p]=DateTime.now():ToIsoDate() end
+for _,p in ipairs(Players:GetPlayers()) do joined[p]=tostring(DateTime.now().UnixTimestamp) end
 task.spawn(function() while task.wait(25) do report() end end)
 task.spawn(function()
  while task.wait(4) do
