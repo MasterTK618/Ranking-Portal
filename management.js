@@ -4,10 +4,12 @@ const { createAnnouncementsRouter } = require("./announcements");
 function createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret, applyRobloxRank }) {
   const router = express.Router();
   const defaults = {
-    activity_view_rank:238, activity_edit_rank:245,
-    live_server_view_rank:238, live_player_moderate_rank:245, live_announce_rank:238, live_server_admin_rank:255,
-    punishment_view_rank:238, punishment_add_rank:245, punishment_request_rank:1, punishment_approve_rank:249,
-    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245, session_approve_rank:245, session_status_rank:245, notification_view_rank:238, analytics_view_rank:238, quota_hours_week:2, quota_sessions_week:2, quota_tasks_week:0, notifications_enabled:1, recurring_sessions_enabled:1, auto_approve_requests_enabled:0, auto_approve_requests_rank:249
+    // Rank 243+ is the baseline for day-to-day management. Sensitive approvals
+    // and server shutdown controls remain restricted to higher ranks.
+    activity_view_rank:243, activity_edit_rank:243,
+    live_server_view_rank:243, live_player_moderate_rank:243, live_announce_rank:243, live_server_admin_rank:255,
+    punishment_view_rank:243, punishment_add_rank:243, punishment_request_rank:1, punishment_approve_rank:249,
+    promotion_suggest_rank:243, promotion_approve_rank:249, leave_approve_rank:243, knowledge_manage_rank:243, session_create_rank:243, session_delete_rank:243, task_view_rank:243, task_manage_rank:243, session_approve_rank:243, session_status_rank:243, notification_view_rank:243, analytics_view_rank:243, quota_hours_week:2, quota_sessions_week:2, quota_tasks_week:0, notifications_enabled:1, recurring_sessions_enabled:1, auto_approve_requests_enabled:0, auto_approve_requests_rank:249
   };
   const columns = Object.keys(defaults);
   function requestAutoApproved(who, cfg) { return Number(cfg.auto_approve_requests_enabled)===1 && Number(who?.rank||0)>=Number(cfg.auto_approve_requests_rank||256); }
@@ -110,10 +112,13 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try {
       const who=await identity(req);
       if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can change management permissions."});
+      const previous=await settings();
       const values=columns.map(k=>Number(req.body?.[k]));
       const invalid=columns.some((k,i)=>k.endsWith("_rank")?(!Number.isInteger(values[i])||values[i]<1||values[i]>255):k==="quota_hours_week"?(!Number.isFinite(values[i])||values[i]<0||values[i]>168):k==="quota_start_day"?( !Number.isInteger(values[i])||values[i]<0||values[i]>6):k.endsWith("_enabled")?(![0,1].includes(values[i])):(!Number.isInteger(values[i])||values[i]<0||values[i]>100)); if(invalid)return res.status(400).json({error:"Check rank permissions, weekly quota targets, and feature toggles."});
       const sets=columns.map((k,i)=>k+"=$"+(i+1)).join(",");
       const result=await pool.query("UPDATE management_settings SET "+sets+",updated_at=NOW() WHERE id=1 RETURNING *",values);
+      const changed=columns.filter((key,i)=>Number(previous[key])!==values[i]).map((key,i)=>key+": "+Number(previous[key])+" → "+values[columns.indexOf(key)]);
+      if(changed.length)await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES('SETTINGS','UPDATED',NULL,'Portal settings',$1,$2,$3)",[changed.join(" | ").slice(0,1000),String(who.id||req.session.user.id),String(who.username||req.session.user.name||"Portal owner")]);
       res.json({ok:true,settings:result.rows[0]});
     } catch(e){next(e);}
   });
@@ -773,14 +778,14 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 async function ensureManagementSchema(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS management_settings (
     id INTEGER PRIMARY KEY CHECK(id=1),
-    activity_view_rank INTEGER NOT NULL DEFAULT 238, activity_edit_rank INTEGER NOT NULL DEFAULT 245,
-    punishment_view_rank INTEGER NOT NULL DEFAULT 238, punishment_add_rank INTEGER NOT NULL DEFAULT 245,
+    activity_view_rank INTEGER NOT NULL DEFAULT 243, activity_edit_rank INTEGER NOT NULL DEFAULT 243,
+    punishment_view_rank INTEGER NOT NULL DEFAULT 243, punishment_add_rank INTEGER NOT NULL DEFAULT 243,
     punishment_request_rank INTEGER NOT NULL DEFAULT 1, punishment_approve_rank INTEGER NOT NULL DEFAULT 249,
     promotion_suggest_rank INTEGER NOT NULL DEFAULT 238, promotion_approve_rank INTEGER NOT NULL DEFAULT 249,
-    leave_approve_rank INTEGER NOT NULL DEFAULT 245, knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, session_create_rank INTEGER NOT NULL DEFAULT 238, session_delete_rank INTEGER NOT NULL DEFAULT 245, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
-  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS knowledge_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_create_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS session_delete_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS task_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS task_manage_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_approve_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS session_status_rank INTEGER NOT NULL DEFAULT 245");
-  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS live_server_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS live_player_moderate_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS live_announce_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS live_server_admin_rank INTEGER NOT NULL DEFAULT 255");
-  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS notification_view_rank INTEGER NOT NULL DEFAULT 238, ADD COLUMN IF NOT EXISTS quota_hours_week NUMERIC(7,2) NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_sessions_week INTEGER NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_tasks_week INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS notifications_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS recurring_sessions_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS auto_approve_requests_enabled INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS auto_approve_requests_rank INTEGER NOT NULL DEFAULT 249");
+    leave_approve_rank INTEGER NOT NULL DEFAULT 245, knowledge_manage_rank INTEGER NOT NULL DEFAULT 243, session_create_rank INTEGER NOT NULL DEFAULT 243, session_delete_rank INTEGER NOT NULL DEFAULT 243, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS knowledge_manage_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_create_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_delete_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS task_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS task_manage_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_approve_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_status_rank INTEGER NOT NULL DEFAULT 243");
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS live_server_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS live_player_moderate_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS live_announce_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS live_server_admin_rank INTEGER NOT NULL DEFAULT 255");
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS notification_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS quota_hours_week NUMERIC(7,2) NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_sessions_week INTEGER NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_tasks_week INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS notifications_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS recurring_sessions_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS auto_approve_requests_enabled INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS auto_approve_requests_rank INTEGER NOT NULL DEFAULT 249");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_quotas (id BIGSERIAL PRIMARY KEY,scope TEXT NOT NULL DEFAULT 'GLOBAL',scope_id TEXT NOT NULL DEFAULT '',min_rank INTEGER NOT NULL DEFAULT 1,max_rank INTEGER NOT NULL DEFAULT 255,hours_per_week NUMERIC(7,2) NOT NULL DEFAULT 2,sessions_per_week INTEGER NOT NULL DEFAULT 2,tasks_per_week INTEGER NOT NULL DEFAULT 0,enabled BOOLEAN NOT NULL DEFAULT TRUE,updated_by TEXT,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(scope,scope_id,min_rank,max_rank))`);
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS attendance JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS recurrence_rule TEXT, ADD COLUMN IF NOT EXISTS recurrence_until DATE");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
@@ -801,6 +806,28 @@ async function ensureManagementSchema(pool) {
   await pool.query("UPDATE management_teams SET group_role_ranks=ARRAY[group_role_rank] WHERE group_role_rank IS NOT NULL AND cardinality(group_role_ranks)=0");
   await pool.query("CREATE INDEX IF NOT EXISTS management_team_members_team_idx ON management_team_members(team_id)");
   await pool.query("INSERT INTO management_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING");
+  // Upgrade untouched legacy defaults to the new rank-243 baseline without
+  // overwriting permission values that an owner has already customized.
+  await pool.query(`UPDATE management_settings SET
+    activity_view_rank=CASE WHEN activity_view_rank=238 THEN 243 ELSE activity_view_rank END,
+    activity_edit_rank=CASE WHEN activity_edit_rank=245 THEN 243 ELSE activity_edit_rank END,
+    live_server_view_rank=CASE WHEN live_server_view_rank=238 THEN 243 ELSE live_server_view_rank END,
+    live_player_moderate_rank=CASE WHEN live_player_moderate_rank=245 THEN 243 ELSE live_player_moderate_rank END,
+    live_announce_rank=CASE WHEN live_announce_rank=238 THEN 243 ELSE live_announce_rank END,
+    punishment_view_rank=CASE WHEN punishment_view_rank=238 THEN 243 ELSE punishment_view_rank END,
+    punishment_add_rank=CASE WHEN punishment_add_rank=245 THEN 243 ELSE punishment_add_rank END,
+    promotion_suggest_rank=CASE WHEN promotion_suggest_rank=238 THEN 243 ELSE promotion_suggest_rank END,
+    leave_approve_rank=CASE WHEN leave_approve_rank=245 THEN 243 ELSE leave_approve_rank END,
+    knowledge_manage_rank=CASE WHEN knowledge_manage_rank=245 THEN 243 ELSE knowledge_manage_rank END,
+    session_create_rank=CASE WHEN session_create_rank=238 THEN 243 ELSE session_create_rank END,
+    session_delete_rank=CASE WHEN session_delete_rank=245 THEN 243 ELSE session_delete_rank END,
+    task_view_rank=CASE WHEN task_view_rank=238 THEN 243 ELSE task_view_rank END,
+    task_manage_rank=CASE WHEN task_manage_rank=245 THEN 243 ELSE task_manage_rank END,
+    session_approve_rank=CASE WHEN session_approve_rank=245 THEN 243 ELSE session_approve_rank END,
+    session_status_rank=CASE WHEN session_status_rank=245 THEN 243 ELSE session_status_rank END,
+    notification_view_rank=CASE WHEN notification_view_rank=238 THEN 243 ELSE notification_view_rank END,
+    analytics_view_rank=CASE WHEN analytics_view_rank=238 THEN 243 ELSE analytics_view_rank END
+    WHERE id=1`);
   await pool.query("CREATE TABLE IF NOT EXISTS staff_shifts (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL DEFAULT 'Shift',session_date DATE,session_time TIME,host_id TEXT,host_name TEXT,cohost_id TEXT,cohost_name TEXT,oversee_id TEXT,oversee_name TEXT,oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],promoter_id TEXT,promoter_name TEXT,attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],created_by TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS title TEXT DEFAULT 'Shift', ADD COLUMN IF NOT EXISTS session_date DATE, ADD COLUMN IF NOT EXISTS session_time TIME, ADD COLUMN IF NOT EXISTS host_id TEXT, ADD COLUMN IF NOT EXISTS host_name TEXT, ADD COLUMN IF NOT EXISTS cohost_id TEXT, ADD COLUMN IF NOT EXISTS cohost_name TEXT, ADD COLUMN IF NOT EXISTS oversee_id TEXT, ADD COLUMN IF NOT EXISTS oversee_name TEXT, ADD COLUMN IF NOT EXISTS oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS promoter_id TEXT, ADD COLUMN IF NOT EXISTS promoter_name TEXT, ADD COLUMN IF NOT EXISTS attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS created_by TEXT, ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
   const legacyColumns=new Set((await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='portal_sessions'")).rows.map(r=>r.column_name));
