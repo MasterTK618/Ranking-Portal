@@ -1,3 +1,4 @@
+document.body.classList.add("auth-locked");
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
@@ -113,9 +114,23 @@ async function populateGroupRoleDropdowns(){
  const ids=["teamViewRank","departmentViewRank","knowledgeViewRank","gameLinksViewRank","promotionViewRank","sessionRequestsViewRank","announcementViewRank","announcementPublishRank","liveServerViewRank","livePlayerModerateRank","liveAnnounceRank","liveServerAdminRank","activityViewRank","activityEditRank","punishmentViewRank","punishmentRequestRank","punishmentAddRank","punishmentApproveRank","promotionSuggestRank","promotionApproveRank","leaveApproveRank","sessionCreateRank","sessionApproveRank","sessionStatusRank","sessionDeleteRank","taskViewRank","taskManageRank","knowledgeManageRank","notificationViewRank","analyticsViewRank","autoApproveRequestsRank","knowledgeMinRank"];
  const selects=ids.map(id=>$(id)).filter(Boolean);
  if(!selects.length)return;
- if(!groupRoleCache.length){const d=await api("/api/group/roles");groupRoleCache=Array.isArray(d.roles)?d.roles:[];}
+ if(!groupRoleCache.length){
+  let lastError=null;
+  for(let attempt=0;attempt<3&&!groupRoleCache.length;attempt++){
+   try{const d=await api("/api/group/roles");groupRoleCache=Array.isArray(d.roles)?d.roles:[];if(!groupRoleCache.length)throw new Error("Roblox returned an empty group role list.");}
+   catch(e){lastError=e;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));}
+  }
+  if(!groupRoleCache.length){
+   selects.forEach(el=>{el.innerHTML='<option value="">Could not load group roles — retry Settings</option>';el.disabled=true;});
+   throw lastError||new Error("Could not load group roles.");
+  }
+ }
  const list=[...groupRoleCache].sort((x,y)=>Number(x.rank)-Number(y.rank));
- for(const el of selects){const old=el.value;el.innerHTML=list.map(r=>`<option value="${Number(r.rank)}">${escapeHtml(r.name||("Rank "+r.rank))} · Rank ${Number(r.rank)}</option>`).join("");if(list.some(r=>String(r.rank)===old))el.value=old;}
+ for(const el of selects){
+  const old=el.value;el.disabled=false;
+  el.innerHTML=list.map(r=>`<option value="${Number(r.rank)}">${escapeHtml(r.name||("Rank "+r.rank))} · Rank ${Number(r.rank)}</option>`).join("");
+  if(list.some(r=>String(r.rank)===old))el.value=old;
+ }
 }
 async function loadQuotaRules(){
  const list=$("quotaRuleList");if(!list)return;
@@ -380,7 +395,7 @@ async function loadOverviewInsights(){
 $("refreshOverviewInsights")?.addEventListener("click",()=>loadOverviewInsights().catch(e=>notice(e.message,"error")));
 
 async function refreshOverview(){
-  const data=await api("/api/me");sessionData=data;
+  const data=await api("/api/me");sessionData=data;document.body.classList.remove("auth-locked");
   $("welcomeName").textContent=data.user.name;
   $("myRole").textContent=data.identity.roleName;
   $("myRank").textContent=data.identity.apiUnavailable?"—":"Rank "+data.identity.rank;
