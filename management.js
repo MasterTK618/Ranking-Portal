@@ -438,6 +438,29 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
 
 
+  router.post("/chat-log",requireGameSecret,async(req,res,next)=>{try{
+    const serverId=String(req.body?.serverId||"").slice(0,120),placeId=String(req.body?.placeId||"").slice(0,30);
+    const userId=String(req.body?.userId||""),username=String(req.body?.username||"").trim().slice(0,40);
+    const displayName=String(req.body?.displayName||username).trim().slice(0,40);
+    const channel=String(req.body?.channel||"").trim().slice(0,60),messageId=String(req.body?.messageId||"").trim().slice(0,100);
+    const message=String(req.body?.message||"").trim().slice(0,500);
+    if(!serverId||!/^[0-9]+$/.test(placeId)||!/^[0-9]+$/.test(userId)||!username||!messageId||!message)return res.status(400).json({error:"Invalid chat log entry."});
+    await pool.query("INSERT INTO live_chat_logs(server_id,place_id,user_id,username,display_name,channel_name,message_id,message_text) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(server_id,message_id) DO NOTHING",[serverId,placeId,userId,username,displayName,channel||"General",messageId,message]);
+    await pool.query("DELETE FROM live_chat_logs WHERE created_at<NOW()-INTERVAL '30 days'");
+    res.json({ok:true});
+  }catch(e){next(e);}});
+  router.get("/chat-logs",async(req,res,next)=>{try{
+    const who=await identity(req),cfg=await settings();
+    if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view in-game chat logs."});
+    const serverId=String(req.query?.serverId||"").trim().slice(0,120),search=String(req.query?.search||"").trim().slice(0,100);
+    const values=[],where=[];
+    if(serverId){values.push(serverId);where.push("server_id=$"+values.length);}
+    if(search){values.push("%"+search+"%");where.push("(username ILIKE $"+values.length+" OR display_name ILIKE $"+values.length+" OR message_text ILIKE $"+values.length+")");}
+    const result=await pool.query("SELECT id,server_id,place_id,user_id,username,display_name,channel_name,message_text,created_at FROM live_chat_logs "+(where.length?"WHERE "+where.join(" AND "):"")+" ORDER BY created_at DESC LIMIT 300",values);
+    const serverRows=await pool.query("SELECT DISTINCT server_id FROM live_chat_logs WHERE created_at>=NOW()-INTERVAL '30 days' ORDER BY server_id LIMIT 100");
+    res.json({messages:result.rows,servers:serverRows.rows.map(x=>x.server_id),retentionDays:30});
+  }catch(e){next(e);}});
+
   router.get("/live-servers",async(req,res,next)=>{try{
     const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view live game servers."});
     await pool.query("DELETE FROM live_game_players WHERE heartbeat_at<NOW()-INTERVAL '90 seconds'");
@@ -832,6 +855,13 @@ async function ensureManagementSchema(pool) {
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),staff_rank INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(server_id,user_id))`);
   await pool.query("CREATE INDEX IF NOT EXISTS live_game_players_heartbeat_idx ON live_game_players(heartbeat_at)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS live_chat_logs (
+    id BIGSERIAL PRIMARY KEY,server_id TEXT NOT NULL,place_id TEXT NOT NULL,user_id TEXT NOT NULL,
+    username TEXT NOT NULL,display_name TEXT NOT NULL DEFAULT '',channel_name TEXT NOT NULL DEFAULT 'General',
+    message_id TEXT NOT NULL,message_text TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(server_id,message_id))`);
+  await pool.query("CREATE INDEX IF NOT EXISTS live_chat_logs_created_idx ON live_chat_logs(created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS live_chat_logs_server_created_idx ON live_chat_logs(server_id,created_at DESC)");
   await pool.query(`CREATE TABLE IF NOT EXISTS portal_game_commands (
     id BIGSERIAL PRIMARY KEY,server_id TEXT NOT NULL,target_user_id TEXT,action TEXT NOT NULL,payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     requested_by TEXT NOT NULL,requested_by_name TEXT NOT NULL,target_username TEXT NOT NULL DEFAULT '',
