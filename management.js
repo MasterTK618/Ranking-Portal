@@ -112,7 +112,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const route=String(req.originalUrl||req.path||"").split("?")[0].slice(0,180);
     const actorId=String(req.session?.user?.id||"");
     const actorName=String(req.session?.user?.name||"Portal staff").slice(0,80);
-    const safeBits=["title","status","type","priority","scope","action","reason","note","name","role","date","time"];
+    const safeBits=["title","status","type","priority","scope","action","name","role","date","time"];
     const details=safeBits.filter(k=>req.body&&req.body[k]!==undefined).map(k=>k+": "+String(req.body[k]).slice(0,100)).join(" · ").slice(0,900);
     const category=/settings|announcement-settings/i.test(route)?"SETTINGS":/announcements/i.test(route)?"ANNOUNCEMENT":/sessions|calendar/i.test(route)?"SESSION":/teams/i.test(route)?"TEAM":/tasks/i.test(route)?"TASK":/punish/i.test(route)?"PUNISHMENT":/promotion|rank/i.test(route)?"PROMOTION":/leave/i.test(route)?"LEAVE":/members/i.test(route)?"MEMBER":/activity|quota/i.test(route)?"ACTIVITY":/evidence/i.test(route)?"EVIDENCE":"PORTAL";
     res.once("finish",()=>{
