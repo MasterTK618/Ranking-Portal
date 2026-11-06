@@ -417,13 +417,20 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){next(e);}
   });
   router.post("/punishments/:id/decision", csrf, async(req,res,next)=>{
-    try{const who=await gate(req,res,"punishment_approve_rank");if(!who)return;
-      const status=String(req.body?.status||""); if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});
-      const r=await pool.query("UPDATE management_punishments SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",
-        [status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
-      if(!r.rowCount)return res.status(404).json({error:"Pending punishment not found."});
-      await writeAudit(status,r.rows[0],req.session.user.id,req.session.user.name,req.body?.note||"");
-      res.json({ok:true,item:r.rows[0]});
+    try{
+      const who=await gate(req,res,"punishment_approve_rank");if(!who)return;
+      const status=String(req.body?.status||"");if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});
+      const found=await pool.query("SELECT * FROM management_punishments WHERE id=$1 AND status='PENDING'",[req.params.id]);
+      if(!found.rowCount)return res.status(404).json({error:"Pending punishment not found."});
+      const pending=found.rows[0];let rankChange=null;
+      if(status==="APPROVED"&&pending.type==="Demotion"){
+        try{rankChange=await applyManagementRole(pending.user_id,"","DEMOTION",who.rank);}
+        catch(error){return res.status(502).json({error:"The demotion was not approved because Roblox ranking failed: "+error.message});}
+      }
+      const r=await pool.query("UPDATE management_punishments SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",[status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
+      if(!r.rowCount)return res.status(409).json({error:"This request was already reviewed. Refresh the list."});
+      await writeAudit(status,r.rows[0],req.session.user.id,req.session.user.name,[(req.body?.note||""),rankChange?("Roblox role changed: "+rankChange.previousRole+" → "+rankChange.newRole):""].filter(Boolean).join(" | "));
+      res.json({ok:true,item:r.rows[0],rankChange});
     }catch(e){next(e);}
   });
 
@@ -459,13 +466,20 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){next(e);}
   });
   router.post("/promotions/:id/decision",csrf,async(req,res,next)=>{
-    try{const who=await gate(req,res,"promotion_approve_rank");if(!who)return;
+    try{
+      const who=await gate(req,res,"promotion_approve_rank");if(!who)return;
       const status=String(req.body?.status||"");if(!["APPROVED","REJECTED"].includes(status))return res.status(400).json({error:"Choose approve or reject."});
-      const r=await pool.query("UPDATE promotion_suggestions SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",
-        [status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
-      if(!r.rowCount)return res.status(404).json({error:"Pending promotion suggestion not found."});
-      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",status,String(r.rows[0].suggested_by),r.rows[0].suggested_by_name,"Suggestion #"+r.rows[0].id+" for "+r.rows[0].username+" | "+r.rows[0].suggested_role+(r.rows[0].decision_note?" | "+r.rows[0].decision_note:""),String(req.session.user.id),String(req.session.user.name)]);
-      res.json({ok:true,item:r.rows[0]});
+      const found=await pool.query("SELECT * FROM promotion_suggestions WHERE id=$1 AND status='PENDING'",[req.params.id]);
+      if(!found.rowCount)return res.status(404).json({error:"Pending promotion suggestion not found."});
+      const pending=found.rows[0];let rankChange=null;
+      if(status==="APPROVED"){
+        try{rankChange=await applyManagementRole(pending.user_id,pending.suggested_role,"PROMOTION",who.rank);}
+        catch(error){return res.status(502).json({error:"The promotion was not approved because Roblox ranking failed: "+error.message});}
+      }
+      const r=await pool.query("UPDATE promotion_suggestions SET status=$1,decided_by=$2,decided_by_name=$3,decision_note=$4,decided_at=NOW() WHERE id=$5 AND status='PENDING' RETURNING *",[status,req.session.user.id,req.session.user.name,String(req.body?.note||"").slice(0,500),req.params.id]);
+      if(!r.rowCount)return res.status(409).json({error:"This request was already reviewed. Refresh the list."});
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",status,String(r.rows[0].user_id),r.rows[0].username,"Suggestion #"+r.rows[0].id+" for "+r.rows[0].suggested_role+(rankChange?" | Roblox role: "+rankChange.previousRole+" → "+rankChange.newRole:"")+(r.rows[0].decision_note?" | "+r.rows[0].decision_note:""),String(req.session.user.id),String(req.session.user.name)]);
+      res.json({ok:true,item:r.rows[0],rankChange});
     }catch(e){next(e);}
   });
 
