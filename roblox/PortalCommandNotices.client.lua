@@ -13,33 +13,3 @@ local function show(kind,message)
  task.delay(kind=="announcement" and 8 or 6,function() if frame.Parent then frame:Destroy() end end)
 end
 remote.OnClientEvent:Connect(function(data) if typeof(data)=="table" then show(data.kind,data.message) end end)
-
- 
--- Reports this player's own accepted public General chat messages.
-local TextChatService = game:GetService("TextChatService")
-local chatLogRemote = ReplicatedStorage:WaitForChild("LemonzPortalChatLog")
-local sentMessages = {}
-
-TextChatService.MessageReceived:Connect(function(message)
-    local source = message.TextSource
-    local channel = message.TextChannel
-    if not source or source.UserId ~= player.UserId or not channel then
-        return
-    end
-    if channel.Name ~= "RBXGeneral" and channel.Name ~= "General" then
-        return
-    end
-
-    local messageId = tostring(message.MessageId or "")
-    local messageText = tostring(message.Text or "")
-    if messageId == "" or messageText == "" or sentMessages[messageId] then
-        return
-    end
-
-    sentMessages[messageId] = true
-    task.delay(300, function()
-        sentMessages[messageId] = nil
-    end)
-
-    chatLogRemote:FireServer(channel.Name, messageId, messageText)
-end)
