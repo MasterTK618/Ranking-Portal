@@ -150,7 +150,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/tasks",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings();if(Number(who.rank)<Number(s.task_view_rank))return res.status(403).json({error:"Your rank cannot access staff tasks."});
     const r=await pool.query("SELECT t.*,team_info.assigned_team_ids,team_info.assigned_team_names,team_info.assigned_department_names FROM management_tasks t LEFT JOIN LATERAL (SELECT ARRAY_AGG(mt.id::text ORDER BY mt.department,mt.name) AS assigned_team_ids,STRING_AGG(mt.name, ', ' ORDER BY mt.department,mt.name) AS assigned_team_names,STRING_AGG(DISTINCT mt.department, ', ' ORDER BY mt.department) AS assigned_department_names FROM management_team_members tm JOIN management_teams mt ON mt.id=tm.team_id WHERE tm.user_id=t.assigned_to_id) team_info ON TRUE ORDER BY CASE t.status WHEN $1 THEN 0 WHEN $2 THEN 1 WHEN $3 THEN 2 ELSE 3 END,t.due_date NULLS LAST,t.created_at DESC",["OPEN","IN_PROGRESS","BLOCKED"]);
-    res.json({items:r.rows.map(x=>({...x,canUpdate:String(x.assigned_to_id)===String(req.session.user.id)||String(x.created_by)===String(req.session.user.id)||Number(who.rank)>=Number(s.task_manage_rank),canDelete:String(x.created_by)===String(req.session.user.id)||Number(who.rank)>=Number(s.task_manage_rank)})),rank:Number(who.rank),settings:s,canManage:Number(who.rank)>=Number(s.task_manage_rank)});
+    res.json({items:r.rows.map(x=>({...x,id:String(x.id),canUpdate:String(x.assigned_to_id)===String(req.session.user.id)||String(x.created_by)===String(req.session.user.id)||Number(who.rank)>=Number(s.task_manage_rank),canDelete:String(x.created_by)===String(req.session.user.id)||Number(who.rank)>=Number(s.task_manage_rank)})),rank:Number(who.rank),settings:s,canManage:Number(who.rank)>=Number(s.task_manage_rank)});
   }catch(e){next(e);}});
   router.get("/tasks/audit",async(req,res,next)=>{try{const who=await gate(req,res,"task_manage_rank");if(!who)return;const r=await pool.query("SELECT * FROM management_audit_logs WHERE category=$1 ORDER BY created_at DESC LIMIT 200",["TASK"]);res.json({items:r.rows});}catch(e){next(e);}});
   router.post("/tasks",csrf,async(req,res,next)=>{try{
@@ -160,30 +160,32 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const assigned=await getIdentity(assignedToId);if(!assigned?.inGroup||Number(assigned.rank)<Number((await settings()).task_view_rank))return res.status(400).json({error:"Assign the task to a staff member who can access the task board."});
     const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(assignedToId));const user=await profile.json().catch(()=>({}));const assignedName=user.name||assignedToId;
     const client=await pool.connect();let item;try{await client.query("BEGIN");
-      const r=await client.query("INSERT INTO management_tasks(title,description,assigned_to_id,assigned_to_name,priority,due_date,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[title,description,assignedToId,assignedName,priority,dueDate||null,String(req.session.user.id),req.session.user.name]);item=r.rows[0];
+      const r=await client.query("INSERT INTO management_tasks(title,description,assigned_to_id,assigned_to_name,priority,due_date,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[title,description,assignedToId,assignedName,priority,dueDate||null,String(req.session.user.id),req.session.user.name]);item=r.rows[0];item.id=String(item.id);
       await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","CREATED",assignedToId,assignedName,"Task #"+item.id+" | "+title,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
     }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}res.json({ok:true,item});
   }catch(e){next(e);}});
   router.patch("/tasks/:id/status",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const status=String(req.body?.status||"");if(!["OPEN","IN_PROGRESS","BLOCKED","COMPLETED"].includes(status))return res.status(400).json({error:"Choose a valid task status."});
-    const s=await settings(),found=await pool.query("SELECT * FROM management_tasks WHERE id=$1",[req.params.id]);if(!found.rowCount)return res.status(404).json({error:"Task not found."});const task=found.rows[0];
+    const taskId=String(req.params.id||"").trim();if(!/^[1-9]\d{0,18}$/.test(taskId)||BigInt(taskId)>9223372036854775807n)return res.status(400).json({error:"Invalid task ID."});const s=await settings(),found=await pool.query("SELECT * FROM management_tasks WHERE id=$1::bigint",[taskId]);if(!found.rowCount)return res.status(404).json({error:"Task not found. Refresh the task board and try again."});const task=found.rows[0];
     if(String(task.assigned_to_id)!==String(req.session.user.id)&&String(task.created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(s.task_manage_rank))return res.status(403).json({error:"Only the assigned staff member, task creator, or a task manager can update this task."});
     const client=await pool.connect();let item;try{await client.query("BEGIN");
-      const r=await client.query("UPDATE management_tasks SET status=$1,updated_at=NOW(),completed_at=CASE WHEN $1=$2 THEN NOW() ELSE NULL END WHERE id=$3 RETURNING *",[status,"COMPLETED",req.params.id]);item=r.rows[0];
+      const r=await client.query("UPDATE management_tasks SET status=$1,updated_at=NOW(),completed_at=CASE WHEN $1=$2 THEN NOW() ELSE NULL END WHERE id=$3::bigint RETURNING *",[status,"COMPLETED",taskId]);item=r.rows[0];item.id=String(item.id);
       await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK",status,item.assigned_to_id,item.assigned_to_name,"Task #"+item.id+" | "+item.title,String(req.session.user.id),String(req.session.user.name)]);await client.query("COMMIT");
     }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}res.json({ok:true,item});
   }catch(e){next(e);}});
   router.delete("/tasks/:id",csrf,async(req,res,next)=>{let client;try{
-    if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid task ID."});
+    const taskId=String(req.params.id||"").trim();
+    if(!/^[1-9]\d{0,18}$/.test(taskId)||BigInt(taskId)>9223372036854775807n)return res.status(400).json({error:"Invalid task ID. Refresh the task board and select the task again."});
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const s=await settings();client=await pool.connect();await client.query("BEGIN");
-    const found=await client.query("SELECT * FROM management_tasks WHERE id=$1 FOR UPDATE",[req.params.id]);
-    if(!found.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"This task may already have been deleted. Refresh the task board."});}
+    const found=await client.query("SELECT * FROM management_tasks WHERE id=$1::bigint FOR UPDATE",[taskId]);
+    if(!found.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Task #"+taskId+" was not found in storage. Refresh the board; if it remains listed, contact an owner with this ID."});}
     const task=found.rows[0];
     if(String(task.created_by)!==String(req.session.user.id)&&Number(who.rank)<Number(s.task_manage_rank)){await client.query("ROLLBACK");return res.status(403).json({error:"Only the task creator or a task manager can delete this task."});}
-    await client.query("DELETE FROM management_tasks WHERE id=$1",[req.params.id]);
-    await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","DELETED",task.assigned_to_id,task.assigned_to_name,"Task #"+task.id+" | "+task.title,String(req.session.user.id),String(req.session.user.name)]);
-    await client.query("COMMIT");res.json({ok:true});
+    const deleted=await client.query("DELETE FROM management_tasks WHERE id=$1::bigint RETURNING id::text AS id",[taskId]);
+    if(!deleted.rowCount){await client.query("ROLLBACK");return res.status(409).json({error:"The task changed before deletion. Refresh the board and try again."});}
+    await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["TASK","DELETED",task.assigned_to_id,task.assigned_to_name,"Task #"+deleted.rows[0].id+" | "+task.title,String(req.session.user.id),String(req.session.user.name)]);
+    await client.query("COMMIT");res.json({ok:true,deletedId:deleted.rows[0].id});
   }catch(e){if(client)try{await client.query("ROLLBACK")}catch{};next(e);}finally{client?.release();}});
   router.get("/session-requests",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank);
@@ -340,7 +342,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const notes=await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const teamHistory=await pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]);
       const timeline=await pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]);
-      const tasks=await pool.query("SELECT id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
+      const tasks=await pool.query("SELECT id::text AS id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const promotions=await pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const viewer=await identity(req);
       res.json({canAddNotes:Number(viewer?.rank||0)>=238,canModerateNotes:Number(viewer?.rank||0)>=245,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
