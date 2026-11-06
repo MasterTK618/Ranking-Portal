@@ -464,13 +464,14 @@ let selectedLiveServer="";
 function renderLivePlayers(){
  const el=$("inGameRoster"),q=String($("livePlayerSearch")?.value||"").toLowerCase();if(!el)return;
  const rows=liveServerState.players.filter(p=>(!selectedLiveServer||p.server_id===selectedLiveServer)&&(p.username+" "+p.display_name).toLowerCase().includes(q));
- el.innerHTML=rows.length?'<table class="data-table in-game-table"><thead><tr><th>PLAYER</th><th>SERVER</th><th>TIME IN SERVER</th><th>GROUP ROLE</th><th>PORTAL ACTION</th></tr></thead><tbody>'+rows.map(p=>'<tr data-server-id="'+escapeHtml(p.server_id)+'"><td><div class="in-game-person"><img src="https://www.roblox.com/headshot-thumbnail/image?userId='+encodeURIComponent(p.user_id)+'&width=48&height=48&format=png"><span><b>'+escapeHtml(p.username)+'</b><small>'+escapeHtml(p.display_name||p.username)+'</small></span></div></td><td><code>'+escapeHtml(p.server_id.slice(0,12))+'</code></td><td>'+formatDuration(p.current_seconds)+'</td><td>'+ (Number(p.staff_rank)>=230?'Staff · Rank '+p.staff_rank:'Player')+'</td><td>'+(liveServerState.canModerate?'<select data-action-choice="'+escapeHtml(p.user_id)+'"><option value="kick">Kick</option><option value="warn">Warn</option><option value="respawn">Respawn</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select><button class="quiet-btn" data-run-player="'+escapeHtml(p.user_id)+'" data-server="'+escapeHtml(p.server_id)+'">Run</button>':'<span class="muted">View only</span>')+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No players are currently reporting in. Install the Live Server Bridge script.</div>';
+ el.innerHTML=rows.length?'<table class="data-table in-game-table"><thead><tr><th>SELECT</th><th>PLAYER</th><th>SERVER</th><th>TIME IN SERVER</th><th>GROUP ROLE</th><th>PORTAL ACTION</th></tr></thead><tbody>'+rows.map(p=>'<tr data-server-id="'+escapeHtml(p.server_id)+'"><td><input type="checkbox" class="live-player-select" data-user="'+escapeHtml(p.user_id)+'" data-server="'+escapeHtml(p.server_id)+'" aria-label="Select '+escapeHtml(p.username)+'"></td><td>'+(Number(p.staff_rank)>=230?'<button type="button" class="in-game-person" data-live-profile="'+escapeHtml(p.user_id)+'">':'<a class="in-game-person" href="https://www.roblox.com/users/'+encodeURIComponent(p.user_id)+'/profile" target="_blank" rel="noopener noreferrer">')+'<img src="https://www.roblox.com/headshot-thumbnail/image?userId='+encodeURIComponent(p.user_id)+'&width=48&height=48&format=png"><span><b>'+escapeHtml(p.username)+'</b><small>'+escapeHtml(p.display_name||p.username)+'</small></span>'+(Number(p.staff_rank)>=230?'</button>':'</a>')+'</td><td><code>'+escapeHtml(p.server_id.slice(0,12))+'</code></td><td>'+formatDuration(p.current_seconds)+'</td><td>'+ (Number(p.staff_rank)>=230?'Staff · Rank '+p.staff_rank:'Player')+'</td><td>'+(liveServerState.canModerate?'<select data-action-choice="'+escapeHtml(p.user_id)+'"><option value="kick">Kick</option><option value="warn">Warn</option><option value="respawn">Respawn</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select><button class="quiet-btn" data-run-player="'+escapeHtml(p.user_id)+'" data-server="'+escapeHtml(p.server_id)+'">Run</button>':'<span class="muted">View only</span>')+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No players are currently reporting in. Install the Live Server Bridge script.</div>';
 }
 async function loadInGame(){
  const el=$("inGameRoster");if(!el)return;el.innerHTML='<div class="empty-state">Refreshing live servers…</div>';
  try{
   const d=await api("/api/management/live-servers");liveServerState=d;
   document.querySelector(".server-announce-form")?.classList.toggle("hidden",!d.canAnnounce);
+  $("liveBulkToolbar")?.classList.toggle("hidden",!d.canModerate);
   const players=d.players||[],servers=d.servers||[];
   $("inGameSummary").innerHTML='<article class="activity-stat"><small>ACTIVE SERVERS</small><b>'+servers.filter(s=>s.is_online).length+'</b></article><article class="activity-stat"><small>PLAYERS IN-GAME</small><b>'+players.length+'</b></article><article class="activity-stat"><small>STAFF IN-GAME</small><b>'+players.filter(p=>Number(p.staff_rank)>=230).length+'</b></article><article class="activity-stat"><small>ACCESS</small><b>'+(d.canAdmin?'Server admin':d.canModerate?'Moderator':'View only')+'</b></article>';
   $("inGameUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString();
@@ -481,6 +482,24 @@ async function loadInGame(){
 }
 async function loadServerCommandHistory(){const el=$("serverCommandHistory");if(!el)return;try{const d=await api("/api/management/server-command-history");el.innerHTML=d.items.length?'<table class="data-table"><thead><tr><th>TIME</th><th>ACTION</th><th>PLAYER</th><th>STATUS</th><th>RESULT</th><th>BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.status)+'</td><td>'+escapeHtml(x.result||"Awaiting server response")+'</td><td>'+escapeHtml(x.requested_by_name)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No portal commands have been sent yet.</div>';}catch(e){el.textContent=e.message;}}
 $("livePlayerSearch")?.addEventListener("input",renderLivePlayers);
+function updateLiveSelectionCount(){const count=document.querySelectorAll(".live-player-select:checked").length;if($("liveSelectionCount"))$("liveSelectionCount").textContent=count+" selected";}
+document.addEventListener("change",e=>{if(e.target.matches(".live-player-select"))updateLiveSelectionCount();});
+$("selectAllLivePlayers")?.addEventListener("click",()=>{document.querySelectorAll("#inGameRoster .live-player-select").forEach(x=>x.checked=true);updateLiveSelectionCount();});
+$("clearSelectedLivePlayers")?.addEventListener("click",()=>{document.querySelectorAll(".live-player-select").forEach(x=>x.checked=false);updateLiveSelectionCount();});
+$("runBulkLiveAction")?.addEventListener("click",async()=>{
+ const selected=[...document.querySelectorAll(".live-player-select:checked")].map(x=>({userId:x.dataset.user,serverId:x.dataset.server}));
+ if(!selected.length)return notice("Select at least one player first.","error");
+ if(selected.length>10)return notice("You can run a bulk action on up to 10 players at once.","error");
+ const action=$("bulkLiveAction").value;let reason="";
+ if(["kick","warn","mute"].includes(action)){reason=prompt("Enter a reason for "+action+" on the selected players:")||"";if(!reason.trim())return;}
+ if(!confirm("Queue "+action+" for "+selected.length+" selected player(s)?"))return;
+ const button=$("runBulkLiveAction");button.disabled=true;let queued=0,failed=0;
+ try{for(const item of selected){try{await api("/api/management/server-commands",{method:"POST",body:JSON.stringify({action,serverId:item.serverId,targetUserId:item.userId,reason})});queued++;}catch(e){failed++;if(failed===1)console.warn("Bulk moderation request failed:",e.message);}}
+ document.querySelectorAll(".live-player-select").forEach(x=>x.checked=false);updateLiveSelectionCount();
+ notice(queued+" command(s) queued"+(failed?"; "+failed+" could not be queued.":"."),failed?"error":"success");await loadServerCommandHistory();
+ }finally{button.disabled=false;}
+});
+
 $("clearServerFilter")?.addEventListener("click",()=>{selectedLiveServer="";$("clearServerFilter").classList.add("hidden");renderLivePlayers();});
 $("refreshServerHistory")?.addEventListener("click",loadServerCommandHistory);
 async function portalServerAction(action,serverId,targetUserId,reason,message){
