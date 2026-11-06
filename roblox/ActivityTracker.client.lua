@@ -12,10 +12,10 @@ local AFK_AFTER_SECONDS=60
 local SEND_EVERY_SECONDS=30
 local lastActivity=os.clock()
 local focused=true
-local activeSeconds,afkSeconds,typingSeconds=0,0,0
+local activeSeconds,afkSeconds,typingSeconds,messages=0,0,0,0
 local humanoid,rootPart,lastPosition
 local function markActivity() lastActivity=os.clock() end
-UserInputService.InputBegan:Connect(function(_,processed) if not processed then markActivity() end end)
+UserInputService.InputBegan:Connect(function() markActivity() end)
 UserInputService.WindowFocusReleased:Connect(function() focused=false end)
 UserInputService.WindowFocused:Connect(function() focused=true;markActivity() end)
 local function bindCharacter(char)
@@ -24,14 +24,25 @@ local function bindCharacter(char)
 end
 player.CharacterAdded:Connect(bindCharacter)
 if player.Character then task.spawn(bindCharacter,player.Character) end
+local integratedChat = false
+pcall(function() integratedChat = TextChatService.PlatformIntegratedChat == Enum.RolloutState.Enabled end)
+if integratedChat then
+    TextChatService.MessageReceived:Connect(function(message)
+        local source = message.TextSource
+        if source and source.UserId == player.UserId then
+            messages = math.min(100, messages + 1)
+            markActivity()
+        end
+    end)
+end
 local function chatFocused()
     local ok,value=pcall(function() return TextChatService.ChatInputBarConfiguration.IsFocused end)
     return ok and value==true
 end
 local function flush()
     if activeSeconds+afkSeconds<=0 and typingSeconds<=0 then return end
-    remote:FireServer({activeSeconds=activeSeconds,afkSeconds=afkSeconds,typingSeconds=typingSeconds})
-    activeSeconds,afkSeconds,typingSeconds=0,0,0
+    remote:FireServer({activeSeconds=activeSeconds,afkSeconds=afkSeconds,typingSeconds=typingSeconds,messages=messages})
+    activeSeconds,afkSeconds,typingSeconds,messages=0,0,0
 end
 local sendElapsed,moveElapsed=0,0
 RunService.Heartbeat:Connect(function(dt)
