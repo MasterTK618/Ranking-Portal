@@ -281,7 +281,8 @@ app.get("/api/group/roles",requireLogin,async(req,res)=>{
 });
 
 app.get("/api/staff",requireLogin,async(req,res)=>{
-  const staffMinRank = Number(process.env.STAFF_MIN_RANK || 230);
+  const staffPermission = await pool.query("SELECT profile_view_rank FROM management_settings WHERE id=1").catch(()=>({rows:[]}));
+  const staffMinRank = Number(staffPermission.rows[0]?.profile_view_rank || 243);
   const diagnostics = {
     groupId: GROUP_ID,
     minRank: staffMinRank,
