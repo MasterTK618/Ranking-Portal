@@ -333,23 +333,24 @@ async function refreshOverview(){
   $("welcomeName").textContent=data.user.name;
   $("myRole").textContent=data.identity.roleName;
   $("myRank").textContent=data.identity.apiUnavailable?"—":"Rank "+data.identity.rank;
-  $("accessStatus").textContent=data.identity.apiUnavailable?"Group API unavailable":(data.identity.canRank?"Enabled":"No access");
+  $("accessStatus").textContent=data.identity.apiUnavailable?"Group API unavailable":data.identity.rankingApiUnavailable?"Management only":(data.identity.canRank?"Enabled":"No ranking access");
   $("userBox").textContent=data.user.name+" · "+data.identity.roleName;
   $("recentCount").textContent="—";
   if(data.identity.apiUnavailable){
     document.querySelectorAll(".nav-item[data-page='rank'],.nav-item[data-page='members'],.nav-item[data-page='logs']").forEach(b=>b.classList.add("hidden"));
     $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
-    notice(data.apiError || "Your Roblox profile is verified, but group ranking access is not configured yet.","error");
-  }else if(!data.identity.canRank){
-    document.querySelectorAll(".nav-item[data-page='rank'],.nav-item[data-page='members'],.nav-item[data-page='logs']").forEach(b=>b.classList.add("hidden"));
-    $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
-    notice("Your Roblox account is verified, but your current Lemonz rank is below "+data.minRank+". Ranking tools are restricted.","error");
+    notice(data.apiError || "Your Roblox profile is verified, but group information is unavailable right now.","error");
   }else{
     document.querySelectorAll(".nav-item").forEach(b=>b.classList.remove("hidden"));
     $("settingsNav").classList.toggle("hidden",data.identity.rank<255);
+    document.querySelectorAll(".nav-item[data-page='rank']").forEach(b=>b.classList.toggle("hidden",!data.identity.canRank));
+    if(data.identity.rank<230)document.querySelectorAll(".nav-item[data-page='members']").forEach(b=>b.classList.add("hidden"));
+    if(!data.identity.canRank)document.querySelectorAll(".nav-item[data-page='logs']").forEach(b=>b.classList.add("hidden"));
     $("portal").classList.remove("hidden");$("loginPanel").classList.add("hidden");
-    try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}
-    loadOverviewInsights().catch(()=>{});
+    if(data.identity.rankingApiUnavailable)notice(data.apiError||"Ranking actions need a valid Roblox Open Cloud API key. Management features remain available.","error");
+    else if(!data.identity.canRank)notice("Your current Lemonz rank is below "+data.minRank+". Ranking tools are restricted.","error");
+    if(data.identity.canRank){try{const logs=await api("/api/logs");$("recentCount").textContent=logs.logs.length}catch{}}
+    if(data.identity.rank>=230)loadOverviewInsights().catch(()=>{});
   }
   $("loginButton").classList.add("hidden");$("logoutButton").classList.remove("hidden");$("userBox").classList.remove("hidden");
 }
