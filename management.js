@@ -724,7 +724,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(actor){values.push("%"+actor+"%");where.push("(actor_name ILIKE $"+values.length+" OR actor_id ILIKE $"+values.length+")");}
     if(target){values.push("%"+target+"%");where.push("(target_username ILIKE $"+values.length+" OR target_id ILIKE $"+values.length+")");}
     const sql="SELECT id,category,action,target_id,target_username,details,actor_id,actor_name,created_at FROM management_audit_logs "+(where.length?"WHERE "+where.join(" AND "):"")+" ORDER BY created_at DESC LIMIT $1";
-    const totalResult=await pool.query("SELECT COUNT(*)::int AS total FROM management_audit_logs "+(where.length?"WHERE "+where.join(" AND "):""),values);
+    const countWhere=where.map(condition=>condition.replace(/\\$(\\d+)/g,(_,n)=>"$"+(Number(n)-1)));
+    const totalResult=await pool.query("SELECT COUNT(*)::int AS total FROM management_audit_logs "+(countWhere.length?"WHERE "+countWhere.join(" AND "):""),values.slice(1));
     const offset=Math.min(1000000,Math.max(0,Number(req.query.offset)||0));
     values[0]=limit;
     const pageSql=sql+" OFFSET $"+(values.length+1);
