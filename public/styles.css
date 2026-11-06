@@ -833,3 +833,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 
 /* Interactive staff leaderboard rows */
 .analytics-top-row{width:100%;background:transparent;border:0;color:inherit;text-align:left;cursor:pointer;font:inherit;border-radius:10px}.analytics-top-row:hover{background:var(--panel2)}
+
+
+/* Logged-out verification screen: keep the portal chrome out of the login view. */
+body.auth-locked .sidebar,body.auth-locked .topbar{display:none!important}
+body.auth-locked .main{margin:0;max-width:none;width:100%;min-height:100vh;padding:28px;}
+body.auth-locked #loginPanel{width:min(1100px,100%);min-height:min(650px,calc(100vh - 56px));margin:auto;}
+body.auth-locked #notice{width:min(1100px,100%);margin:0 auto 14px;}
+@media(max-width:650px){body.auth-locked .main{padding:14px}body.auth-locked #loginPanel{min-height:calc(100vh - 28px);grid-template-columns:1fr}body.auth-locked .login-art{min-height:180px}}
