@@ -829,7 +829,7 @@ function renderStaffDirectory(){
  result.innerHTML=list.map(m=>{
   const teamIds=teamAssignments.get(String(m.id))||new Set(),teams=managementTeams.filter(t=>teamIds.has(String(t.id)));
   const picker="";
-  return '<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small><small class="staff-team-label">'+(teams.length?teams.map(t=>'<i style="background:'+escapeHtml(t.color)+'"></i>'+escapeHtml(t.name)).join(" · "):'Unassigned')+'</small></span><span class="staff-card-side"><span class="rank-pill">R'+m.rank+'</span>'+picker+'</span></article>';
+  return '<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small><small class="staff-team-label">'+(teams.length?teams.map(t=>'<i style="background:'+escapeHtml(t.color)+'"></i>'+escapeHtml(t.name)).join(" · "):'Unassigned')+'</small></span><span class="staff-card-side">'+picker+'</span></article>';
  }).join("");
 }
 async function loadStaffDirectory(force=false){
