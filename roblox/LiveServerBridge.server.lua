@@ -10,44 +10,9 @@ local URL="https://ranking-portal.onrender.com"
 local GAME_SECRET="PASTE_THE_SAME_INGAME_API_SECRET_HERE"
 local SERVER_ID=game.JobId~="" and game.JobId or ("studio-"..game.PlaceId)
 local joined,muted,ranks={},{},{}
-local loggedMessages={}
 local remote=ReplicatedStorage:FindFirstChild("LemonzPortalNotice") or Instance.new("RemoteEvent")
 remote.Name="LemonzPortalNotice";remote.Parent=ReplicatedStorage
 local call
-local chatRemote=ReplicatedStorage:FindFirstChild("LemonzPortalChatLog") or Instance.new("RemoteEvent")
-chatRemote.Name="LemonzPortalChatLog";chatRemote.Parent=ReplicatedStorage
-local recentChatIds,chatRate={},{}
-chatRemote.OnServerEvent:Connect(function(reporter,channelName,messageId,clientText)
- if typeof(channelName)~="string" or (channelName~="RBXGeneral" and channelName~="General") then return end
- if typeof(messageId)~="string" or #messageId<1 or #messageId>100 then return end
- if typeof(clientText)~="string" or #clientText<1 or #clientText>1000 then return end
- local now=os.clock()
- local rate=chatRate[reporter.UserId] or {window=now,count=0}
- if now-rate.window>=10 then rate={window=now,count=0} end
- rate.count+=1;chatRate[reporter.UserId]=rate
- if rate.count>8 then return end
- local key=tostring(reporter.UserId)..":"..messageId
- if recentChatIds[key] then return end
- recentChatIds[key]=true
- task.delay(300,function() recentChatIds[key]=nil end)
- task.spawn(function()
-  local ok,filtered=pcall(function()
-   local result=TextService:FilterStringAsync(clientText,reporter.UserId)
-   return result:GetNonChatStringForBroadcastAsync()
-  end)
-  if not ok or typeof(filtered)~="string" or filtered=="" then
-   warn("[Lemonz Portal] Chat log skipped: Roblox text filtering failed for "..reporter.Name)
-   return
-  end
-  local response=call("/api/management/chat-log","POST",{
-   serverId=SERVER_ID,placeId=tostring(game.PlaceId),userId=tostring(reporter.UserId),
-   username=reporter.Name,displayName=reporter.DisplayName,channel=channelName,
-   messageId=messageId,message=filtered:sub(1,500)
-  })
-  if not response then warn("[Lemonz Portal] Chat log could not be saved. Check the HTTP/API response above.") end
- end)
-end)
-print("[Lemonz Portal] Chat logging receiver is ready.")
 call=function(path,method,data)
  if GAME_SECRET=="" or GAME_SECRET=="PASTE_THE_SAME_INGAME_API_SECRET_HERE" then return nil end
  local ok,r=pcall(function() return HttpService:RequestAsync({Url=URL..path,Method=method,Headers={["Content-Type"]="application/json",["x-lemonz-game-key"]=GAME_SECRET},Body=data and HttpService:JSONEncode(data) or nil}) end)
@@ -62,7 +27,6 @@ local function report()
  call("/api/management/live/heartbeat","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),players=list})
 end
 -- Keep mute enforcement in the server delivery callback.
--- Message logging is handled by the sender's client after Roblox accepts and filters the message.
 local function filter(channel)
  if channel:IsA("TextChannel") then
   pcall(function()
