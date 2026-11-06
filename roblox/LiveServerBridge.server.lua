@@ -30,7 +30,7 @@ local function filter(channel)
  if channel:IsA("TextChannel") then pcall(function()
   channel.ShouldDeliverCallback=function(message)
    local source=message.TextSource
-   if source then
+   if source and (channel.Name=="RBXGeneral" or channel.Name=="General") then
     local userId=source.UserId
     local messageId=tostring(message.MessageId or "")
     if messageId~="" and not loggedMessages[messageId] then
