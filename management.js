@@ -151,7 +151,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true,settings:result.rows[0]});
     } catch(e){next(e);}
   });
-  router.get("/access",async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),rank=Number(who.rank||0),can=(field,fallback=243)=>rank>=Number(cfg[field]||fallback);const directoryThreshold=Math.min(Number(cfg.profile_view_rank||243),238);const teamThreshold=Math.min(Number(cfg.team_view_rank||230),238);res.json({rank,sections:{overview:rank>=230,views:can("analytics_view_rank"),announcements:rank>=230,notifications:can("notification_view_rank"),approvals:can("session_approve_rank"),analytics:can("analytics_view_rank"),members:rank===230||rank>=directoryThreshold,activity:can("activity_view_rank"),ingame:can("live_server_view_rank"),tasks:can("task_view_rank"),knowledge:can("knowledge_view_rank",230),gameLinks:can("game_links_view_rank",230),sessions:can("calendar_view_rank"),sessionRequests:can("session_requests_view_rank",230),promotions:can("promotion_view_rank",230),punishments:can("punishment_view_rank"),leaves:rank>=230,rank:!!who.canRank,logs:can("audit_view_rank"),settings:rank>=255,teams:rank>=teamThreshold}});}catch(e){next(e);}});
+  router.get("/access",async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),rank=Number(who.rank||0),can=(field,fallback=243)=>rank>=Number(cfg[field]||fallback);const directoryThreshold=Math.min(Number(cfg.profile_view_rank||243),238);const teamThreshold=230;res.json({rank,sections:{overview:rank>=230,views:can("analytics_view_rank"),announcements:rank>=230,notifications:can("notification_view_rank"),approvals:can("session_approve_rank"),analytics:can("analytics_view_rank"),members:rank===230||rank>=directoryThreshold,activity:can("activity_view_rank"),ingame:can("live_server_view_rank"),tasks:can("task_view_rank"),knowledge:can("knowledge_view_rank",230),gameLinks:can("game_links_view_rank",230),sessions:can("calendar_view_rank"),sessionRequests:can("session_requests_view_rank",230),promotions:can("promotion_view_rank",230),punishments:can("punishment_view_rank"),leaves:rank>=230,rank:!!who.canRank,logs:can("audit_view_rank"),settings:rank>=255,teams:rank>=teamThreshold}});}catch(e){next(e);}});
   router.get("/game-links",async(req,res,next)=>{try{const cfg=await settings(),who=await identity(req);if(!who||Number(who.rank)<Number(cfg.game_links_view_rank||230))return res.status(403).json({error:"Your role cannot view game links."});res.json({links:Array.isArray(cfg.game_links)?cfg.game_links:[],canManage:Number(who.rank)>=255});}catch(e){next(e);}});
   router.put("/game-links",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage game links."});const input=req.body?.links;if(!Array.isArray(input)||input.length>30)return res.status(400).json({error:"Add no more than 30 game links."});const links=[];for(const item of input){const title=String(item?.title||"").trim(),description=String(item?.description||"").trim(),raw=String(item?.url||"").trim();let parsed;try{parsed=new URL(raw);}catch{return res.status(400).json({error:"Each game link needs a valid HTTPS URL."});}if(title.length<2||title.length>60||description.length>200||parsed.protocol!=="https:"||raw.length>500)return res.status(400).json({error:"Check each link title, description, and HTTPS address."});links.push({title,description,url:parsed.toString()});}const result=await pool.query("UPDATE management_settings SET game_links=$1::jsonb,updated_at=NOW() WHERE id=1 RETURNING game_links",[JSON.stringify(links)]);res.json({ok:true,links:result.rows[0]?.game_links||[]});}catch(e){next(e);}});
 
@@ -195,7 +195,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req),cfg=await settings();
     // Keep the team directory visible to Management (rank 238+) even when
     // an older permission value still has the previous 243 threshold.
-    const teamViewThreshold=Math.min(Number(cfg.team_view_rank||230),238);
+    const teamViewThreshold=230;
     if(!who||Number(who.rank)<teamViewThreshold)return res.status(403).json({error:"Your role cannot view staff teams."});
     const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.name");
     const members=await pool.query("SELECT user_id,team_id FROM management_team_members ORDER BY user_id,team_id");
@@ -437,7 +437,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const userId=String(req.params.id||"");
       if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
       const viewer=await identity(req),cfg=await settings(),viewerRank=Number(viewer?.rank||0),isSelf=String(req.session.user.id)===userId;
-      if(!viewer||viewerRank<Number(cfg.profile_view_rank||243))return res.status(403).json({error:"Your rank cannot view staff profiles."});
+      if(!viewer||(viewerRank!==230&&viewerRank<Number(cfg.profile_view_rank||243)))return res.status(403).json({error:"Your rank cannot view staff profiles."});
       const canViewActivity=isSelf||viewerRank>=Number(cfg.activity_view_rank||238);
       const canViewPunishments=isSelf||viewerRank>=Number(cfg.punishment_view_rank||238);
       const canViewNotes=viewerRank>=Number(cfg.profile_note_rank||243);
@@ -858,11 +858,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   router.get("/teams/:id/dashboard",async(req,res,next)=>{try{
     const who=await identity(req);const cfg=await settings();
-    const dashboardViewThreshold=Math.min(Number(cfg.profile_view_rank||243),238);
+    const dashboardViewThreshold=230;
     if(!who||Number(who.rank)<dashboardViewThreshold)return res.status(403).json({error:"Your rank cannot view team dashboards."});
     const team=await pool.query("SELECT id,name,color FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     const members=await pool.query("SELECT user_id FROM management_team_members WHERE team_id=$1",[req.params.id]),ids=members.rows.map(x=>x.user_id);
-    if(Number(who.rank)<238&&!ids.includes(String(req.session.user.id)))return res.status(403).json({error:"Only Management or members of this team can view its dashboard."});
+    if(Number(who.rank)<230&&!ids.includes(String(req.session.user.id)))return res.status(403).json({error:"Only staff with access or members of this team can view its dashboard."});
     const activity=ids.length?await pool.query("SELECT user_id,COALESCE(SUM(seconds),0)::BIGINT AS seconds,COUNT(*)::INTEGER AS sessions FROM activity_sessions WHERE user_id=ANY($1::text[]) GROUP BY user_id",[ids]):{rows:[]};
     const tasks=ids.length?await pool.query("SELECT status,COUNT(*)::INTEGER AS count FROM management_tasks WHERE assigned_to_id=ANY($1::text[]) GROUP BY status",[ids]):{rows:[]};
     const shifts=ids.length?await pool.query("SELECT COUNT(DISTINCT id)::INTEGER AS count FROM staff_shifts WHERE host_id=ANY($1::text[]) OR cohost_id=ANY($1::text[]) OR promoter_id=ANY($1::text[]) OR attendee_ids && $1::text[] OR oversee_ids && $1::text[]",[ids]):{rows:[{count:0}]};
