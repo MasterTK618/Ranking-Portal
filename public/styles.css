@@ -887,7 +887,7 @@ body.compact-layout #membersPage #directoryResult .staff-card{min-height:88px;pa
 #membersPage .directory-sidebar-heading h3{margin:0 0 5px;font-size:15px}
 #membersPage .directory-sidebar-heading p{margin:0;font-size:11px;line-height:1.45;color:var(--muted)}
 #membersPage .directory-rank-sidebar .directory-rank-option{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:10px 11px;margin:3px 0;border:1px solid var(--border);border-radius:10px;background:transparent;color:inherit;cursor:pointer}
-#membersPage .directory-rank-sidebar .directory-rank-option:hover{background:var(--surface-2)}
+#membersPage .directory-rank-sidebar .directory-rank-option:hover{background:var(--panel2)}
 #membersPage .directory-rank-sidebar .directory-rank-option.active{border-color:var(--yellow);background:color-mix(in srgb,var(--yellow) 12%,transparent)}
 #membersPage .directory-rank-option>span{display:flex;flex-direction:column;gap:3px;min-width:0}
 #membersPage .directory-rank-option b{font-size:12px;overflow-wrap:anywhere}
