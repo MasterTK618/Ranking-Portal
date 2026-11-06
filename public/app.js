@@ -995,7 +995,7 @@ async function loadActivityAlerts(){const el=$("activityAlerts");if(!el)return;e
 async function loadManagementAudit(){
  const el=$("managementAuditTable");if(!el)return;el.textContent="Loading management history…";
  try{
-  const q=new URLSearchParams({category:$("auditCategory")?.value||"",actor:$("auditActor")?.value||"",target:$("auditTarget")?.value||"",limit:"200"});
+  const q=new URLSearchParams({category:$("auditCategory")?.value||"",actor:$("auditActor")?.value||"",target:$("auditTarget")?.value||"",limit:"300"});
   const d=await api("/api/management/audit?"+q.toString());
   el.innerHTML=d.items.length?'<table class="data-table"><thead><tr><th>WHEN</th><th>CATEGORY</th><th>ACTION</th><th>TARGET</th><th>DETAILS</th><th>BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.category)+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"Unknown member")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"Management")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No management actions match these filters.</div>';
  }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
