@@ -60,7 +60,7 @@ remote.OnServerEvent:Connect(function(player,payload)
     local messageDelta = typeof(payload.messages) == "number" and payload.messages == payload.messages and payload.messages >= 0 and payload.messages <= 100 and math.floor(payload.messages) or 0
     local active,afk,typing=math.floor(payload.activeSeconds),math.floor(payload.afkSeconds),math.floor(payload.typingSeconds)
     if active+afk>30 or typing>30 then return end
-    local data=sessions[player];data.activeSeconds=math.min(30,data.activeSeconds+active);data.afkSeconds=math.min(30,data.afkSeconds+afk);data.typingSeconds=math.min(30,data.typingSeconds+typing)
+    local data=sessions[player];data.activeSeconds=math.min(30,data.activeSeconds+active);data.afkSeconds=math.min(30,data.afkSeconds+afk);data.typingSeconds=math.min(30,data.typingSeconds+typing);pendingMessages[player]=math.min(100,(pendingMessages[player] or 0)+messageDelta)
     if os.clock()-(lastFlush[player] or 0)>=25 then lastFlush[player]=os.clock();task.spawn(flush,player) end
 end)
 Players.PlayerAdded:Connect(startTracking)
