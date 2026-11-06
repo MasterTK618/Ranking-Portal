@@ -444,8 +444,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(announce&&!message)return res.status(400).json({error:"Enter an announcement."});
     const server=await pool.query("SELECT server_id FROM live_game_players WHERE server_id=$1 AND heartbeat_at>=NOW()-INTERVAL '90 seconds' LIMIT 1",[serverId]);
     if(!server.rowCount)return res.status(409).json({error:"That server is no longer active. Refresh the server list."});
-    if(playerAction){const target=await pool.query("SELECT user_id,username FROM live_game_players WHERE server_id=$1 AND user_id=$2 AND heartbeat_at>=NOW()-INTERVAL '90 seconds'",[serverId,targetId]);if(!target.rowCount)return res.status(404).json({error:"That player is no longer in the selected server."});
+    if(playerAction){const target=await pool.query("SELECT user_id,username,staff_rank FROM live_game_players WHERE server_id=$1 AND user_id=$2 AND heartbeat_at>=NOW()-INTERVAL '90 seconds'",[serverId,targetId]);if(!target.rowCount)return res.status(404).json({error:"That player is no longer in the selected server."});
       if(["kick","warn","mute"].includes(action)&&String(targetId)===String(req.session.user.id))return res.status(400).json({error:"You cannot use this action on yourself."});
+      if(Number(target.rows[0].staff_rank||0)>=Number(who.rank))return res.status(403).json({error:"You cannot moderate a player at or above your own group rank."});
       req.body.targetName=target.rows[0].username;
     }
     const payload=action==="announce"?{message}:playerAction?{reason}:{};
