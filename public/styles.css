@@ -787,3 +787,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .quota-rule-manager{margin-top:16px}.quota-rule-list{display:grid;gap:8px;margin-top:16px}.quota-rule-row{display:flex;justify-content:space-between;gap:14px;padding:12px;border:1px solid var(--stroke-soft);border-radius:10px;background:var(--panel2)}.quota-rule-row span{color:var(--muted);font-size:12px}@media(max-width:600px){.quota-rule-row{flex-direction:column}}
 
 .activity-data-table td:last-child{white-space:nowrap;color:var(--muted);font-size:11px}
+
+/* Task IDs stay visible and use the exact database string value. */
+.task-id-label{display:block;margin-top:4px;color:var(--yellow,#f5c928);font-size:9px;font-weight:750;letter-spacing:.07em;font-variant-numeric:tabular-nums}
