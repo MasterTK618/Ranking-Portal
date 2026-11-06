@@ -29,7 +29,7 @@ function showPage(page,view) {
   if(page==="views")loadViews();
   if(page==="settings")loadGameSettings();
   if(page==="sessions"){if(!staffDirectory.length)loadStaffDirectory();if(selectedView==="requests")loadSessionRequests();else loadSessions();}
-  if(page==="members"){if($("directorySearch"))$("directorySearch").focus();}
+  if(page==="members"){loadStaffDirectory();if($("directorySearch"))$("directorySearch").focus();}
   if(page==="activity"){loadManagement("activity");loadActivityAlerts();}
   if(page==="ingame")loadInGame();
   if(page==="gameLinks")loadGameLinks();
@@ -293,7 +293,7 @@ function renderTeamDirectory(){
   const mode=t.auto_assign_mode||"NONE",rule=mode==="ABOVE"?"Rank "+t.auto_assign_min_rank+":":mode==="RANGE"?"Ranks "+t.auto_assign_min_rank+"–"+t.auto_assign_max_rank:"Manual assignment";
   const assigned=teamStaffCache.filter(member=>teamAssignments.get(String(member.id))?.has(String(t.id)));
   const names=assigned.length?'<div class="team-card-members">'+assigned.map(member=>'<span class="team-member-chip">'+escapeHtml(member.username||"Unknown username")+' <small>· '+escapeHtml(member.role||("Rank "+member.rank))+'</small></span>').join("")+'</div>':'<div class="team-card-empty">No staff assigned to this team yet.</div>';
-  return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>Independent team</small><em>'+assigned.length+' of '+teamStaffCache.length+' staff · '+escapeHtml(rule)+'</em></div>'+names+'<div class="team-card-actions"><button class="quiet-btn" data-team-dashboard="'+escapeHtml(t.id)+'">Team dashboard</button>'+(teamCanManage?'<button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Manage members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button>':'')+'</div></article>';
+  return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>Independent team</small><em>'+assigned.length+' of '+teamStaffCache.length+' staff · '+escapeHtml(rule)+'</em></div>'+names+'<div class="team-card-actions">'+(teamCanManage?'<button type="button" class="quiet-btn" data-team-move="up" data-team-id="'+escapeHtml(t.id)+'" '+(managementTeams.indexOf(t)===0?'disabled':'')+'>↑ Move up</button><button type="button" class="quiet-btn" data-team-move="down" data-team-id="'+escapeHtml(t.id)+'" '+(managementTeams.indexOf(t)===managementTeams.length-1?'disabled':'')+'>↓ Move down</button>':'')+'<button class="quiet-btn" data-team-dashboard="'+escapeHtml(t.id)+'">Team dashboard</button>'+(teamCanManage?'<button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Manage members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button>':'')+'</div></article>';
  }).join("")+'</div>';
 }
 document.addEventListener("click",async e=>{
@@ -310,6 +310,18 @@ document.addEventListener("click",async e=>{
   card.appendChild(panel);b.textContent="Hide dashboard";
  }catch(err){notice(err.message,"error");b.textContent="Team dashboard";}
  finally{b.disabled=false;}
+});
+document.addEventListener("click",async event=>{
+ const button=event.target.closest("[data-team-move]");if(!button||button.disabled)return;
+ const index=managementTeams.findIndex(team=>String(team.id)===String(button.dataset.teamId));if(index<0)return;
+ const next=index+(button.dataset.teamMove==="up"?-1:1);if(next<0||next>=managementTeams.length)return;
+ const reordered=[...managementTeams];[reordered[index],reordered[next]]=[reordered[next],reordered[index]];
+ button.disabled=true;
+ try{
+  await api("/api/management/teams/order",{method:"PUT",body:JSON.stringify({teamIds:reordered.map(team=>String(team.id))})});
+  managementTeams=reordered;renderTeamDirectory();notice("Team order saved.","success");
+ }catch(error){notice(error.message,"error");}
+ finally{button.disabled=false;}
 });
 function renderTeamAssignmentMembers(){
  const teamId=$("teamAssignmentSelect")?.value,box=$("teamMembersSelect");if(!box)return;
@@ -842,35 +854,67 @@ document.addEventListener("click",async e=>{
 });
 
 
-let staffDirectory=[], calendarCursor=new Date(), staffMinRank=230, staffDiagnostics=null;
+let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0;
+function renderDirectoryMembers(members){
+ const result=$("directoryResult");if(!result)return;
+ result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
+}
 function renderStaffDirectory(){
- const result=$("directoryResult");
- if(result)result.innerHTML="";
- if($("staffCount"))$("staffCount").textContent="Search across all members of the Roblox group.";
- if($("directoryStatus")&&!$("directoryStatus").textContent.trim())$("directoryStatus").textContent="Enter at least 3 characters to search group members.";
+ if($("directoryHeading"))$("directoryHeading").textContent="Staff members";
+ if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" group members ranked "+staffMinRank+"+";
+ if($("directoryStatus"))$("directoryStatus").textContent="Showing all Lemonz staff ranked 230 and above. Choose a rank on the left to browse other members.";
+ renderDirectoryMembers(staffDirectory);
+ if($("directoryStaffCount"))$("directoryStaffCount").textContent=staffDirectory.length.toLocaleString();
+}
+function renderDirectoryRankSidebar(){
+ const box=$("directoryRankSidebar");if(!box)return;
+ const sorted=directoryRoles.slice().sort((x,y)=>Number(y.rank)-Number(x.rank));
+ box.innerHTML=sorted.map(role=>'<button type="button" class="directory-rank-option'+(String(activeDirectoryRank)===String(role.rank)?' active':'')+'" data-directory-rank="'+Number(role.rank)+'"><span><b>'+escapeHtml(role.name)+'</b><small>Rank '+Number(role.rank)+'</small></span><strong>'+Number(role.memberCount||0).toLocaleString()+'</strong></button>').join("");
+ $("directoryStaffRankButton")?.classList.toggle("active",activeDirectoryRank==="STAFF");
+}
+async function loadDirectoryRank(rank){
+ const token=++directoryRequestToken,rankValue=String(rank);
+ activeDirectoryRank=rankValue;renderDirectoryRankSidebar();
+ if(rankValue==="STAFF"){renderStaffDirectory();return;}
+ const role=directoryRoles.find(x=>Number(x.rank)===Number(rankValue));
+ if($("directoryHeading"))$("directoryHeading").textContent=role?.name||("Rank "+rankValue);
+ if($("staffCount"))$("staffCount").textContent=(role?.memberCount??"")+" members in this rank";
+ if($("directoryStatus"))$("directoryStatus").textContent="Loading "+(role?.name||("Rank "+rankValue))+" members…";
+ if($("directoryResult"))$("directoryResult").innerHTML="";
+ try{
+  const data=await api("/api/group/role-members?rank="+encodeURIComponent(rankValue));
+  if(token!==directoryRequestToken)return;
+  if($("staffCount"))$("staffCount").textContent=data.count+" members · "+(data.role||role?.name||("Rank "+rankValue));
+  if($("directoryStatus"))$("directoryStatus").textContent="Showing every current group member with this exact rank.";
+  renderDirectoryMembers(data.members||[]);
+ }catch(error){if(token!==directoryRequestToken)return;if($("directoryStatus"))$("directoryStatus").textContent=error.message;$("directoryResult").innerHTML='<div class="directory-error">'+escapeHtml(error.message)+'</div>';}
 }
 async function searchGroupMembers(){
  const input=$("directorySearch"),result=$("directoryResult"),status=$("directoryStatus"),button=$("searchGroupMember");
  const keyword=String(input?.value||"").trim();
- if(keyword.length<3){status.textContent="Enter at least 3 characters to search group members.";result.innerHTML="";return;}
+ if(keyword.length<3){status.textContent="Enter at least 3 characters to search Roblox usernames.";result.innerHTML="";return;}
+ const token=++directoryRequestToken;
  if(button){button.disabled=true;button.textContent="Searching…";}
- status.textContent="Searching Roblox group members…";result.innerHTML="";
+ if($("directoryHeading"))$("directoryHeading").textContent="Roblox search";
+ status.textContent="Searching Roblox users…";result.innerHTML="";
  try{
   const data=await api("/api/group/members/search?q="+encodeURIComponent(keyword));
+  if(token!==directoryRequestToken)return;
   const members=Array.isArray(data.members)?data.members:[];
-  $("staffCount").textContent=members.length+" matching group member"+(members.length===1?"":"s");
-  status.textContent=members.length?"Select a member to open their Profile.":"No group members matched “"+keyword+"”. Try their exact Roblox username.";
-  result.innerHTML=members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role)+' · Rank '+Number(m.rank)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join("");
- }catch(error){status.textContent=error.message||"Member search failed.";result.innerHTML='<div class="directory-error"><b>Search unavailable</b><p>'+escapeHtml(status.textContent)+'</p></div>';}
- finally{if(button){button.disabled=false;button.textContent="Search members";}}
+  $("staffCount").textContent=members.length+" matching Roblox user"+(members.length===1?"":"s");
+  status.textContent=members.length?"Select a result to open their Profile.":"No Roblox users matched “"+keyword+"”. Try an exact username.";
+  renderDirectoryMembers(members);
+ }catch(error){if(token!==directoryRequestToken)return;status.textContent=error.message||"Roblox search failed.";result.innerHTML='<div class="directory-error"><b>Search unavailable</b><p>'+escapeHtml(status.textContent)+'</p></div>';}
+ finally{if(button){button.disabled=false;button.textContent="Search Roblox";}}
 }
 async function loadStaffDirectory(force=false){
  const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
- if(status)status.textContent="Loading staff ranked "+staffMinRank+"+…";
+ if(status)status.textContent="Loading staff ranked 230+…";
  if(staffDirectory.length&&!force){renderStaffDirectory();return;}
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
-  const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=Number(d.minRank||d.diagnostics?.minRank||230);staffDiagnostics=d.diagnostics||null;if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
+  const roleData=await api("/api/group/roles");directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];groupRoleCache=directoryRoles;renderDirectoryRankSidebar();
+  const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=230;staffDiagnostics=d.diagnostics||null;if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
   try{
    const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map();for(const x of(teams.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}teamStaffCache=staffDirectory;await syncTeamsByGroupRole();
    const filter=$("directoryTeamFilter");
@@ -893,9 +937,11 @@ async function loadStaffDirectory(force=false){
   $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
  }finally{if($("directoryButton"))$("directoryButton").disabled=false;}
 }
-$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("directoryResult"))$("directoryResult").innerHTML="";if($("memberProfile"))$("memberProfile").classList.add("hidden");if($("staffCount"))$("staffCount").textContent="Search across all members of the Roblox group.";if($("directoryStatus"))$("directoryStatus").textContent="Enter at least 3 characters to search group members.";});
+$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();renderStaffDirectory();});
 $("searchGroupMember")?.addEventListener("click",searchGroupMembers);
 $("directorySearch")?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();searchGroupMembers();}});
+$("directoryRankSidebar")?.addEventListener("click",event=>{const button=event.target.closest("[data-directory-rank]");if(button)loadDirectoryRank(button.dataset.directoryRank);});
+$("directoryStaffRankButton")?.addEventListener("click",()=>{activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();renderStaffDirectory();});
 $("directoryResult")?.addEventListener("click",e=>{const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
 $("directoryResult")?.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.closest("[data-staff-id]")){e.preventDefault();showStaffProfile(e.target.closest("[data-staff-id]").dataset.staffId);}});
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
@@ -904,6 +950,10 @@ async function showStaffProfile(id,openTeams=false){
   const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML='<div class="profile-loading"><span class="loading-dot"></span> Loading staff profile…</div>';
   try{
     const d=await api("/api/management/members/"+encodeURIComponent(id)),m=d.member;
+    if(m.inGroup===false){
+      panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">ROBLOX PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.displayName||"")+' · Not in Lemonz</p></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div><p class="muted">This Roblox user is not currently a member of the Lemonz group, so staff history, requests, and internal management records are not available.</p>';
+      panel.dataset.memberId=String(m.id);panel.dataset.memberUsername=String(m.username||"");return;
+    }
     const canManageTeams=Number(sessionData?.identity?.rank)>=255;const tabs=[["overview","Overview"],["requests","Requests"],["timeline","Full history"],["teams","Teams"],["shifts","Shift history"],["gameSessions","Game Sessions"],["discipline","Discipline"],["notes","Management notes"]].filter(t=>(t[0]!=="teams"||canManageTeams)&&(t[0]!=="timeline"||d.canViewTimeline)&&(t[0]!=="gameSessions"||d.canViewActivity)&&(t[0]!=="discipline"||d.canViewPunishments)&&(t[0]!=="notes"||d.canViewNotes));
     panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">MEMBER PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.role)+' · Rank '+m.rank+'</p></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div>'+
     '<div class="profile-stats"><div><b>'+d.sessions.length+'</b><small>Shifts attended</small></div><div><b>'+(d.canViewPunishments?Number(d.strikeCount||0):"Restricted")+'</b><small>Approved strikes</small></div><div><b>'+escapeHtml(d.canViewPromotions?(d.lastPromotionAt?formatDate(d.lastPromotionAt):"No record"):"Restricted")+'</b><small>Last promotion date · approved Roblox rank request</small></div><div><b>'+escapeHtml(d.canViewPunishments?(d.lastPunishmentAt?formatDate(d.lastPunishmentAt):"No record"):"Restricted")+'</b><small>Last punishment date</small></div><div><b>'+(d.canViewActivity?Math.floor(Number(d.activity?.active_seconds||0)/3600)+'h':'Restricted')+'</b><small>Active play time</small></div><div><b>'+(d.canViewActivity?Number(d.activity?.message_count||0).toLocaleString():"Restricted")+'</b><small>Chat messages</small></div><div><b>'+(d.canViewActivity?Math.floor(Number(d.activity?.typing_seconds||0)/60)+'m':'Restricted')+'</b><small>Chat typing time</small></div><div><b>'+(d.canViewActivity?Math.floor(Number(d.activity?.afk_seconds||0)/60)+'m':'Restricted')+'</b><small>AFK time</small></div></div>'+'<div class="profile-activity"><div class="profile-activity-heading"><div><h4>Recent session attendance</h4><p>Sessions recorded over the last seven days</p></div><span>'+d.sessions.filter(s=>new Date(String(s.session_date).slice(0,10)+"T00:00:00")>=new Date(Date.now()-7*86400000)).length+' sessions</span></div><div class="profile-week-chart">'+Array.from({length:7},(_,i)=>{const day=new Date();day.setHours(0,0,0,0);day.setDate(day.getDate()-(6-i));const count=d.sessions.filter(s=>String(s.session_date).slice(0,10)===day.toISOString().slice(0,10)).length;return '<div class="profile-week-day"><b>'+count+'</b><i style="height:'+Math.max(4,Math.min(100,count*24))+'%"></i><small>'+day.toLocaleDateString(undefined,{weekday:"short"})+'</small></div>';}).join("")+'</div></div>'+
