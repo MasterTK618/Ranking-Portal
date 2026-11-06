@@ -822,5 +822,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .live-action-cell{display:flex;align-items:center;gap:6px;min-width:170px}
 .live-bulk-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
 .live-bulk-toolbar select{min-width:150px}.live-bulk-toolbar span{margin-left:auto;color:var(--muted);font-size:11px}
+.chat-log-table{min-width:900px}.chat-log-table td{vertical-align:top}.chat-log-display{display:block;margin-top:4px;color:var(--muted);font-size:10px}.chat-log-message{max-width:520px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.chat-log-table code{font-size:10px;color:var(--muted)}
 .in-game-person{font:inherit}.in-game-person:hover{color:var(--accent)}
 @media(max-width:600px){.live-bulk-toolbar span{margin-left:0}}
