@@ -472,7 +472,7 @@ async function loadInGame(){
   const players=d.players||[],servers=d.servers||[];
   $("inGameSummary").innerHTML='<article class="activity-stat"><small>ACTIVE SERVERS</small><b>'+servers.length+'</b></article><article class="activity-stat"><small>PLAYERS IN-GAME</small><b>'+players.length+'</b></article><article class="activity-stat"><small>STAFF IN-GAME</small><b>'+players.filter(p=>Number(p.staff_rank)>=230).length+'</b></article><article class="activity-stat"><small>ACCESS</small><b>'+(d.canAdmin?'Server admin':d.canModerate?'Moderator':'View only')+'</b></article>';
   $("inGameUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString();
-  $("liveServerCards").innerHTML=servers.length?servers.map(s=>'<article class="live-server-card"><b>Live server</b><code>'+escapeHtml(s.server_id.slice(0,16))+'</code><div class="live-server-stats"><span><b>'+s.player_count+'</b><small>Players</small></span><span><b>'+s.staff_count+'</b><small>Staff</small></span><span><b>'+s.place_id+'</b><small>Place ID</small></span></div></article>').join(""):'<div class="empty-state">No active servers are reporting. Install the Live Server Bridge script.</div>';
+  $("liveServerCards").innerHTML=servers.length?servers.map(s=>'<article class="live-server-card"><b>Live server</b><code>'+escapeHtml(s.server_id.slice(0,16))+'</code><div class="live-server-stats"><span><b>'+s.player_count+'</b><small>Players</small></span><span><b>'+s.staff_count+'</b><small>Staff</small></span><span><b>'+s.place_id+'</b><small>Place ID</small></span></div><div class="live-server-actions"><button class="quiet-btn" data-view-server="' + escapeHtml(s.server_id) + '">View server</button>'+(d.canAdmin?'<button class="danger-btn" data-server-action="restart" data-server="' + escapeHtml(s.server_id) + '">Restart</button><button class="danger-btn" data-server-action="shutdown" data-server="' + escapeHtml(s.server_id) + '">Shutdown</button>':'')+'</div></article>').join(""):'<div class="empty-state">No active servers are reporting. Install the Live Server Bridge script.</div>';
   const select=$("announceServer"),prior=select.value;select.innerHTML='<option value="">Choose a server…</option>'+servers.map(s=>'<option value="'+escapeHtml(s.server_id)+'">'+escapeHtml(s.server_id.slice(0,18))+' · '+s.player_count+' players</option>').join("");if(servers.some(s=>s.server_id===prior))select.value=prior;
   renderLivePlayers();await loadServerCommandHistory();
  }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
@@ -497,6 +497,14 @@ $("sendServerAnnouncement")?.addEventListener("click",async()=>{
  if(!server||!message)return notice("Choose a server and enter an announcement.","error");
  const b=$("sendServerAnnouncement");b.disabled=true;
  try{await portalServerAction("announce",server,"","",message);$("serverAnnouncement").value="";}catch(e){notice(e.message,"error");}finally{b.disabled=false;}
+});
+document.addEventListener("click",async e=>{
+ const view=e.target.closest("[data-view-server]");
+ if(view){const id=view.dataset.viewServer;const input=$("livePlayerSearch");if(input)input.value="";renderLivePlayers();$("inGameRoster").querySelectorAll("tbody tr").forEach(row=>{if(!row.innerHTML.includes(id.slice(0,12)))row.classList.add("hidden");});return;}
+ const b=e.target.closest("[data-server-action]");if(!b)return;
+ const action=b.dataset.serverAction,server=b.dataset.server;
+ if(!confirm("Are you sure you want to "+action+" this entire server?"))return;
+ b.disabled=true;try{await portalServerAction(action,server,"","","");}catch(err){notice(err.message,"error");b.disabled=false;}
 });
 async function loadGameLinks(){
  const el=$("gameLinksList");if(!el)return;el.innerHTML='<div class="empty-state">Loading game links…</div>';
