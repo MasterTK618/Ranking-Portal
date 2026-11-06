@@ -713,7 +713,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.delete("/session-requests/:id",csrf,async(req,res,next)=>{
     let client;
     try{
-      if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session request ID."});
+      if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session request ID."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank||243);
       client=await pool.connect();await client.query("BEGIN");
