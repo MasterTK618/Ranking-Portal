@@ -447,7 +447,6 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(playerAction){const target=await pool.query("SELECT user_id,username FROM live_game_players WHERE server_id=$1 AND user_id=$2 AND heartbeat_at>=NOW()-INTERVAL '90 seconds'",[serverId,targetId]);if(!target.rowCount)return res.status(404).json({error:"That player is no longer in the selected server."});
       if(["kick","warn","mute"].includes(action)&&String(targetId)===String(req.session.user.id))return res.status(400).json({error:"You cannot use this action on yourself."});
       req.body.targetName=target.rows[0].username;
-      if(action==="warn")await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,status,created_by,created_by_name,decided_by,decided_by_name,decision_note,decided_at) VALUES($1,$2,'Warning',$3,'APPROVED',$4,$5,$4,$5,'Issued from Live Server Management',NOW())",[targetId,target.rows[0].username,reason,String(req.session.user.id),String(req.session.user.name||"Portal staff")]);
     }
     const payload=action==="announce"?{message}:playerAction?{reason}:{};
     const r=await pool.query("INSERT INTO portal_game_commands(server_id,target_user_id,action,payload,requested_by,requested_by_name,target_username) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7) RETURNING id,status,created_at",[serverId,playerAction?targetId:null,action,JSON.stringify(payload),String(req.session.user.id),String(req.session.user.name||"Portal staff"),String(req.body.targetName||"")]);
