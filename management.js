@@ -699,7 +699,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid record ID."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const s=await settings(),canManage=who.rank>=Number(s[rankField]);client=await pool.connect();await client.query("BEGIN");
-      const r=await client.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) AND ($4 IS NULL OR status=$4 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage,path==="leaves"?"PENDING":null]);
+      const pendingOnly=path==="leaves"?" AND status='PENDING'":"";
+      const r=await client.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE)"+pendingOnly+" RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
       if(!r.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Record not found, already deleted, or you do not have permission to remove it."});}
       const item=r.rows[0];
       if(path==="punishments")await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PUNISHMENT","DELETED",String(item.id),String(item.username||item.roblox_username||""),"Record deleted",String(req.session.user.id),String(req.session.user.name)]);
