@@ -4,6 +4,7 @@ local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
 local TextChatService=game:GetService("TextChatService")
 local TeleportService=game:GetService("TeleportService")
+local TextService=game:GetService("TextService")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local URL="https://ranking-portal.onrender.com"
 local GAME_SECRET="PASTE_THE_SAME_INGAME_API_SECRET_HERE"
@@ -33,11 +34,15 @@ local function execute(c)
  local action=c.action;local payload=c.payload or {};local target
  if c.target_user_id then for _,p in ipairs(Players:GetPlayers()) do if tostring(p.UserId)==tostring(c.target_user_id) then target=p end end;if not target then return false,"Player left the server." end end
  if action=="kick" then target:Kick(payload.reason or "Removed by Lemonz staff.")
- elseif action=="warn" then remote:FireClient(target,{kind="warning",message="Staff warning: "..tostring(payload.reason)})
+ elseif action=="warn" then remote:FireClient(target,{kind="warning",message="You have received a staff warning. Please contact Lemonz management if you have questions."})
  elseif action=="respawn" then target:LoadCharacterAsync()
  elseif action=="mute" then muted[target.UserId]=true;remote:FireClient(target,{kind="warning",message="You have been muted by staff."})
  elseif action=="unmute" then muted[target.UserId]=nil;remote:FireClient(target,{kind="success",message="Your mute has been removed."})
- elseif action=="announce" then remote:FireAllClients({kind="announcement",message=tostring(payload.message)})
+ elseif action=="announce" then
+  local filtered=TextService:FilterStringAsync(tostring(payload.message or ""),tonumber(c.requested_by))
+  local broadcast=filtered:GetNonChatStringForBroadcastAsync()
+  if not broadcast or broadcast=="" then return false,"Announcement was blocked by Roblox text filtering." end
+  remote:FireAllClients({kind="announcement",message=broadcast})
  elseif action=="shutdown" then for _,p in ipairs(Players:GetPlayers()) do p:Kick("This server was shut down by Lemonz management.") end
  elseif action=="restart" then TeleportService:TeleportAsync(game.PlaceId,Players:GetPlayers())
  else return false,"Unsupported command." end
