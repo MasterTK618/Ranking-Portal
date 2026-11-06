@@ -160,7 +160,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view departments."});
     const departments=await pool.query("SELECT d.*,COUNT(DISTINCT dm.user_id)::INTEGER AS member_count FROM management_departments d LEFT JOIN management_department_members dm ON dm.department_id=d.id GROUP BY d.id ORDER BY d.name");
     const members=await pool.query("SELECT user_id,department_id FROM management_department_members ORDER BY user_id,department_id");
-    res.json({departments:departments.rows,members:members.rows,canManage:Number(who.rank)>230});
+    res.json({departments:departments.rows,members:members.rows,canManage:Number(who.rank)>=255});
   }catch(e){next(e);}});
   router.post("/departments",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage departments."});
@@ -890,8 +890,6 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS attendance JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS recurrence_rule TEXT, ADD COLUMN IF NOT EXISTS recurrence_until DATE");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS entity_type TEXT NOT NULL DEFAULT 'TEAM'");
-  await pool.query("ALTER TABLE management_teams DROP CONSTRAINT IF EXISTS management_teams_department_name_key");
-  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS management_teams_name_unique_idx ON management_teams(LOWER(name))");
   await pool.query("CREATE TABLE IF NOT EXISTS management_departments (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
   await pool.query("CREATE TABLE IF NOT EXISTS management_department_members (user_id TEXT NOT NULL,department_id BIGINT NOT NULL REFERENCES management_departments(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,department_id))");
   await pool.query("CREATE INDEX IF NOT EXISTS management_department_members_department_idx ON management_department_members(department_id)");
