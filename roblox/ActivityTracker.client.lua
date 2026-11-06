@@ -41,8 +41,8 @@ local function chatFocused()
 end
 local function flush()
     if activeSeconds+afkSeconds<=0 and typingSeconds<=0 then return end
-    remote:FireServer({activeSeconds=activeSeconds,afkSeconds=afkSeconds,typingSeconds=typingSeconds,messages=messages})
-    activeSeconds,afkSeconds,typingSeconds,messages=0,0,0
+    remote:FireServer({activeSeconds=math.min(30,math.floor(activeSeconds)),afkSeconds=math.min(30,math.floor(afkSeconds)),typingSeconds=math.min(30,math.floor(typingSeconds)),messages=messages})
+    activeSeconds,afkSeconds,typingSeconds,messages=0,0,0,0
 end
 local sendElapsed,moveElapsed=0,0
 RunService.Heartbeat:Connect(function(dt)
