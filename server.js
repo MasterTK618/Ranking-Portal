@@ -94,6 +94,22 @@ async function getIdentity(userId) {
   const member = await getMember(userId);
   return { userId: String(userId), inGroup: !!member, rank: member?.role?.rank || 0, roleName: member?.role?.name || "Not in group", canRank: !!member && member.role.rank >= MIN_RANK, role: member?.role || null };
 }
+async function applyRobloxRank({userId,requestedRole,action,actorRank}) {
+  if(!/^\d+$/.test(String(userId))) throw new Error("Invalid member ID for ranking.");
+  const target=await getMember(String(userId));
+  if(!target?.role) throw new Error("The requested member is no longer in the Roblox group.");
+  if(Number(target.role.rank)>=Number(actorRank)) throw new Error("You cannot change the role of a member at or above your own rank.");
+  const roles=await getRoles(),eligible=roles.filter(r=>r.rank<Number(actorRank));
+  let desired=null;
+  if(action==="PROMOTION") {const wanted=String(requestedRole||"").trim().toLowerCase();desired=eligible.find(r=>r.name.toLowerCase()===wanted||String(r.rank)===wanted||String(r.id)===wanted);if(!desired||desired.rank<=target.role.rank)throw new Error("The requested promotion role is not a valid higher role below the approver's rank.");}
+  else if(action==="DEMOTION") {desired=eligible.filter(r=>r.rank<target.role.rank).sort((a,b)=>b.rank-a.rank)[0];if(!desired)throw new Error("No lower Roblox group role is available for this member.");}
+  else throw new Error("Unsupported ranking action.");
+  const paths=target.membership.roles?.length?target.membership.roles:target.membership.role?[target.membership.role]:[],newPath=desired.path||`groups/${GROUP_ID}/roles/${desired.id}`;
+  await roblox(`/groups/${GROUP_ID}/memberships/${target.membershipId}:assignRole`,{method:"POST",body:JSON.stringify({role:newPath})});
+  for(const path of paths)if(path!==newPath)await roblox(`/groups/${GROUP_ID}/memberships/${target.membershipId}:unassignRole`,{method:"POST",body:JSON.stringify({role:path})});
+  const verified=await getMember(String(userId));if(verified?.role?.id!==desired.id)throw new Error("Roblox did not confirm the requested role change. The request has not been approved.");
+  return {previousRole:target.role.name,newRole:desired.name,newRank:desired.rank};
+}
 async function logAction({ actorId, actorName, targetId, targetName, previousRole, newRole, action, reason, status, details }) {
   await pool.query(
     `INSERT INTO ranking_logs(actor_id,actor_name,target_id,target_name,previous_role,new_role,action,reason,status,details)
@@ -512,7 +528,7 @@ app.get("/api/logs", requireLogin, requireRanker, async (req,res,next) => {
   } catch(e) { next(e); }
 });
 
-app.use("/api/management", createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret }));
+app.use("/api/management", createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret, applyRobloxRank }));
 app.use(express.static("public", { extensions:["html"] }));
 app.get("*", (req,res) => res.sendFile(require("node:path").join(process.cwd(),"public","index.html")));
 app.use((err,req,res,next) => {
