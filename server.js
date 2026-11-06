@@ -274,7 +274,7 @@ app.get("/api/group/roles",requireLogin,async(req,res)=>{
     fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles").then(async response=>{
       const data=await response.json().catch(()=>({}));
       if(!response.ok||!Array.isArray(data.roles))throw new Error(data.errors?.[0]?.message||data.message||("Roblox Groups API HTTP "+response.status));
-      return data.roles.map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank)}));
+      return data.roles.map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank),memberCount:Number(role.memberCount||0)}));
     }),
     getRoles().then(roles=>roles.map(role=>({id:String(role.id),name:String(role.name||role.displayName||"Unnamed role"),rank:Number(role.rank)})))
   ]);
@@ -282,7 +282,7 @@ app.get("/api/group/roles",requireLogin,async(req,res)=>{
   for(const attempt of attempts)if(attempt.status==="fulfilled")for(const role of attempt.value){
     if(!Number.isInteger(role.rank)||role.rank<0||role.rank>255)continue;
     const previous=merged.get(role.id);
-    merged.set(role.id,{id:role.id,name:role.name||previous?.name||"Unnamed role",rank:role.rank});
+    merged.set(role.id,{id:role.id,name:role.name||previous?.name||"Unnamed role",rank:role.rank,memberCount:Math.max(Number(previous?.memberCount||0),Number(role.memberCount||0))});
   }
   const roles=[...merged.values()].sort((a,b)=>a.rank-b.rank||a.name.localeCompare(b.name));
   if(!roles.length){
@@ -320,7 +320,7 @@ app.get("/api/group/members/search",requireLogin,async(req,res)=>{
         const groupData=await membership.json().catch(()=>({}));
         if(!membership.ok)return null;
         const role=(groupData.data||[]).filter(item=>String(item.group?.id)===String(GROUP_ID)).map(item=>item.role||{}).sort((a,b)=>Number(b.rank||0)-Number(a.rank||0))[0];
-        return role?{id:String(user.id),username:String(user.name||""),displayName:String(user.displayName||""),rank:Number(role.rank||0),role:String(role.name||"Member")}:null;
+        return {id:String(user.id),username:String(user.name||""),displayName:String(user.displayName||""),inGroup:!!role,rank:Number(role?.rank||0),role:String(role?.name||"Not in group")};
       }catch{return null;}
     }));
     const members=checked.filter(Boolean);
@@ -337,6 +337,41 @@ app.get("/api/group/members/search",requireLogin,async(req,res)=>{
     console.error("Group member search failed:",err.message);
     res.status(502).json({error:"Could not search Roblox group members right now: "+err.message});
   }
+});
+
+app.get("/api/group/role-members",requireLogin,async(req,res)=>{
+  const rank=Number(req.query.rank);
+  if(!Number.isInteger(rank)||rank<0||rank>255)return res.status(400).json({error:"Choose a valid Roblox group rank."});
+  try{
+    const viewer=await getIdentity(req.session.user.id);
+    if(!viewer?.inGroup||Number(viewer.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to browse group members."});
+    let cursor="",pages=0,base=[];
+    do{
+      const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
+      const response=await fetch(url),data=await response.json().catch(()=>({}));
+      if(!response.ok||!Array.isArray(data.data))throw new Error(data.errors?.[0]?.message||data.message||("Roblox group members returned HTTP "+response.status));
+      for(const item of data.data){
+        const id=String(item.user?.userId||item.user?.id||"");
+        if(/^\d+$/.test(id)&&Number(item.role?.rank||0)===rank)base.push({id,rank,role:String(item.role?.name||("Rank "+rank)),username:String(item.user?.username||""),displayName:String(item.user?.displayName||"")});
+      }
+      cursor=data.nextPageCursor||"";
+      if(++pages>200)throw new Error("The group directory exceeded 20,000 members.");
+    }while(cursor);
+    const profiles=[],thumbs=[];
+    for(let i=0;i<base.length;i+=100){
+      const ids=base.slice(i,i+100).map(x=>Number(x.id));
+      const [pr,tr]=await Promise.all([
+        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false})}),
+        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true")
+      ]);
+      const [pd,td]=await Promise.all([pr.json().catch(()=>({})),tr.json().catch(()=>({}))]);
+      if(pr.ok&&Array.isArray(pd.data))profiles.push(...pd.data);
+      if(tr.ok&&Array.isArray(td.data))thumbs.push(...td.data);
+    }
+    const byId=new Map(profiles.map(x=>[String(x.id),x])),avatarById=new Map(thumbs.map(x=>[String(x.targetId),x.imageUrl||""]));
+    const members=base.map(x=>({...x,username:byId.get(x.id)?.name||x.username||("User "+x.id),displayName:byId.get(x.id)?.displayName||x.displayName||"",avatarUrl:avatarById.get(x.id)||"",inGroup:true})).sort((x,y)=>x.username.localeCompare(y.username));
+    res.set("Cache-Control","private, max-age=45");res.json({rank,role:members[0]?.role||"",members,count:members.length,pagesScanned:pages});
+  }catch(error){console.error("Group rank member list failed:",error.message);res.status(502).json({error:"Could not load members in that rank: "+error.message});}
 });
 
 app.get("/api/staff",requireLogin,async(req,res)=>{
@@ -359,7 +394,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     const viewer = await getIdentity(req.session.user.id);
     // Management (rank 238+) must be able to see the directory even if an
     // older saved threshold is still set to 243. Rank 230 remains read-only.
-    const effectiveStaffMinRank = Number(viewer.rank)===230 ? 230 : Math.min(staffMinRank,238);
+    const effectiveStaffMinRank = 230;
     diagnostics.minRank = effectiveStaffMinRank;
     if (!viewer.inGroup || viewer.rank < effectiveStaffMinRank) return res.status(403).json({error:"Rank "+effectiveStaffMinRank+" or higher is required to view the staff directory."});
     let base = [], roles = [], publicError = null;
