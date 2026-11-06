@@ -10,6 +10,7 @@ local URL="https://ranking-portal.onrender.com"
 local GAME_SECRET="PASTE_THE_SAME_INGAME_API_SECRET_HERE"
 local SERVER_ID=game.JobId~="" and game.JobId or ("studio-"..game.PlaceId)
 local joined,muted,ranks={},{},{}
+local loggedMessages={}
 local remote=ReplicatedStorage:FindFirstChild("LemonzPortalNotice") or Instance.new("RemoteEvent")
 remote.Name="LemonzPortalNotice";remote.Parent=ReplicatedStorage
 local function call(path,method,data)
@@ -26,7 +27,27 @@ local function report()
  call("/api/management/live/heartbeat","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),players=list})
 end
 local function filter(channel)
- if channel:IsA("TextChannel") then pcall(function() channel.ShouldDeliverCallback=function(message) local source=message.TextSource;return not(source and muted[source.UserId]) end end) end
+ if channel:IsA("TextChannel") then pcall(function()
+  channel.ShouldDeliverCallback=function(message)
+   local source=message.TextSource
+   if source then
+    local userId=source.UserId
+    local messageId=tostring(message.MessageId or "")
+    if messageId~="" and not loggedMessages[messageId] then
+     loggedMessages[messageId]=true
+     local sender=Players:GetPlayerByUserId(userId)
+     local text=tostring(message.Text or ""):sub(1,500)
+     if sender and text~="" then
+      task.spawn(function()
+       call("/api/management/chat-log","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),userId=tostring(userId),username=sender.Name,displayName=sender.DisplayName,channel=channel.Name,messageId=messageId,message=text})
+      end)
+     end
+     task.delay(300,function() loggedMessages[messageId]=nil end)
+    end
+   end
+   return not(source and muted[source.UserId])
+  end
+ end) end
 end
 for _,v in ipairs(TextChatService:GetDescendants()) do filter(v) end
 TextChatService.DescendantAdded:Connect(filter)
