@@ -264,20 +264,39 @@ app.get("/api/me", requireLogin, async (req,res) => {
   }
 });
 
+let groupRolesCache={at:0,roles:[]};
 app.get("/api/group/roles",requireLogin,async(req,res)=>{
-  try{
-    const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles");
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok||!Array.isArray(data.roles))throw new Error(data.errors?.[0]?.message||data.message||("Roblox returned HTTP "+response.status));
-    const roles=data.roles.map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank)}))
-      .filter(role=>Number.isInteger(role.rank)&&role.rank>=0&&role.rank<=255)
-      .sort((a,b)=>a.rank-b.rank);
-    res.set("Cache-Control","private, max-age=300");
-    res.json({groupId:GROUP_ID,roles,count:roles.length,source:"roblox-group-roles"});
-  }catch(error){
-    console.error("Lemonz group roles failed:",error.message);
-    res.status(502).json({error:"Could not load all group roles from Roblox: "+error.message});
+  if(groupRolesCache.roles.length&&Date.now()-groupRolesCache.at<5*60*1000){
+    res.set("Cache-Control","private, max-age=60");
+    return res.json({groupId:GROUP_ID,roles:groupRolesCache.roles,count:groupRolesCache.roles.length,source:"cache"});
   }
+  const attempts=await Promise.allSettled([
+    fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles").then(async response=>{
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||!Array.isArray(data.roles))throw new Error(data.errors?.[0]?.message||data.message||("Roblox Groups API HTTP "+response.status));
+      return data.roles.map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank)}));
+    }),
+    getRoles().then(roles=>roles.map(role=>({id:String(role.id),name:String(role.name||role.displayName||"Unnamed role"),rank:Number(role.rank)})))
+  ]);
+  const merged=new Map();
+  for(const attempt of attempts)if(attempt.status==="fulfilled")for(const role of attempt.value){
+    if(!Number.isInteger(role.rank)||role.rank<0||role.rank>255)continue;
+    const previous=merged.get(role.id);
+    merged.set(role.id,{id:role.id,name:role.name||previous?.name||"Unnamed role",rank:role.rank});
+  }
+  const roles=[...merged.values()].sort((a,b)=>a.rank-b.rank||a.name.localeCompare(b.name));
+  if(!roles.length){
+    const reasons=attempts.filter(x=>x.status==="rejected").map(x=>x.reason?.message||"Roblox request failed");
+    if(groupRolesCache.roles.length){
+      console.warn("Using cached group roles after Roblox API failure:",reasons.join(" | "));
+      return res.json({groupId:GROUP_ID,roles:groupRolesCache.roles,count:groupRolesCache.roles.length,source:"stale-cache",warning:"Roblox is temporarily unavailable; showing the last saved role list."});
+    }
+    console.error("Lemonz group roles failed:",reasons.join(" | "));
+    return res.status(502).json({error:"Could not load group roles from Roblox. "+reasons.join(" | ")});
+  }
+  groupRolesCache={at:Date.now(),roles};
+  res.set("Cache-Control","private, max-age=60");
+  res.json({groupId:GROUP_ID,roles,count:roles.length,source:attempts.every(x=>x.status==="fulfilled")?"roblox-apis":"roblox-fallback"});
 });
 
 app.get("/api/staff",requireLogin,async(req,res)=>{
