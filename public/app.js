@@ -110,8 +110,37 @@ async function loadLogs(){
 $("refreshLogs").addEventListener("click",loadLogs);
 $("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toLowerCase();document.querySelectorAll("#logsTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 
+const PRESET_GROUP_ROLES=[
+ {id:"preset-0",name:"Guest",rank:0},
+ {id:"preset-1",name:"Islander",rank:1},
+ {id:"preset-1-early",name:"Early testers for Lemonz | Lemonade House",rank:1},
+ {id:"preset-12",name:"Member",rank:12},
+ {id:"preset-205",name:"Noted Islander",rank:205},
+ {id:"preset-210",name:"Islander Partner",rank:210},
+ {id:"preset-217",name:"Starting Juicer",rank:217},
+ {id:"preset-220",name:"Skillful Juicer",rank:220},
+ {id:"preset-226",name:"Master Juicer",rank:226},
+ {id:"preset-228",name:"Godly Juicer",rank:228},
+ {id:"preset-230",name:"Staff Assistant",rank:230},
+ {id:"preset-234",name:"Supervisor",rank:234},
+ {id:"preset-237",name:"Manager",rank:237},
+ {id:"preset-239",name:"Team Leader",rank:239},
+ {id:"preset-240",name:"Moderator",rank:240},
+ {id:"preset-242",name:"Senior Moderator",rank:242},
+ {id:"preset-243",name:"Executive Intern",rank:243},
+ {id:"preset-245",name:"Junior Executive",rank:245},
+ {id:"preset-247",name:"Senior Executive",rank:247},
+ {id:"preset-249",name:"Head Executive",rank:249},
+ {id:"preset-250-staff",name:"Staff Director",rank:250},
+ {id:"preset-250-relation",name:"Relation Director",rank:250},
+ {id:"preset-251",name:"Presidential Assistant",rank:251},
+ {id:"preset-252",name:"Vice President",rank:252},
+ {id:"preset-253",name:"Automation",rank:253},
+ {id:"preset-254",name:"President",rank:254},
+ {id:"preset-255",name:"Holder",rank:255}
+];
 async function populateGroupRoleDropdowns(){
- const ids=["teamViewRank","departmentViewRank","knowledgeViewRank","gameLinksViewRank","promotionViewRank","sessionRequestsViewRank","announcementViewRank","announcementPublishRank","liveServerViewRank","livePlayerModerateRank","liveAnnounceRank","liveServerAdminRank","activityViewRank","activityEditRank","punishmentViewRank","punishmentRequestRank","punishmentAddRank","punishmentApproveRank","promotionSuggestRank","promotionApproveRank","leaveApproveRank","sessionCreateRank","sessionApproveRank","sessionStatusRank","sessionDeleteRank","taskViewRank","taskManageRank","knowledgeManageRank","notificationViewRank","analyticsViewRank","autoApproveRequestsRank","knowledgeMinRank"];
+ const ids=["teamViewRank","departmentViewRank","knowledgeViewRank","gameLinksViewRank","promotionViewRank","sessionRequestsViewRank","announcementViewRank","announcementPublishRank","liveServerViewRank","livePlayerModerateRank","liveAnnounceRank","liveServerAdminRank","activityViewRank","activityEditRank","punishmentViewRank","punishmentRequestRank","punishmentAddRank","punishmentApproveRank","promotionSuggestRank","promotionApproveRank","leaveApproveRank","sessionCreateRank","sessionApproveRank","sessionStatusRank","sessionDeleteRank","taskViewRank","taskManageRank","knowledgeManageRank","notificationViewRank","analyticsViewRank","auditViewRank","profileViewRank","profileNoteRank","calendarViewRank","quotaViewRank","quotaManageRank","inactivityAlertViewRank","evidenceViewRank","evidenceUploadRank","evidenceManageRank","autoApproveRequestsRank","knowledgeMinRank"];
  const selects=ids.map(id=>$(id)).filter(Boolean);
  if(!selects.length)return;
  if(!groupRoleCache.length){
@@ -121,8 +150,8 @@ async function populateGroupRoleDropdowns(){
    catch(e){lastError=e;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));}
   }
   if(!groupRoleCache.length){
-   selects.forEach(el=>{el.innerHTML='<option value="">Could not load group roles — retry Settings</option>';el.disabled=true;});
-   throw lastError||new Error("Could not load group roles.");
+   console.warn("Roblox group roles unavailable; using the configured Lemonz role preset.",lastError);
+   groupRoleCache=PRESET_GROUP_ROLES;
   }
  }
  const list=[...groupRoleCache].sort((x,y)=>Number(x.rank)-Number(y.rank));
