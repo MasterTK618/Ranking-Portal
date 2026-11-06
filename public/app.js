@@ -459,16 +459,27 @@ document.addEventListener("click",async e=>{
 $("refreshViews")?.addEventListener("click",loadViews);
 
 function formatDuration(value){const total=Math.max(0,Math.floor(Number(value||0))),h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return h?String(h)+"h "+String(m).padStart(2,"0")+"m":m?String(m)+"m "+String(s).padStart(2,"0")+"s":String(s)+"s";}
-async function loadInGame(){
- const roster=$("inGameRoster");if(!roster)return;roster.innerHTML='<div class="empty-state">Refreshing live game presence…</div>';
- try{
-  if(!staffDirectory.length)try{await loadStaffDirectory();}catch{}
-  const d=await api("/api/management/in-game"),items=d.members||[],people=new Map(staffDirectory.map(x=>[String(x.id),x]));
-  $("inGameSummary").innerHTML='<article class="activity-stat"><small>STAFF IN-GAME NOW</small><b>'+items.length.toLocaleString()+'</b></article><article class="activity-stat"><small>LONGEST CURRENT SESSION</small><b>'+formatDuration(Math.max(0,...items.map(x=>Number(x.current_seconds||0))))+'</b></article><article class="activity-stat"><small>TRACKER STATUS</small><b>Live</b></article>';
-  $("inGameUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString()+" · "+(d.canViewAll?"All tracked staff":"Your current session only");
-  roster.innerHTML=items.length?'<table class="data-table in-game-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP ROLE</th><th>JOINED SERVER</th><th>CURRENT SESSION</th><th>ACTIVE TIME</th><th>MESSAGES</th></tr></thead><tbody>'+items.map(x=>{const p=people.get(String(x.user_id))||{},name=p.username||x.username||"Staff member",avatar=p.avatarUrl||("https://www.roblox.com/headshot-thumbnail/image?userId="+encodeURIComponent(x.user_id)+"&width=48&height=48&format=png");return '<tr><td><button type="button" class="in-game-person" data-live-profile="'+escapeHtml(x.user_id)+'"><img src="'+escapeHtml(avatar)+'" alt="" loading="lazy"><span><b>'+escapeHtml(name)+'</b><small>In Roblox right now</small></span></button></td><td>'+escapeHtml(p.role||"Lemonz staff")+(p.rank?'<small class="table-subtext">Rank '+p.rank+'</small>':'')+'</td><td>'+escapeHtml(formatDate(x.started_at))+'</td><td><b class="live-session-time" data-live-start="'+escapeHtml(x.started_at)+'">'+formatDuration(x.current_seconds)+'</b></td><td>'+formatDuration(x.active_seconds)+'</td><td>'+Number(x.message_count||0).toLocaleString()+'</td></tr>';}).join("")+'</tbody></table>':'<div class="empty-state"><b>No staff members are currently showing as in-game.</b><p>Once the updated Roblox tracker is installed, staff will appear here automatically.</p></div>';
- }catch(e){roster.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+let liveServerState={servers:[],players:[],canModerate:false,canAdmin:false};
+function renderLivePlayers(){
+ const el=$("inGameRoster"),q=String($("livePlayerSearch")?.value||"").toLowerCase();if(!el)return;
+ const rows=liveServerState.players.filter(p=>(p.username+" "+p.display_name).toLowerCase().includes(q));
+ el.innerHTML=rows.length?'<table class="data-table in-game-table"><thead><tr><th>PLAYER</th><th>SERVER</th><th>TIME IN SERVER</th><th>GROUP ROLE</th></tr></thead><tbody>'+rows.map(p=>'<tr><td><div class="in-game-person"><img src="https://www.roblox.com/headshot-thumbnail/image?userId='+encodeURIComponent(p.user_id)+'&width=48&height=48&format=png"><span><b>'+escapeHtml(p.username)+'</b><small>'+escapeHtml(p.display_name||p.username)+'</small></span></div></td><td><code>'+escapeHtml(p.server_id.slice(0,12))+'</code></td><td>'+formatDuration(p.current_seconds)+'</td><td>'+ (Number(p.staff_rank)>=230?'Staff · Rank '+p.staff_rank:'Player')+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No players are currently reporting in. Install the Live Server Bridge script.</div>';
 }
+async function loadInGame(){
+ const el=$("inGameRoster");if(!el)return;el.innerHTML='<div class="empty-state">Refreshing live servers…</div>';
+ try{
+  const d=await api("/api/management/live-servers");liveServerState=d;
+  const players=d.players||[],servers=d.servers||[];
+  $("inGameSummary").innerHTML='<article class="activity-stat"><small>ACTIVE SERVERS</small><b>'+servers.length+'</b></article><article class="activity-stat"><small>PLAYERS IN-GAME</small><b>'+players.length+'</b></article><article class="activity-stat"><small>STAFF IN-GAME</small><b>'+players.filter(p=>Number(p.staff_rank)>=230).length+'</b></article><article class="activity-stat"><small>ACCESS</small><b>'+(d.canAdmin?'Server admin':d.canModerate?'Moderator':'View only')+'</b></article>';
+  $("inGameUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString();
+  $("liveServerCards").innerHTML=servers.length?servers.map(s=>'<article class="live-server-card"><b>Live server</b><code>'+escapeHtml(s.server_id.slice(0,16))+'</code><div class="live-server-stats"><span><b>'+s.player_count+'</b><small>Players</small></span><span><b>'+s.staff_count+'</b><small>Staff</small></span><span><b>'+s.place_id+'</b><small>Place ID</small></span></div></article>').join(""):'<div class="empty-state">No active servers are reporting. Install the Live Server Bridge script.</div>';
+  const select=$("announceServer"),prior=select.value;select.innerHTML='<option value="">Choose a server…</option>'+servers.map(s=>'<option value="'+escapeHtml(s.server_id)+'">'+escapeHtml(s.server_id.slice(0,18))+' · '+s.player_count+' players</option>').join("");if(servers.some(s=>s.server_id===prior))select.value=prior;
+  renderLivePlayers();await loadServerCommandHistory();
+ }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+async function loadServerCommandHistory(){const el=$("serverCommandHistory");if(!el)return;try{const d=await api("/api/management/server-command-history");el.innerHTML=d.items.length?'<table class="data-table"><thead><tr><th>TIME</th><th>ACTION</th><th>PLAYER</th><th>STATUS</th><th>BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.status)+'</td><td>'+escapeHtml(x.requested_by_name)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No portal commands have been sent yet.</div>';}catch(e){el.textContent=e.message;}}
+$("livePlayerSearch")?.addEventListener("input",renderLivePlayers);
+$("refreshServerHistory")?.addEventListener("click",loadServerCommandHistory);
 async function loadGameLinks(){
  const el=$("gameLinksList");if(!el)return;el.innerHTML='<div class="empty-state">Loading game links…</div>';
  try{const d=await api("/api/management/game-links"),links=d.links||[];el.innerHTML=links.length?links.map(x=>'<a class="game-link-card" href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer"><span class="game-link-icon">↗</span><span><b>'+escapeHtml(x.title)+'</b><small>'+escapeHtml(x.description||"Open this resource")+'</small></span><span class="game-link-arrow">Open ↗</span></a>').join(""):'<div class="empty-state">No game links have been added yet. The group owner can add links from Settings.</div>';}
