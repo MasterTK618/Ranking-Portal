@@ -45,14 +45,19 @@ local function startTracking(player)
     if not isStaff(player) or sessions[player] then return end
     sessions[player]={activeSeconds=0,afkSeconds=0,typingSeconds=0};pendingMessages[player]=0;lastFlush[player]=os.clock()
     request("join",player)
-    player.Chatted:Connect(function()
-        if sessions[player] then pendingMessages[player]=math.min(100,(pendingMessages[player] or 0)+1) end
-    end)
+    local integratedChat = false
+    pcall(function() integratedChat = game:GetService("TextChatService").PlatformIntegratedChat == Enum.RolloutState.Enabled end)
+    if not integratedChat then
+        player.Chatted:Connect(function()
+            if sessions[player] then pendingMessages[player]=math.min(100,(pendingMessages[player] or 0)+1) end
+        end)
+    end
 end
 remote.OnServerEvent:Connect(function(player,payload)
     if typeof(payload)~="table" or not sessions[player] or not isStaff(player) then return end
     local function valid(v) return typeof(v)=="number" and v==v and v>=0 and v<=30 end
     if not valid(payload.activeSeconds) or not valid(payload.afkSeconds) or not valid(payload.typingSeconds) then return end
+    local messageDelta = typeof(payload.messages) == "number" and payload.messages == payload.messages and payload.messages >= 0 and payload.messages <= 100 and math.floor(payload.messages) or 0
     local active,afk,typing=math.floor(payload.activeSeconds),math.floor(payload.afkSeconds),math.floor(payload.typingSeconds)
     if active+afk>30 or typing>30 then return end
     local data=sessions[player];data.activeSeconds=math.min(30,data.activeSeconds+active);data.afkSeconds=math.min(30,data.afkSeconds+afk);data.typingSeconds=math.min(30,data.typingSeconds+typing)
