@@ -34,7 +34,10 @@ local function execute(c)
  local action=c.action;local payload=c.payload or {};local target
  if c.target_user_id then for _,p in ipairs(Players:GetPlayers()) do if tostring(p.UserId)==tostring(c.target_user_id) then target=p end end;if not target then return false,"Player left the server." end end
  if action=="kick" then target:Kick(payload.reason or "Removed by Lemonz staff.")
- elseif action=="warn" then remote:FireClient(target,{kind="warning",message="You have received a staff warning. Please contact Lemonz management if you have questions."})
+ elseif action=="warn" then
+  local filtered=TextService:FilterStringAsync(tostring(payload.reason or ""),tonumber(c.requested_by))
+  local safeReason=filtered:GetNonChatStringForUserAsync(target.UserId)
+  remote:FireClient(target,{kind="warning",message="Staff warning: "..tostring(safeReason or "Please contact Lemonz management.")})
  elseif action=="respawn" then target:LoadCharacterAsync()
  elseif action=="mute" then muted[target.UserId]=true;remote:FireClient(target,{kind="warning",message="You have been muted by staff."})
  elseif action=="unmute" then muted[target.UserId]=nil;remote:FireClient(target,{kind="success",message="Your mute has been removed."})
