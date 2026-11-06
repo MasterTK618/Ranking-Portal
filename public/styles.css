@@ -820,3 +820,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .live-server-actions button{font-size:10px;padding:8px 10px}
 .live-server-actions .danger-btn{border-color:rgba(235,90,90,.25);color:#e78a8a;background:rgba(235,90,90,.07)}
 .live-action-cell{display:flex;align-items:center;gap:6px;min-width:170px}
+.live-bulk-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.live-bulk-toolbar select{min-width:150px}.live-bulk-toolbar span{margin-left:auto;color:var(--muted);font-size:11px}
+.in-game-person{font:inherit}.in-game-person:hover{color:var(--accent)}
+@media(max-width:600px){.live-bulk-toolbar span{margin-left:0}}
