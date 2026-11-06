@@ -598,7 +598,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if(!/^\d+$/.test(userId)||!username||!["Strike","Demotion","Termination","Ban","Suspension","Other"].includes(type)||!reason)
         return res.status(400).json({error:"Complete the member, punishment type, and reason."});
       const cfg=await settings(),auto=requestAutoApproved(who,cfg);
-      let r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,'PENDING',$6,$7) RETURNING *",[userId,username,type,reason,String(b.duration||"").slice(0,80),req.session.user.id,req.session.user.name]);
+      let targetUsername=username;
+      try{const profileResponse=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));const profileData=await profileResponse.json().catch(()=>({}));if(profileResponse.ok&&profileData.name)targetUsername=String(profileData.name).slice(0,40);}catch{}
+      let r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,'PENDING',$6,$7) RETURNING *",[userId,targetUsername,type,reason,String(b.duration||"").slice(0,80),req.session.user.id,req.session.user.name]);
       let rankChange=null,rankingError=null;
       if(auto){try{if(type==="Demotion")rankChange=await applyManagementRole(userId,"","DEMOTION",who.rank);r=await pool.query("UPDATE management_punishments SET status='APPROVED',decided_by=$1,decided_by_name=$2,decided_at=NOW() WHERE id=$3 RETURNING *",[req.session.user.id,req.session.user.name,r.rows[0].id]);}catch(error){rankingError=error.message;}}
       await writeAudit(r.rows[0].status==="APPROVED"?"AUTO_APPROVED":"REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,[reason,rankChange?"Roblox role: "+rankChange.previousRole+" → "+rankChange.newRole:"",rankingError?"Ranking pending: "+rankingError:""].filter(Boolean).join(" | "));
@@ -649,7 +651,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const b=req.body||{},userId=String(b.userId||""),username=String(b.username||"").trim(),role=String(b.suggestedRole||"").trim(),reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!role||!reason)return res.status(400).json({error:"Complete the member, suggested role, and reason."});
       const cfg=await settings(),auto=requestAutoApproved(who,cfg);
-      let r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name) VALUES($1,$2,$3,$4,'PENDING',$5,$6) RETURNING *",[userId,username,role,reason,req.session.user.id,req.session.user.name]);
+      let targetUsername=username;
+      try{const profileResponse=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));const profileData=await profileResponse.json().catch(()=>({}));if(profileResponse.ok&&profileData.name)targetUsername=String(profileData.name).slice(0,40);}catch{}
+      let r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name) VALUES($1,$2,$3,$4,'PENDING',$5,$6) RETURNING *",[userId,targetUsername,role,reason,req.session.user.id,req.session.user.name]);
       let rankChange=null,rankingError=null;
       if(auto){try{rankChange=await applyManagementRole(userId,role,"PROMOTION",who.rank);r=await pool.query("UPDATE promotion_suggestions SET status='APPROVED',decided_by=$1,decided_by_name=$2,decided_at=NOW() WHERE id=$3 RETURNING *",[req.session.user.id,req.session.user.name,r.rows[0].id]);}catch(error){rankingError=error.message;}}
       await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",r.rows[0].status==="APPROVED"?"AUTO_APPROVED":"REQUESTED",userId,username,"Suggested role: "+role+" | "+reason+(rankChange?" | Roblox role: "+rankChange.previousRole+" → "+rankChange.newRole:"")+(rankingError?" | Ranking pending: "+rankingError:""),String(req.session.user.id),String(req.session.user.name)]);
