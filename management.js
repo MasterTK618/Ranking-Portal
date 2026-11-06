@@ -137,7 +137,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if (!who || who.rank<255) return res.status(403).json({error:"Only the group owner can change management permissions."});
       const previous=await settings();
       const values=columns.map(k=>Number(req.body?.[k]));
-      const invalid=columns.some((k,i)=>k.endsWith("_rank")?(!Number.isInteger(values[i])||values[i]<1||values[i]>255):k==="quota_hours_week"?(!Number.isFinite(values[i])||values[i]<0||values[i]>168):k==="quota_start_day"?( !Number.isInteger(values[i])||values[i]<0||values[i]>6):k.endsWith("_enabled")?(![0,1].includes(values[i])):(!Number.isInteger(values[i])||values[i]<0||values[i]>100)); if(invalid)return res.status(400).json({error:"Check rank permissions, weekly quota targets, and feature toggles."});
+      const invalid=columns.some((k,i)=>k.endsWith("_rank")?(!Number.isInteger(values[i])||values[i]<1||values[i]>255):k==="inactivity_days"?(!Number.isInteger(values[i])||values[i]<1||values[i]>90):k==="quota_hours_week"?(!Number.isFinite(values[i])||values[i]<0||values[i]>168):k==="quota_start_day"?( !Number.isInteger(values[i])||values[i]<0||values[i]>6):k.endsWith("_enabled")?(![0,1].includes(values[i])):(!Number.isInteger(values[i])||values[i]<0||values[i]>100)); if(invalid)return res.status(400).json({error:"Check rank permissions, weekly quota targets, and feature toggles."});
       const sets=columns.map((k,i)=>k+"=$"+(i+1)).join(",");
       const result=await pool.query("UPDATE management_settings SET "+sets+",updated_at=NOW() WHERE id=1 RETURNING *",values);
       const changed=columns.filter((key,i)=>Number(previous[key])!==values[i]).map((key,i)=>key+": "+Number(previous[key])+" → "+values[columns.indexOf(key)]);
@@ -406,7 +406,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const canViewActivity=isSelf||viewerRank>=Number(cfg.activity_view_rank||238);
       const canViewPunishments=isSelf||viewerRank>=Number(cfg.punishment_view_rank||238);
       const canViewNotes=viewerRank>=Number(cfg.profile_note_rank||243);
-      const canViewTimeline=viewerRank>=238;
+      const canViewTimeline=viewerRank>=Number(cfg.profile_view_rank||243);
       const canViewTasks=isSelf||viewerRank>=Number(cfg.task_view_rank||238);
       const canViewPromotions=isSelf||viewerRank>=Number(cfg.promotion_approve_rank||249);
       let who;
@@ -792,7 +792,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
 
   router.get("/teams/:id/dashboard",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view team dashboards."});
+    const who=await identity(req);const cfg=await settings();if(!who||Number(who.rank)<Number(cfg.profile_view_rank||243))return res.status(403).json({error:"Your rank cannot view team dashboards."});
     const team=await pool.query("SELECT id,name,color FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     const members=await pool.query("SELECT user_id FROM management_team_members WHERE team_id=$1",[req.params.id]),ids=members.rows.map(x=>x.user_id);
     if(Number(who.rank)<245&&!ids.includes(String(req.session.user.id)))return res.status(403).json({error:"Only management or members of this team can view its dashboard."});
