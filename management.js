@@ -23,6 +23,20 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     return r.rows[0] || defaults;
   }
   async function applyManagementRole(userId,requestedRole,action,actorRank){if(typeof applyRobloxRank!=="function")throw new Error("Roblox group ranking is not configured on this portal.");return applyRobloxRank({userId:String(userId),requestedRole:String(requestedRole||""),action:String(action),actorRank:Number(actorRank)});}
+  async function repairPlaceholderRequestNames(rows,table){
+    if(!["management_punishments","promotion_suggestions"].includes(table))return rows;
+    const stale=rows.filter(row=>/^(staff member|member|unknown)$/i.test(String(row.username||"").trim())&&/^\d+$/.test(String(row.user_id||""))).slice(0,30);
+    await Promise.all(stale.map(async row=>{
+      try{
+        const response=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(row.user_id));
+        const profile=await response.json().catch(()=>({}));
+        if(!response.ok||!profile.name)return;
+        row.username=String(profile.name).slice(0,40);
+        await pool.query("UPDATE "+table+" SET username=$1 WHERE user_id=$2 AND LOWER(username) IN ('staff member','member','unknown')",[row.username,String(row.user_id)]);
+      }catch(error){console.warn("Could not repair request username for "+row.user_id,error.message);}
+    }));
+    return rows;
+  }
   async function writeAudit(action, item, actorId, actorName, details="") {
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES('PUNISHMENT',$1,$2,$3,$4,$5,$6)",
       [action,String(item?.id||""),String(item?.username||""),String(details||"").slice(0,1000),String(actorId||""),String(actorName||"")]);
@@ -578,6 +592,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const s=await settings(),canViewAll=who.rank>=Number(s.punishment_view_rank);
     const r=canViewAll?await pool.query("SELECT * FROM management_punishments ORDER BY created_at DESC LIMIT 250"):await pool.query("SELECT * FROM management_punishments WHERE created_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
+    await repairPlaceholderRequestNames(r.rows,"management_punishments");
     res.json({items:r.rows.map(x=>({...x,canDelete:String(x.created_by)===String(req.session.user.id)||who.rank>=Number(s.punishment_approve_rank)})),rank:who.rank,settings:s,canViewAll});
   }catch(e){next(e);}});
   router.get("/punishments/audit",async(req,res,next)=>{try{
@@ -639,6 +654,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/promotions",async(req,res,next)=>{
     try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings();if(Number(who.rank)<Number(s.promotion_view_rank||230))return res.status(403).json({error:"Your role cannot view promotion requests."});const canReview=Number(who.rank)>=Number(s.promotion_approve_rank);
       const r=canReview?await pool.query("SELECT * FROM promotion_suggestions ORDER BY created_at DESC LIMIT 250"):await pool.query("SELECT * FROM promotion_suggestions WHERE suggested_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
+      await repairPlaceholderRequestNames(r.rows,"promotion_suggestions");
       res.json({items:r.rows.map(x=>({...x,canDelete:String(x.suggested_by)===String(req.session.user.id)||canReview})),rank:who.rank,settings:s,canReview});
     }catch(e){next(e);}
   });
