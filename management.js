@@ -211,15 +211,25 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     // an older permission value still has the previous 243 threshold.
     const teamViewThreshold=230;
     if(!who||Number(who.rank)<teamViewThreshold)return res.status(403).json({error:"Your role cannot view staff teams."});
-    const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.name");
+    const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.display_order ASC,t.created_at ASC,t.id ASC");
     const members=await pool.query("SELECT user_id,team_id FROM management_team_members ORDER BY user_id,team_id");
     res.json({teams:teams.rows,members:members.rows,canManage:Number(who.rank)>=255});
   }catch(e){next(e);}});
+  router.put("/teams/order",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can reorder teams."});
+    const ids=Array.isArray(req.body?.teamIds)?req.body.teamIds.map(String):[];
+    if(ids.some(id=>!/^\d+$/.test(id))||new Set(ids).size!==ids.length)return res.status(400).json({error:"The team order contains invalid or duplicate IDs."});
+    const existing=await pool.query("SELECT id FROM management_teams ORDER BY id"),expected=existing.rows.map(x=>String(x.id));
+    if(ids.length!==expected.length||expected.some(id=>!ids.includes(id)))return res.status(400).json({error:"Refresh the team list and try again; the submitted order did not include every team."});
+    const client=await pool.connect();try{await client.query("BEGIN");for(let i=0;i<ids.length;i++)await client.query("UPDATE management_teams SET display_order=$1,updated_at=NOW() WHERE id=$2",[i,ids[i]]);await client.query("COMMIT");}catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
+    res.json({ok:true,teamIds:ids});
+  }catch(error){next(error);}});
   router.post("/teams",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage teams."});
     const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928"),mode=String(b.autoAssignMode||"NONE").toUpperCase(),min=mode==="NONE"?null:(b.autoAssignMinRank==null?NaN:Number(b.autoAssignMinRank)),max=mode==="RANGE"?(b.autoAssignMaxRank==null?NaN:Number(b.autoAssignMaxRank)):null;
     if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color)||!["NONE","ABOVE","RANGE"].includes(mode)||(mode!=="NONE"&&(!Number.isInteger(min)||min<1||min>255))||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))return res.status(400).json({error:"Enter a team name and provide a valid color and rank rule."});
-    const row=await pool.query("INSERT INTO management_teams(name,department,description,color,group_role_ranks,entity_type,created_by,auto_assign_mode,auto_assign_min_rank,auto_assign_max_rank) VALUES($1,'Staff Management',$2,$3,ARRAY[]::INTEGER[],'TEAM',$4,$5,$6,$7) RETURNING *",[name,description,color,String(req.session.user.id),mode,min,max]);
+    const order=await pool.query("SELECT COALESCE(MAX(display_order),-1)+1 AS next_order FROM management_teams");
+    const row=await pool.query("INSERT INTO management_teams(name,department,description,color,group_role_ranks,entity_type,created_by,auto_assign_mode,auto_assign_min_rank,auto_assign_max_rank,display_order) VALUES($1,'Staff Management',$2,$3,ARRAY[]::INTEGER[],'TEAM',$4,$5,$6,$7,$8) RETURNING *",[name,description,color,String(req.session.user.id),mode,min,max,Number(order.rows[0]?.next_order||0)]);
     res.status(201).json({ok:true,team:row.rows[0]});
   }catch(e){if(e.code==="23505")return res.status(409).json({error:"A team with that name already exists. Choose a different name."});next(e);}});
   router.put("/teams/:id",csrf,async(req,res,next)=>{try{
@@ -466,7 +476,15 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
         const groupRole=(groupData.data||[]).filter(item=>String(item.group?.id)===String(process.env.ROBLOX_GROUP_ID||"16597698")).map(item=>item.role||{}).sort((a,b)=>Number(b.rank||0)-Number(a.rank||0))[0];
         who={inGroup:!!groupRole,rank:Number(groupRole?.rank||0),roleName:groupRole?.name||"Not in group"};
       }
-      if(!who.inGroup)return res.status(404).json({error:"Group member not found."});
+      if(!who.inGroup){
+        const [userResponse,thumbResponse]=await Promise.all([
+          fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId)),
+          fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+encodeURIComponent(userId)+"&size=150x150&format=Png&isCircular=true")
+        ]);
+        const userData=await userResponse.json().catch(()=>({})),thumbData=await thumbResponse.json().catch(()=>({}));
+        if(!userResponse.ok||!userData.id)return res.status(404).json({error:"Roblox user not found."});
+        return res.json({member:{id:String(userData.id),username:String(userData.name||"Unknown"),displayName:String(userData.displayName||""),role:"Not in group",rank:0,avatarUrl:thumbData.data?.[0]?.imageUrl||"",inGroup:false},sessions:[],punishments:[],notes:[],timeline:[],gameSessions:[],activity:{},strikeCount:0,canViewActivity:false,canViewPunishments:false,canViewPromotions:false,canViewNotes:false,canViewTimeline:false,canAddNotes:false,canModerateNotes:false,canRequestPromotion:false,canRequestPunishment:false});
+      }
       const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));
       const user=await profile.json().catch(()=>({}));
       const thumb=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+encodeURIComponent(userId)+"&size=150x150&format=Png&isCircular=true");
@@ -909,6 +927,7 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS attendance JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS recurrence_rule TEXT, ADD COLUMN IF NOT EXISTS recurrence_until DATE");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS entity_type TEXT NOT NULL DEFAULT 'TEAM'");
+  await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0");
   await pool.query("CREATE TABLE IF NOT EXISTS management_departments (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
   await pool.query("CREATE TABLE IF NOT EXISTS management_department_members (user_id TEXT NOT NULL,department_id BIGINT NOT NULL REFERENCES management_departments(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,department_id))");
   await pool.query("CREATE INDEX IF NOT EXISTS management_department_members_department_idx ON management_department_members(department_id)");
