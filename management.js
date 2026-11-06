@@ -461,7 +461,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const userId=String(req.params.id||"");
       if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
       const viewer=await identity(req),cfg=await settings(),viewerRank=Number(viewer?.rank||0),isSelf=String(req.session.user.id)===userId;
-      if(!viewer||(viewerRank!==230&&viewerRank<Number(cfg.profile_view_rank||243)))return res.status(403).json({error:"Your rank cannot view staff profiles."});
+      if(!viewer||viewerRank<230)return res.status(403).json({error:"Rank 230 or higher is required to view member profiles."});
       const canViewActivity=isSelf||viewerRank>=Number(cfg.activity_view_rank||238);
       const canViewPunishments=isSelf||viewerRank>=Number(cfg.punishment_view_rank||238);
       const canViewNotes=viewerRank>=Number(cfg.profile_note_rank||243);
