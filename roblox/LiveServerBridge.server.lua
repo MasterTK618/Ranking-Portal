@@ -8,7 +8,7 @@ local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local URL="https://ranking-portal.onrender.com"
 local GAME_SECRET="PASTE_THE_SAME_INGAME_API_SECRET_HERE"
 local SERVER_ID=game.JobId~="" and game.JobId or ("studio-"..game.PlaceId)
-local joined,muted={},{}
+local joined,muted,ranks={},{},{}
 local remote=ReplicatedStorage:FindFirstChild("LemonzPortalNotice") or Instance.new("RemoteEvent")
 remote.Name="LemonzPortalNotice";remote.Parent=ReplicatedStorage
 local function call(path,method,data)
@@ -20,8 +20,7 @@ end
 local function report()
  local list={}
  for _,p in ipairs(Players:GetPlayers()) do
-  local rank=0;pcall(function() rank=p:GetRankInGroup(16597698) end)
-  table.insert(list,{userId=tostring(p.UserId),username=p.Name,displayName=p.DisplayName,staffRank=rank,joinedAt=joined[p]})
+  table.insert(list,{userId=tostring(p.UserId),username=p.Name,displayName=p.DisplayName,staffRank=ranks[p] or 0,joinedAt=joined[p]})
  end
  call("/api/management/live/heartbeat","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),players=list})
 end
@@ -44,9 +43,14 @@ local function execute(c)
  else return false,"Unsupported command." end
  return true,"Executed "..action
 end
-Players.PlayerAdded:Connect(function(p) joined[p]=tostring(DateTime.now().UnixTimestamp);task.defer(report) end)
-Players.PlayerRemoving:Connect(function(p) call("/api/management/live/leave","POST",{serverId=SERVER_ID,userId=tostring(p.UserId)});joined[p]=nil;muted[p.UserId]=nil end)
-for _,p in ipairs(Players:GetPlayers()) do joined[p]=tostring(DateTime.now().UnixTimestamp) end
+local function addPlayer(p)
+ joined[p]=tostring(DateTime.now().UnixTimestamp)
+ local rank=0;pcall(function() rank=p:GetRankInGroup(16597698) end);ranks[p]=rank
+ task.defer(report)
+end
+Players.PlayerAdded:Connect(addPlayer)
+Players.PlayerRemoving:Connect(function(p) call("/api/management/live/leave","POST",{serverId=SERVER_ID,userId=tostring(p.UserId)});joined[p]=nil;muted[p.UserId]=nil;ranks[p]=nil end)
+for _,p in ipairs(Players:GetPlayers()) do addPlayer(p) end
 task.spawn(function() while task.wait(25) do report() end end)
 task.spawn(function()
  while task.wait(4) do
