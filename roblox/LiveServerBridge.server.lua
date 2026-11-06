@@ -13,6 +13,7 @@ local joined,muted,ranks={},{},{}
 local loggedMessages={}
 local remote=ReplicatedStorage:FindFirstChild("LemonzPortalNotice") or Instance.new("RemoteEvent")
 remote.Name="LemonzPortalNotice";remote.Parent=ReplicatedStorage
+local call
 local chatRemote=ReplicatedStorage:FindFirstChild("LemonzPortalChatLog") or Instance.new("RemoteEvent")
 chatRemote.Name="LemonzPortalChatLog";chatRemote.Parent=ReplicatedStorage
 local recentChatIds,chatRate={},{}
@@ -47,7 +48,7 @@ chatRemote.OnServerEvent:Connect(function(reporter,channelName,messageId,clientT
  end)
 end)
 print("[Lemonz Portal] Chat logging receiver is ready.")
-local function call(path,method,data)
+call=function(path,method,data)
  if GAME_SECRET=="" or GAME_SECRET=="PASTE_THE_SAME_INGAME_API_SECRET_HERE" then return nil end
  local ok,r=pcall(function() return HttpService:RequestAsync({Url=URL..path,Method=method,Headers={["Content-Type"]="application/json",["x-lemonz-game-key"]=GAME_SECRET},Body=data and HttpService:JSONEncode(data) or nil}) end)
  if not ok or not r.Success then warn("[Lemonz Portal] Request failed",r and r.StatusCode);return nil end
