@@ -878,3 +878,34 @@ body.compact-layout #membersPage #directoryResult .staff-card{min-height:88px;pa
  #membersPage #directoryResult .staff-card{min-height:84px;padding:14px}
  #membersPage #memberProfile .profile-roblox-link{margin-left:0}
 }
+
+
+/* Member directory: rank navigation rail with a flexible results column. */
+#membersPage .directory-workspace{display:grid;grid-template-columns:minmax(220px,275px) minmax(0,1fr);gap:18px;align-items:start}
+#membersPage .directory-rank-sidebar{position:sticky;top:18px;max-height:calc(100vh - 36px);overflow:auto;padding:16px;min-width:0}
+#membersPage .directory-sidebar-heading{padding:3px 4px 12px}
+#membersPage .directory-sidebar-heading h3{margin:0 0 5px;font-size:15px}
+#membersPage .directory-sidebar-heading p{margin:0;font-size:11px;line-height:1.45;color:var(--muted)}
+#membersPage .directory-rank-sidebar .directory-rank-option{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:10px 11px;margin:3px 0;border:1px solid var(--border);border-radius:10px;background:transparent;color:inherit;cursor:pointer}
+#membersPage .directory-rank-sidebar .directory-rank-option:hover{background:var(--surface-2)}
+#membersPage .directory-rank-sidebar .directory-rank-option.active{border-color:var(--yellow);background:color-mix(in srgb,var(--yellow) 12%,transparent)}
+#membersPage .directory-rank-option>span{display:flex;flex-direction:column;gap:3px;min-width:0}
+#membersPage .directory-rank-option b{font-size:12px;overflow-wrap:anywhere}
+#membersPage .directory-rank-option small{font-size:10px;color:var(--muted)}
+#membersPage .directory-rank-option strong{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#membersPage .directory-main-column{min-width:0}
+#membersPage .directory-main-column .directory-shell{padding:clamp(18px,2.2vw,30px)!important;overflow:hidden}
+#membersPage .directory-main-column .directory-filters{grid-template-columns:minmax(0,1fr) auto}
+#membersPage .directory-main-column .directory-filters button{min-width:132px}
+#membersPage .directory-rank-sidebar .empty-state{font-size:11px;padding:12px 5px}
+.team-card-actions button:disabled{opacity:.35;cursor:not-allowed}
+@media(max-width:900px){
+ #membersPage .directory-workspace{grid-template-columns:minmax(180px,225px) minmax(0,1fr);gap:12px}
+ #membersPage .directory-rank-sidebar{padding:12px}
+}
+@media(max-width:700px){
+ #membersPage .directory-workspace{grid-template-columns:1fr}
+ #membersPage .directory-rank-sidebar{position:static;max-height:270px}
+ #membersPage .directory-main-column .directory-filters{grid-template-columns:1fr}
+ #membersPage .directory-main-column .directory-filters button{width:100%}
+}
