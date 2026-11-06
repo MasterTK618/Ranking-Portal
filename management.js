@@ -954,6 +954,8 @@ async function ensureManagementSchema(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS management_announcements (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',audience JSONB NOT NULL DEFAULT '{"all":true,"teamIds":[],"ranks":[]}'::jsonb,status TEXT NOT NULL DEFAULT 'PUBLISHED',publish_at TIMESTAMPTZ,expires_at TIMESTAMPTZ,published_at TIMESTAMPTZ,created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query(`CREATE TABLE IF NOT EXISTS management_announcement_reads (announcement_id BIGINT NOT NULL REFERENCES management_announcements(id) ON DELETE CASCADE,user_id TEXT NOT NULL,username TEXT NOT NULL,read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(announcement_id,user_id))`);
   await pool.query("ALTER TABLE management_announcements ADD COLUMN IF NOT EXISTS image_url TEXT, ADD COLUMN IF NOT EXISTS link_url TEXT");
+  await pool.query("ALTER TABLE management_announcements ADD COLUMN IF NOT EXISTS requires_ack BOOLEAN NOT NULL DEFAULT FALSE");
+  await pool.query("ALTER TABLE management_announcement_reads ADD COLUMN IF NOT EXISTS acknowledged BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ");
 
   await pool.query("CREATE INDEX IF NOT EXISTS management_announcements_status_idx ON management_announcements(status,publish_at,created_at DESC)");
 
