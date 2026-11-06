@@ -91,8 +91,29 @@ async function getMember(userId) {
   return { userId: String(userId), membershipId: membership.path?.split("/").pop() || String(userId), role, roles: memberRoles, membership };
 }
 async function getIdentity(userId) {
-  const member = await getMember(userId);
-  return { userId: String(userId), inGroup: !!member, rank: member?.role?.rank || 0, roleName: member?.role?.name || "Not in group", canRank: !!member && member.role.rank >= MIN_RANK, role: member?.role || null };
+  try {
+    const member = await getMember(userId);
+    return { userId: String(userId), inGroup: !!member, rank: member?.role?.rank || 0, roleName: member?.role?.name || "Not in group", canRank: !!member && member.role.rank >= MIN_RANK, role: member?.role || null };
+  } catch (cloudError) {
+    // Keep staff permissions and profiles working from Roblox's public Groups API
+    // when Open Cloud is unavailable. Ranking writes remain disabled in this fallback.
+    try {
+      const response = await fetch("https://groups.roblox.com/v1/users/" + encodeURIComponent(userId) + "/groups/roles");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(data.data)) throw cloudError;
+      const match = data.data.find(item => String(item.group?.id) === String(GROUP_ID));
+      const role = match?.role || null;
+      const rank = Number(role?.rank || 0);
+      return {
+        userId:String(userId), inGroup:!!match, rank,
+        roleName:role?.name || "Not in group",
+        canRank:false, role:role ? {id:String(role.id),name:String(role.name||"Member"),rank} : null,
+        apiUnavailable:true
+      };
+    } catch {
+      throw cloudError;
+    }
+  }
 }
 async function applyRobloxRank({userId,requestedRole,action,actorRank}) {
   if(!/^\d+$/.test(String(userId))) throw new Error("Invalid member ID for ranking.");
@@ -166,6 +187,7 @@ async function requireRanker(req,res,next) {
   try {
     const identity = await getIdentity(req.session.user.id);
     req.identity = identity;
+    if (identity.apiUnavailable) return res.status(503).json({error:"Your group rank was verified, but Roblox Open Cloud is unavailable. Ranking actions require a configured Open Cloud API key with group write permissions."});
     if (!identity.canRank) return res.status(403).json({ error:`Your current Lemonz rank must be ${MIN_RANK} or higher to use ranking tools.` });
     next();
   } catch (e) { next(e); }
@@ -227,7 +249,7 @@ app.post("/auth/logout", requireLogin, csrf, (req,res) => req.session.destroy(er
 app.get("/api/me", requireLogin, async (req,res) => {
   try {
     const identity = await getIdentity(req.session.user.id);
-    res.json({ user:req.session.user, identity, csrfToken:req.session.csrfToken, groupId:GROUP_ID, minRank:MIN_RANK });
+    res.json({ user:req.session.user, identity, apiError:identity.apiUnavailable?"Your group rank is available, but ranking actions need a valid Roblox Open Cloud API key with group write permissions.":null, csrfToken:req.session.csrfToken, groupId:GROUP_ID, minRank:MIN_RANK });
   } catch(e) {
     // Keep profile-description sign-in independent from the separate Roblox Groups API credential.
     console.error("Roblox Groups API unavailable during profile sign-in:", e.message, e.roblox || "");
