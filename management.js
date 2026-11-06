@@ -1,6 +1,6 @@
 const express = require("express");
 
-function createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret }) {
+function createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret, applyRobloxRank }) {
   const router = express.Router();
   const defaults = {
     activity_view_rank:238, activity_edit_rank:245,
@@ -13,6 +13,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r = await pool.query("SELECT * FROM management_settings WHERE id=1");
     return r.rows[0] || defaults;
   }
+  async function applyManagementRole(userId,requestedRole,action,actorRank){if(typeof applyRobloxRank!=="function")throw new Error("Roblox group ranking is not configured on this portal.");return applyRobloxRank({userId:String(userId),requestedRole:String(requestedRole||""),action:String(action),actorRank:Number(actorRank)});}
   async function writeAudit(action, item, actorId, actorName, details="") {
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES('PUNISHMENT',$1,$2,$3,$4,$5,$6)",
       [action,String(item?.id||""),String(item?.username||""),String(details||"").slice(0,1000),String(actorId||""),String(actorName||"")]);
@@ -34,20 +35,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.post("/activity/event", requireGameSecret, async (req,res,next) => {
     try {
       const {event,userId,username,jobId}=req.body||{};
-      if(!["join","leave"].includes(event)||!/^\d+$/.test(String(userId||""))||!String(username||"").trim())
-        return res.status(400).json({error:"Invalid activity event."});
-      const key=String(jobId||"unknown")+":"+String(userId);
-      if(event==="join") {
-        await pool.query(
-          "INSERT INTO activity_sessions(session_key,user_id,username,started_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(session_key) DO UPDATE SET username=EXCLUDED.username,started_at=NOW(),ended_at=NULL,seconds=0",
-          [key,String(userId),String(username).slice(0,40)]
-        );
-      } else {
-        await pool.query(
-          "UPDATE activity_sessions SET ended_at=NOW(),seconds=GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) WHERE session_key=$1 AND ended_at IS NULL",
-          [key]
-        );
-      }
+      if(!["join","leave","metrics","message"].includes(event)||!/^[0-9]+$/.test(String(userId||""))||!String(username||"").trim())return res.status(400).json({error:"Invalid activity event."});
+      const key=String(jobId||"unknown")+":"+String(userId),name=String(username).slice(0,40);
+      if(event==="join")await pool.query("INSERT INTO activity_sessions(session_key,user_id,username,started_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(session_key) DO UPDATE SET username=EXCLUDED.username,started_at=NOW(),ended_at=NULL,seconds=0,active_seconds=0,afk_seconds=0,typing_seconds=0,message_count=0",[key,String(userId),name]);
+      else if(event==="metrics"){const d=req.body?.metrics||{},safe=n=>Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=30?Number(n):0;await pool.query("UPDATE activity_sessions SET username=$2,active_seconds=active_seconds+$3,afk_seconds=afk_seconds+$4,typing_seconds=typing_seconds+$5,message_count=message_count+$6 WHERE session_key=$1 AND ended_at IS NULL",[key,name,safe(d.activeSeconds),safe(d.afkSeconds),safe(d.typingSeconds),safe(d.messages)]);}
+      else if(event==="message")await pool.query("UPDATE activity_sessions SET message_count=message_count+1,username=$2 WHERE session_key=$1 AND ended_at IS NULL",[key,name]);
+      else await pool.query("UPDATE activity_sessions SET ended_at=NOW(),seconds=GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) WHERE session_key=$1 AND ended_at IS NULL",[key]);
       res.json({ok:true});
     } catch(e){next(e);}
   });
@@ -339,7 +332,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const avatarUrl=thumbData.data?.[0]?.imageUrl||"";
       const sessions=await pool.query("SELECT * FROM staff_shifts WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
       const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at,decided_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
-      const activity=await pool.query("SELECT COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)::BIGINT + COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0) AS seconds,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
+      const activity=await pool.query("SELECT (COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)+COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0))::BIGINT AS seconds,COALESCE(SUM(active_seconds),0)::BIGINT AS active_seconds,COALESCE(SUM(afk_seconds),0)::BIGINT AS afk_seconds,COALESCE(SUM(typing_seconds),0)::BIGINT AS typing_seconds,COALESCE(SUM(message_count),0)::BIGINT AS message_count,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
       const notes=await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const teamHistory=await pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]);
       const timeline=await pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]);
@@ -689,7 +682,11 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE knowledge_hub_items ADD COLUMN IF NOT EXISTS team_id BIGINT REFERENCES management_teams(id) ON DELETE SET NULL");
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_sessions (
     id BIGSERIAL PRIMARY KEY, session_key TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, username TEXT NOT NULL,
-    started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ, seconds INTEGER NOT NULL DEFAULT 0)`);
+    started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ, seconds INTEGER NOT NULL DEFAULT 0,active_seconds BIGINT NOT NULL DEFAULT 0,afk_seconds BIGINT NOT NULL DEFAULT 0,typing_seconds BIGINT NOT NULL DEFAULT 0,message_count BIGINT NOT NULL DEFAULT 0)`);
+  await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS active_seconds BIGINT NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS afk_seconds BIGINT NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS typing_seconds BIGINT NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS message_count BIGINT NOT NULL DEFAULT 0");
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_adjustments (
     id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,username TEXT NOT NULL,minutes INTEGER NOT NULL,reason TEXT NOT NULL,
     actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
