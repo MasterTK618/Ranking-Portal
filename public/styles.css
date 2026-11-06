@@ -841,3 +841,40 @@ body.auth-locked .main{margin:0;max-width:none;width:100%;min-height:100vh;paddi
 body.auth-locked #loginPanel{width:min(1100px,100%);min-height:min(650px,calc(100vh - 56px));margin:auto;}
 body.auth-locked #notice{width:min(1100px,100%);margin:0 auto 14px;}
 @media(max-width:650px){body.auth-locked .main{padding:14px}body.auth-locked #loginPanel{min-height:calc(100vh - 28px);grid-template-columns:1fr}body.auth-locked .login-art{min-height:180px}}
+
+
+/* Staff Directory layout correction: restore readable spacing and prevent squeezed cards. */
+#membersPage{min-width:0}
+#membersPage>.directory-shell{padding:clamp(18px,2.2vw,30px)!important;overflow:hidden}
+#membersPage .directory-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:20px}
+#membersPage .directory-toolbar>div:first-child{min-width:220px;flex:1}
+#membersPage .directory-toolbar h3{font-size:18px;margin:0 0 6px}
+#membersPage .directory-toolbar p{font-size:12px;line-height:1.55;margin:0}
+#membersPage .directory-toolbar .table-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin:0}
+#membersPage .directory-filters{display:grid;grid-template-columns:minmax(220px,1fr) minmax(190px,260px);gap:13px;margin:18px 0 16px}
+#membersPage .directory-filters>*{width:100%;min-width:0;max-width:none;margin:0}
+#membersPage .directory-status{font-size:12px;line-height:1.5;margin:0 0 15px}
+#membersPage #directoryResult.staff-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,285px),1fr));gap:14px;align-items:stretch;margin-top:0}
+#membersPage #directoryResult .staff-card{display:flex;align-items:center;gap:14px;min-width:0;min-height:96px;height:100%;padding:17px 18px;border-radius:14px;overflow:hidden}
+#membersPage #directoryResult .staff-avatar{width:52px;height:52px;flex:0 0 52px;border-radius:50%;object-fit:cover}
+#membersPage #directoryResult .staff-card-copy{display:flex;flex:1;flex-direction:column;justify-content:center;gap:6px;min-width:0;line-height:1.35}
+#membersPage #directoryResult .staff-card-copy b{font-size:13px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#membersPage #directoryResult .staff-card-copy small{font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+#membersPage #directoryResult .staff-card-copy .staff-team-label{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-top:1px}
+#membersPage #directoryResult .staff-card-side{flex:0 0 auto;min-width:0}
+#membersPage #memberProfile{margin-top:22px;padding:clamp(18px,2.4vw,30px);min-width:0}
+#membersPage #memberProfile .profile-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding-bottom:22px}
+#membersPage #memberProfile .profile-identity{flex:1;min-width:160px}
+#membersPage #memberProfile .profile-roblox-link{margin-left:auto}
+#membersPage #memberProfile .profile-stats{gap:13px;margin:22px 0}
+#membersPage #memberProfile .profile-stats>div{min-height:88px;padding:16px}
+body.compact-layout #membersPage #directoryResult .staff-card{min-height:88px;padding:15px 16px}
+@media(max-width:700px){
+ #membersPage>.directory-shell{padding:17px!important}
+ #membersPage .directory-toolbar{align-items:stretch;flex-direction:column;gap:13px}
+ #membersPage .directory-toolbar .table-actions{justify-content:flex-start}
+ #membersPage .directory-filters{grid-template-columns:1fr;gap:10px}
+ #membersPage #directoryResult.staff-grid{grid-template-columns:1fr;gap:11px}
+ #membersPage #directoryResult .staff-card{min-height:84px;padding:14px}
+ #membersPage #memberProfile .profile-roblox-link{margin-left:0}
+}
