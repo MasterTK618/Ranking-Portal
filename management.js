@@ -711,7 +711,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.post("/notifications/read",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-    const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave)-\d+$/.test(x)))]:[];
+    const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave|announcement)-\d+$/.test(x)))]:[];
     if(ids.length>100)return res.status(400).json({error:"You can update up to 100 notifications at once."});
     if(ids.length)await pool.query("INSERT INTO management_notification_reads(user_id,notification_key,read_at) SELECT $1,x,NOW() FROM unnest($2::text[]) x ON CONFLICT(user_id,notification_key) DO UPDATE SET read_at=EXCLUDED.read_at",[String(req.session.user.id),ids]);
     res.json({ok:true,updated:ids.length});
@@ -731,6 +731,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     for(const x of promotions.rows)items.push({id:"promotion-"+x.id,title:"Promotion "+x.status.toLowerCase(),body:x.username+" · "+x.suggested_role,kind:"APPROVAL",href:"promotions",created_at:x.created_at});
     for(const x of punishments.rows)items.push({id:"punishment-"+x.id,title:"Discipline "+x.status.toLowerCase(),body:x.username+" · "+x.type,kind:"APPROVAL",href:"punishments",created_at:x.created_at});
     for(const x of leaves.rows)items.push({id:"leave-"+x.id,title:"Leave "+x.status.toLowerCase(),body:x.roblox_username+" · "+String(x.start_date).slice(0,10)+" to "+String(x.end_date).slice(0,10),kind:"APPROVAL",href:"leaves",created_at:x.created_at});
+    if(Number(cfg.announcements_enabled??1)!==0&&Number(who.rank)>=Number(cfg.announcement_view_rank||230)){
+      await pool.query("UPDATE management_announcements SET status='PUBLISHED',published_at=COALESCE(published_at,NOW()) WHERE status='SCHEDULED' AND publish_at<=NOW()");
+      const memberships=await pool.query("SELECT team_id FROM management_team_members WHERE user_id=$1",[id]),teamIds=memberships.rows.map(x=>String(x.team_id));
+      const announcements=await pool.query("SELECT id,title,body,audience,created_at,published_at FROM management_announcements WHERE status='PUBLISHED' AND (expires_at IS NULL OR expires_at>NOW()) ORDER BY published_at DESC LIMIT 100");
+      for(const x of announcements.rows){const a=x.audience||{};if(a.all===true||(a.teamIds||[]).some(t=>teamIds.includes(String(t)))||(a.ranks||[]).map(Number).includes(Number(who.rank)))items.push({id:"announcement-"+x.id,title:"New announcement: "+x.title,body:String(x.body||"").slice(0,180),kind:"ANNOUNCEMENT",href:"announcements",created_at:x.published_at||x.created_at});}
+    }
     const reads=await pool.query("SELECT notification_key FROM management_notification_reads WHERE user_id=$1",[id]);const readSet=new Set(reads.rows.map(x=>x.notification_key));
     items.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));res.json({items:items.slice(0,100).map(x=>({...x,read:readSet.has(String(x.id))})),enabled:Number(cfg.notifications_enabled)!==0});
   }catch(e){next(e);}});
