@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
-let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[];
+let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false;
 const pageNames = {overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Staff Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -184,12 +184,32 @@ async function runRobloxDiagnostics(buttonId,outputId){const b=$(buttonId),out=$
 $("testRobloxConnection")?.addEventListener("click",()=>runRobloxDiagnostics("testRobloxConnection","robloxDiagnostics"));
 $("directoryDiagnosticsButton")?.addEventListener("click",()=>runRobloxDiagnostics("directoryDiagnosticsButton","directoryDiagnostics"));
 
+async function loadDepartments(){
+ const box=$("departmentDirectory");if(!box)return;box.innerHTML='<div class="empty-state">Loading departments…</div>';
+ try{const d=await api("/api/management/departments");managementDepartments=Array.isArray(d.departments)?d.departments:[];departmentCanManage=!!d.canManage;renderDepartmentDirectory();}
+ catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+function renderDepartmentDirectory(){
+ const box=$("departmentDirectory");if(!box)return;
+ if(!managementDepartments.length){box.innerHTML='<div class="empty-state">No departments yet. Departments are independent from teams.</div>';return;}
+ box.innerHTML='<div class="team-card-grid">'+managementDepartments.map(d=>'<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(d.color||"#f5c928")+'"></span><div class="team-card-copy"><b>'+escapeHtml(d.name)+'</b><small>Department</small><em>'+Number(d.member_count||0)+' assigned staff</em></div>'+(d.description?'<p>'+escapeHtml(d.description)+'</p>':'')+(departmentCanManage?'<div class="team-card-actions"><button class="quiet-btn" data-department-edit="'+escapeHtml(d.id)+'">Edit</button><button class="danger-btn" data-department-delete="'+escapeHtml(d.id)+'">Delete</button></div>':'')+'</article>').join("")+'</div>';
+}
+$("createDepartment")?.addEventListener("click",async()=>{
+ const btn=$("createDepartment"),id=$("departmentEditId").value,name=$("departmentName").value.trim();if(name.length<2||name.length>60){notice("Department name must be between 2 and 60 characters.","error");return;}btn.disabled=true;
+ try{const payload={name,description:$("departmentDescription").value.trim(),color:$("departmentColor").value};await api(id?"/api/management/departments/"+encodeURIComponent(id):"/api/management/departments",{method:id?"PUT":"POST",body:JSON.stringify(payload)});$("departmentEditId").value="";$("departmentName").value="";$("departmentDescription").value="";$("departmentColor").value="#f5c928";$("createDepartment").textContent="Create department";$("cancelDepartmentEdit").classList.add("hidden");notice(id?"Department updated.":"Department created.","success");await loadDepartments();}
+ catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
+});
+$("cancelDepartmentEdit")?.addEventListener("click",()=>{$("departmentEditId").value="";$("departmentName").value="";$("departmentDescription").value="";$("departmentColor").value="#f5c928";$("createDepartment").textContent="Create department";$("cancelDepartmentEdit").classList.add("hidden");});
+$("departmentDirectory")?.addEventListener("click",async e=>{
+ const edit=e.target.closest("[data-department-edit]");if(edit){const d=managementDepartments.find(x=>String(x.id)===String(edit.dataset.departmentEdit));if(!d)return;$("departmentEditId").value=d.id;$("departmentName").value=d.name;$("departmentDescription").value=d.description||"";$("departmentColor").value=d.color||"#f5c928";$("createDepartment").textContent="Save department";$("cancelDepartmentEdit").classList.remove("hidden");$("departmentName").scrollIntoView({behavior:"smooth",block:"center"});return;}
+ const del=e.target.closest("[data-department-delete]");if(!del)return;if(!confirm("Delete this department and its membership assignments?"))return;try{await api("/api/management/departments/"+encodeURIComponent(del.dataset.departmentDelete),{method:"DELETE"});notice("Department deleted.","success");await loadDepartments();}catch(err){notice(err.message,"error");}
+});
 async function loadTeamsSettings(){
  const box=$("teamDirectory");if(!box)return;
  box.innerHTML='<div class="empty-state">Loading teams…</div>';
  try{
   const d=await api("/api/management/teams");
-  managementTeams=Array.isArray(d.teams)?d.teams:[];
+  managementTeams=Array.isArray(d.teams)?d.teams:[];teamCanManage=!!d.canManage;
   teamAssignments=new Map();
   for(const x of(d.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}
   let staffLoadError=null,groupRoles=[];
@@ -204,7 +224,7 @@ async function loadTeamsSettings(){
   teamSelect.innerHTML='<option value="">Choose a team…</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
   if(managementTeams.some(t=>String(t.id)===previous))teamSelect.value=previous;
   teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamSelect.value||""))).map(m=>String(m.id)));
-  renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();updateTeamRuleFields();if(staffLoadError){const memberBox=$("teamMembersSelect");if(memberBox)memberBox.insertAdjacentHTML("afterbegin",'<div class="empty-state error-state">The complete group role list loaded, but the staff member list is unavailable: '+escapeHtml(staffLoadError.message)+'</div>');}
+  renderTeamDirectory();renderTeamAssignmentMembers();renderStaffDirectory();updateTeamRuleFields();await loadDepartments();if(staffLoadError){const memberBox=$("teamMembersSelect");if(memberBox)memberBox.insertAdjacentHTML("afterbegin",'<div class="empty-state error-state">The complete group role list loaded, but the staff member list is unavailable: '+escapeHtml(staffLoadError.message)+'</div>');}
  }catch(e){box.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';throw e;}
 }
 async function syncTeamsByGroupRole(){if(!teamStaffCache.length)return;for(const team of managementTeams){const mode=String(team.auto_assign_mode||"NONE").toUpperCase();if(!["ABOVE","RANGE"].includes(mode))continue;const min=Number(team.auto_assign_min_rank),max=Number(team.auto_assign_max_rank??255);if(!Number.isInteger(min)||min<1||min>255||(mode==="RANGE"&&(!Number.isInteger(max)||max<min||max>255)))continue;const matches=teamStaffCache.filter(m=>mode==="ABOVE"?Number(m.rank)>=min:Number(m.rank)>=min&&Number(m.rank)<=max);if(!matches.length)continue;const current=teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(team.id))).map(m=>String(m.id));const additions=matches.map(m=>String(m.id)).filter(id=>!current.includes(id));if(additions.length)await api("/api/management/teams/"+encodeURIComponent(team.id)+"/members",{method:"PUT",body:JSON.stringify({userIds:[...current,...additions]})});}const fresh=await api("/api/management/teams");teamAssignments=new Map();for(const x of(fresh.members||[])){const id=String(x.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(x.team_id));}}
@@ -215,7 +235,7 @@ function renderTeamDirectory(){
   const mode=t.auto_assign_mode||"NONE",rule=mode==="ABOVE"?"Rank "+t.auto_assign_min_rank+":":mode==="RANGE"?"Ranks "+t.auto_assign_min_rank+"–"+t.auto_assign_max_rank:"Manual assignment";
   const assigned=teamStaffCache.filter(member=>teamAssignments.get(String(member.id))?.has(String(t.id)));
   const names=assigned.length?'<div class="team-card-members">'+assigned.map(member=>'<span class="team-member-chip">'+escapeHtml(member.username||"Unknown username")+' <small>· '+escapeHtml(member.role||("Rank "+member.rank))+'</small></span>').join("")+'</div>':'<div class="team-card-empty">No staff assigned to this team yet.</div>';
-  return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>'+""+'</small><em>'+assigned.length+' of '+teamStaffCache.length+' staff · '+escapeHtml(rule)+'</em></div>'+names+'<div class="team-card-actions"><button class="quiet-btn" data-team-dashboard="'+escapeHtml(t.id)+'">Team dashboard</button><button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Manage members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button></div></article>';
+  return '<article class="team-card"><span class="team-color-dot" style="background:'+escapeHtml(t.color)+'"></span><div class="team-card-copy"><b>'+escapeHtml(t.name)+'</b><small>Independent team</small><em>'+assigned.length+' of '+teamStaffCache.length+' staff · '+escapeHtml(rule)+'</em></div>'+names+'<div class="team-card-actions"><button class="quiet-btn" data-team-dashboard="'+escapeHtml(t.id)+'">Team dashboard</button>'+(teamCanManage?'<button class="quiet-btn" data-team-manage="'+escapeHtml(t.id)+'">Manage members</button><button class="quiet-btn" data-team-edit="'+escapeHtml(t.id)+'">Edit</button><button class="danger-btn" data-team-delete="'+escapeHtml(t.id)+'">Delete</button>':'')+'</div></article>';
  }).join("")+'</div>';
 }
 document.addEventListener("click",async e=>{
@@ -282,6 +302,7 @@ $("teamDirectory")?.addEventListener("click",async event=>{
   try{await api("/api/management/teams/"+encodeURIComponent(btn.dataset.teamDelete),{method:"DELETE"});notice("Team deleted.","success");await loadTeamsSettings();}
   catch(e){notice(e.message,"error")}
 });
+$("refreshDepartments")?.addEventListener("click",loadDepartments);
 $("refreshTeams")?.addEventListener("click",async()=>{const b=$("refreshTeams");b.disabled=true;b.textContent="Refreshing…";try{await loadTeamsSettings();notice("Team list and Roblox staff data refreshed.","success");}catch(e){notice(e.message,"error");}finally{b.disabled=false;b.textContent="↻ Refresh teams";}});
 $("directoryTeamFilter")?.addEventListener("change",renderStaffDirectory);
 $("directoryResult")?.addEventListener("click",event=>{const b=event.target.closest("[data-member-teams]");if(!b)return;const id=String(b.dataset.memberTeams),ids=teamAssignments.get(id)||new Set(),teamId=[...ids][0]||"";$("teamAssignmentSelect").value=teamId;teamMemberDraft=new Set(teamStaffCache.filter(m=>teamAssignments.get(String(m.id))?.has(String(teamId))).map(m=>String(m.id)));renderTeamAssignmentMembers();$("teamAssignmentSelect").scrollIntoView({behavior:"smooth",block:"center"});});
