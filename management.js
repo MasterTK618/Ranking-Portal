@@ -44,6 +44,47 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true});
     } catch(e){next(e);}
   });
+
+  // Live server presence and portal-only moderation command bridge.
+  router.post("/live/heartbeat", requireGameSecret, async(req,res,next)=>{try{
+    const serverId=String(req.body?.serverId||""),placeId=String(req.body?.placeId||"");
+    const players=Array.isArray(req.body?.players)?req.body.players:[];
+    if(!serverId||serverId.length>120||!/^[0-9]+$/.test(placeId)||players.length>100)return res.status(400).json({error:"Invalid server heartbeat."});
+    const seen=new Set();
+    for(const p of players){
+      const userId=String(p?.userId||""),username=String(p?.username||"").trim().slice(0,40),displayName=String(p?.displayName||username).trim().slice(0,40),rank=Number(p?.staffRank||0);
+      if(!/^\d+$/.test(userId)||!username||seen.has(userId))continue;seen.add(userId);
+      await pool.query(`INSERT INTO live_game_players(server_id,place_id,user_id,username,display_name,joined_at,heartbeat_at,staff_rank)
+        VALUES($1,$2,$3,$4,$5,COALESCE(NULLIF($6,'')::timestamptz,NOW()),NOW(),$7)
+        ON CONFLICT(server_id,user_id) DO UPDATE SET place_id=EXCLUDED.place_id,username=EXCLUDED.username,display_name=EXCLUDED.display_name,heartbeat_at=NOW(),staff_rank=EXCLUDED.staff_rank`,
+        [serverId,placeId,userId,username,displayName,String(p?.joinedAt||""),Number.isInteger(rank)&&rank>=0&&rank<=255?rank:0]);
+    }
+    if(seen.size)await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND heartbeat_at<NOW()-INTERVAL '90 seconds' AND user_id<>ALL($2::text[])",[serverId,[...seen]]);
+    else await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND heartbeat_at<NOW()-INTERVAL '90 seconds'",[serverId]);
+    res.json({ok:true,received:seen.size});
+  }catch(e){next(e);}});
+  router.post("/live/leave", requireGameSecret, async(req,res,next)=>{try{
+    const serverId=String(req.body?.serverId||""),userId=String(req.body?.userId||"");
+    if(!serverId||!/^[0-9]+$/.test(userId))return res.status(400).json({error:"Invalid player leave event."});
+    await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND user_id=$2",[serverId,userId]);res.json({ok:true});
+  }catch(e){next(e);}});
+  router.get("/game-commands/pending", requireGameSecret, async(req,res,next)=>{try{
+    const serverId=String(req.query?.serverId||"");if(!serverId||serverId.length>120)return res.status(400).json({error:"A valid server ID is required."});
+    const client=await pool.connect();try{await client.query("BEGIN");
+      const found=await client.query("SELECT id,action,target_user_id,payload FROM portal_game_commands WHERE server_id=$1 AND status='PENDING' ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 10",[serverId]);
+      const ids=found.rows.map(x=>x.id);
+      if(ids.length)await client.query("UPDATE portal_game_commands SET status='EXECUTING',started_at=NOW() WHERE id=ANY($1::bigint[])",[ids]);
+      await client.query("COMMIT");res.json({commands:found.rows});
+    }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+  }catch(e){next(e);}});
+  router.post("/game-commands/:id/result", requireGameSecret, async(req,res,next)=>{try{
+    const serverId=String(req.body?.serverId||""),ok=!!req.body?.ok,result=String(req.body?.result||"").slice(0,500);
+    const status=ok?"COMPLETED":"FAILED";
+    const r=await pool.query("UPDATE portal_game_commands SET status=$1,result=$2,completed_at=NOW() WHERE id=$3 AND server_id=$4 AND status='EXECUTING' RETURNING id",[status,result,req.params.id,serverId]);
+    if(!r.rowCount)return res.status(404).json({error:"Command not found, already completed, or belongs to another server."});
+    res.json({ok:true,status});
+  }catch(e){next(e);}});
+
   router.use(requireLogin);
   router.get("/settings", async (req,res,next) => {
     try {
@@ -379,6 +420,46 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({members,adjustments:adjustments.rows,canEdit:Number(who.rank)>=Number(s.activity_edit_rank),canViewAll});
   }catch(e){next(e);}});
 
+
+  router.get("/live-servers",async(req,res,next)=>{try{
+    const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.activity_view_rank||238))return res.status(403).json({error:"Your rank cannot view live game servers."});
+    await pool.query("DELETE FROM live_game_players WHERE heartbeat_at<NOW()-INTERVAL '90 seconds'");
+    const r=await pool.query(`SELECT server_id,place_id,COUNT(*)::INTEGER AS player_count,COUNT(*) FILTER(WHERE staff_rank>=230)::INTEGER AS staff_count,
+      MIN(joined_at) AS oldest_join FROM live_game_players GROUP BY server_id,place_id ORDER BY player_count DESC`);
+    const players=await pool.query("SELECT server_id,place_id,user_id,username,display_name,joined_at,heartbeat_at,staff_rank,GREATEST(0,EXTRACT(EPOCH FROM(NOW()-joined_at))::INTEGER)::BIGINT AS current_seconds FROM live_game_players ORDER BY server_id,joined_at");
+    res.json({servers:r.rows,players:players.rows.map(p=>({...p,user_id:String(p.user_id),current_seconds:Number(p.current_seconds||0)})),canModerate:Number(who.rank)>=245,canAdmin:Number(who.rank)>=255});
+  }catch(e){next(e);}});
+  router.post("/server-commands",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const action=String(req.body?.action||"").toLowerCase(),serverId=String(req.body?.serverId||"").trim(),targetId=String(req.body?.targetUserId||"").trim();
+    const reason=String(req.body?.reason||"").trim().slice(0,300),message=String(req.body?.message||"").trim().slice(0,400);
+    const allowed=["kick","warn","respawn","mute","unmute","announce","shutdown","restart"];
+    if(!allowed.includes(action))return res.status(400).json({error:"That server action is not available in the portal."});
+    const admin=["shutdown","restart"].includes(action),announce=action==="announce";
+    if(Number(who.rank)<(admin?255:announce?238:245))return res.status(403).json({error:admin?"Only rank 255 can shut down or restart servers.":announce?"Your rank cannot send server announcements.":"Your rank cannot moderate live players."});
+    if(!serverId||serverId.length>120)return res.status(400).json({error:"Choose an active server first."});
+    const playerAction=["kick","warn","respawn","mute","unmute"].includes(action);
+    if(playerAction&&!/^\d+$/.test(targetId))return res.status(400).json({error:"Choose a player first."});
+    if(["kick","warn","mute"].includes(action)&&!reason)return res.status(400).json({error:"Enter a reason for this action."});
+    if(announce&&!message)return res.status(400).json({error:"Enter an announcement."});
+    const server=await pool.query("SELECT server_id FROM live_game_players WHERE server_id=$1 AND heartbeat_at>=NOW()-INTERVAL '90 seconds' LIMIT 1",[serverId]);
+    if(!server.rowCount)return res.status(409).json({error:"That server is no longer active. Refresh the server list."});
+    if(playerAction){const target=await pool.query("SELECT user_id,username FROM live_game_players WHERE server_id=$1 AND user_id=$2 AND heartbeat_at>=NOW()-INTERVAL '90 seconds'",[serverId,targetId]);if(!target.rowCount)return res.status(404).json({error:"That player is no longer in the selected server."});
+      if(["kick","warn","mute"].includes(action)&&String(targetId)===String(req.session.user.id))return res.status(400).json({error:"You cannot use this action on yourself."});
+      req.body.targetName=target.rows[0].username;
+      if(action==="warn")await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,status,created_by,created_by_name,decided_by,decided_by_name,decision_note,decided_at) VALUES($1,$2,'Warning',$3,'APPROVED',$4,$5,$4,$5,'Issued from Live Server Management',NOW())",[targetId,target.rows[0].username,reason,String(req.session.user.id),String(req.session.user.name||"Portal staff")]);
+    }
+    const payload=action==="announce"?{message}:playerAction?{reason}:{};
+    const r=await pool.query("INSERT INTO portal_game_commands(server_id,target_user_id,action,payload,requested_by,requested_by_name,target_username) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7) RETURNING id,status,created_at",[serverId,playerAction?targetId:null,action,JSON.stringify(payload),String(req.session.user.id),String(req.session.user.name||"Portal staff"),String(req.body.targetName||"")]);
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES('SERVER_COMMAND',$1,$2,$3,$4,$5,$6)",[action.toUpperCase(),targetId||null,String(req.body.targetName||""),reason||message||("Server "+serverId),String(req.session.user.id),String(req.session.user.name||"Portal staff")]);
+    res.status(202).json({ok:true,command:r.rows[0],message:"Command queued for the selected live server."});
+  }catch(e){next(e);}});
+  router.get("/server-command-history",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<238)return res.status(403).json({error:"Your rank cannot view server command history."});
+    const r=await pool.query("SELECT id,server_id,target_user_id,target_username,action,status,result,requested_by_name,created_at,completed_at FROM portal_game_commands ORDER BY created_at DESC LIMIT 100");
+    res.json({items:r.rows});
+  }catch(e){next(e);}});
+
   router.get("/in-game",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const cfg=await settings(),canViewAll=Number(who.rank)>=Number(cfg.activity_view_rank);
@@ -712,6 +793,19 @@ async function ensureManagementSchema(pool) {
     created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,updated_by TEXT NOT NULL,updated_by_name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query("ALTER TABLE knowledge_hub_items ADD COLUMN IF NOT EXISTS team_id BIGINT REFERENCES management_teams(id) ON DELETE SET NULL");
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS live_game_players (
+    server_id TEXT NOT NULL,place_id TEXT NOT NULL,user_id TEXT NOT NULL,username TEXT NOT NULL,display_name TEXT NOT NULL DEFAULT '',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),staff_rank INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(server_id,user_id))`);
+  await pool.query("CREATE INDEX IF NOT EXISTS live_game_players_heartbeat_idx ON live_game_players(heartbeat_at)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS portal_game_commands (
+    id BIGSERIAL PRIMARY KEY,server_id TEXT NOT NULL,target_user_id TEXT,action TEXT NOT NULL,payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    requested_by TEXT NOT NULL,requested_by_name TEXT NOT NULL,target_username TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'PENDING',result TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,completed_at TIMESTAMPTZ)`);
+  await pool.query("CREATE INDEX IF NOT EXISTS portal_game_commands_server_pending_idx ON portal_game_commands(server_id,status,created_at)");
+
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_sessions (
     id BIGSERIAL PRIMARY KEY, session_key TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, username TEXT NOT NULL,
     started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ, seconds INTEGER NOT NULL DEFAULT 0,active_seconds BIGINT NOT NULL DEFAULT 0,afk_seconds BIGINT NOT NULL DEFAULT 0,typing_seconds BIGINT NOT NULL DEFAULT 0,message_count BIGINT NOT NULL DEFAULT 0)`);
