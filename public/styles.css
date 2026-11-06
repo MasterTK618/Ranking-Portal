@@ -911,3 +911,67 @@ body.compact-layout #membersPage #directoryResult .staff-card{min-height:88px;pa
 }
 
 html,body{background:var(--bg);color:var(--text)}
+
+
+/* Theme-safe surfaces: keep every workspace component readable in light mode. */
+:root{
+  color-scheme:light;
+  --surface-raised:rgba(30,28,20,.025);
+  --surface-hover:rgba(30,28,20,.045);
+  --stroke-soft:rgba(40,36,20,.12);
+  --accent-soft:rgba(245,201,40,.14);
+}
+:root.dark{color-scheme:dark;--surface-raised:rgba(255,255,255,.035);--surface-hover:rgba(255,255,255,.055);--stroke-soft:rgba(255,255,255,.085)}
+html:not(.dark) body{
+  background:var(--bg)!important;color:var(--text)!important;
+}
+html:not(.dark) .sidebar,html:not(.dark) .topbar{background:var(--panel)}
+html:not(.dark) .card,html:not(.dark) .panel,html:not(.dark) .workspace-card,
+html:not(.dark) .session-card,html:not(.dark) .team-card,html:not(.dark) .views-stat,
+html:not(.dark) .session-stat,html:not(.dark) .profile-card,html:not(.dark) .analytics-card{
+  background:var(--panel);border-color:var(--line);box-shadow:var(--shadow);color:var(--text)
+}
+html:not(.dark) input:not([type=checkbox]):not([type=radio]):not([type=color]),
+html:not(.dark) select,html:not(.dark) textarea,
+html:not(.dark) #commandSearch{
+  background:var(--panel2)!important;color:var(--text)!important;border-color:var(--line)
+}
+html:not(.dark) input::placeholder,html:not(.dark) textarea::placeholder{color:var(--muted)}
+html:not(.dark) .data-table th{background:var(--panel2)!important;color:var(--muted)!important}
+html:not(.dark) .data-table td{border-bottom-color:var(--line)}
+html:not(.dark) .data-table tbody tr:hover{background:var(--panel2)}
+html:not(.dark) .team-card{background:var(--panel)!important}
+html:not(.dark) .team-member-row:hover,html:not(.dark) .team-member-chip,
+html:not(.dark) .permission-group,html:not(.dark) .profile-team-option,
+html:not(.dark) .session-assignment-group,html:not(.dark) .session-assignment-row,
+html:not(.dark) .session-request-card,html:not(.dark) .member-request-form,
+html:not(.dark) .team-dashboard-inline{
+  background:var(--panel2)!important;color:var(--text);border-color:var(--line)
+}
+html:not(.dark) .session-agenda-card{background:var(--panel)!important;color:var(--text);border-color:var(--line)}
+html:not(.dark) .session-card-icon,html:not(.dark) .session-assignment-index,
+html:not(.dark) .notification-icon,html:not(.dark) .profile-stats>div,
+html:not(.dark) .task-storage-stat,html:not(.dark) .task-storage-recent{
+  background:var(--panel2)!important;color:var(--text);border-color:var(--line)
+}
+html:not(.dark) .quick-action,html:not(.dark) .staff-card,html:not(.dark) .game-link-card,
+html:not(.dark) .announcement-card,html:not(.dark) .knowledge-card,
+html:not(.dark) .live-server-card,html:not(.dark) .quota-rule-row{
+  background:var(--panel2)!important;color:var(--text);border-color:var(--line)
+}
+html:not(.dark) .quick-action:hover{background:#fff9df!important}
+html:not(.dark) .command-palette{background:var(--panel);color:var(--text);border-color:var(--line)}
+html:not(.dark) .command-result{color:var(--text)}
+html:not(.dark) .command-result:hover,html:not(.dark) .command-result[aria-selected=true]{background:var(--panel2)}
+html:not(.dark) .session-roles-dialog{background:var(--panel);color:var(--text);border-color:var(--line)}
+html:not(.dark) .session-edit-section{background:var(--panel2);border-color:var(--line)}
+html:not(.dark) .views-leader-rank,html:not(.dark) .team-role-count,
+html:not(.dark) .team-role-source{background:var(--panel2);color:var(--text);border-color:var(--line)}
+html:not(.dark) .leader-podium{background:var(--panel2);border-color:var(--line)}
+html:not(.dark) .leader-podium-card{background:var(--panel);color:var(--text);border-color:var(--line)}
+html:not(.dark) .calendar-day{background:var(--panel2);border-color:var(--line)}
+html:not(.dark) .calendar-event{background:var(--accent-soft);color:var(--text)}
+html:not(.dark) .directory-rank-option{color:var(--text)}
+html:not(.dark) .workspace-intro-card{background:var(--panel2);border-color:var(--line)}
+html:not(.dark) .announcement-body{color:var(--text)}
+html:not(.dark) .nav-item:hover,html:not(.dark) .nav-item.active{background:#fff7d8;color:#4c3a00}
