@@ -104,6 +104,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
 
   router.use(requireLogin);
+  // Rank 230 Staff Assistants can enter the portal in read-only mode.
+  router.use(async(req,res,next)=>{
+    if(!["POST","PUT","PATCH","DELETE"].includes(String(req.method||"").toUpperCase()))return next();
+    try{const who=await identity(req);if(who&&Number(who.rank)<=230)return res.status(403).json({error:"Staff Assistant access is read-only. You can view the portal but cannot make changes."});next();}catch(e){next(e);}
+  });
   // Capture every successful authenticated state change, including routes that
   // do not yet have a dedicated audit event. Never persist request bodies or secrets.
   router.use((req,res,next)=>{
@@ -150,7 +155,40 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
 
 
-  // Teams and departments are owner-managed. Staff can belong to multiple teams.
+  // Departments are independent of teams and have their own membership records.
+  router.get("/departments",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view departments."});
+    const departments=await pool.query("SELECT d.*,COUNT(DISTINCT dm.user_id)::INTEGER AS member_count FROM management_departments d LEFT JOIN management_department_members dm ON dm.department_id=d.id GROUP BY d.id ORDER BY d.name");
+    const members=await pool.query("SELECT user_id,department_id FROM management_department_members ORDER BY user_id,department_id");
+    res.json({departments:departments.rows,members:members.rows,canManage:Number(who.rank)>230});
+  }catch(e){next(e);}});
+  router.post("/departments",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage departments."});
+    const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928");
+    if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color))return res.status(400).json({error:"Enter a valid department name, description, and color."});
+    const row=await pool.query("INSERT INTO management_departments(name,description,color,created_by) VALUES($1,$2,$3,$4) RETURNING *",[name,description,color,String(req.session.user.id)]);
+    res.status(201).json({ok:true,department:row.rows[0]});
+  }catch(e){if(e.code==="23505")return res.status(409).json({error:"A department with that name already exists."});next(e);}});
+  router.put("/departments/:id",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage departments."});
+    const b=req.body||{},name=String(b.name||"").trim(),description=String(b.description||"").trim(),color=String(b.color||"#f5c928");
+    if(name.length<2||name.length>60||description.length>300||!/^#[0-9a-fA-F]{6}$/.test(color))return res.status(400).json({error:"Enter a valid department name, description, and color."});
+    const row=await pool.query("UPDATE management_departments SET name=$1,description=$2,color=$3,updated_at=NOW() WHERE id=$4 RETURNING *",[name,description,color,req.params.id]);
+    if(!row.rowCount)return res.status(404).json({error:"Department not found."});res.json({ok:true,department:row.rows[0]});
+  }catch(e){if(e.code==="23505")return res.status(409).json({error:"A department with that name already exists."});next(e);}});
+  router.put("/departments/:id/members",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can assign staff to departments."});
+    const ids=Array.isArray(req.body?.userIds)?[...new Set(req.body.userIds.map(String).filter(x=>/^\d+$/.test(x)))]:[];
+    const exists=await pool.query("SELECT id FROM management_departments WHERE id=$1",[req.params.id]);if(!exists.rowCount)return res.status(404).json({error:"Department not found."});
+    const client=await pool.connect();try{await client.query("BEGIN");await client.query("DELETE FROM management_department_members WHERE department_id=$1",[req.params.id]);for(const id of ids)await client.query("INSERT INTO management_department_members(user_id,department_id,assigned_by) VALUES($1,$2,$3) ON CONFLICT(user_id,department_id) DO UPDATE SET assigned_by=EXCLUDED.assigned_by,assigned_at=NOW()",[id,req.params.id,String(req.session.user.id)]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+    res.json({ok:true,assigned:ids.length});
+  }catch(e){next(e);}});
+  router.delete("/departments/:id",csrf,async(req,res,next)=>{try{
+    const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage departments."});
+    const r=await pool.query("DELETE FROM management_departments WHERE id=$1 RETURNING id",[req.params.id]);if(!r.rowCount)return res.status(404).json({error:"Department not found."});res.json({ok:true});
+  }catch(e){next(e);}});
+
+  // Teams are independent staff groups.
   router.get("/teams",async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view staff teams."});
     const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.department,t.name");
@@ -852,6 +890,11 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS attendance JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS recurrence_rule TEXT, ADD COLUMN IF NOT EXISTS recurrence_until DATE");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_teams (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,department TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(department,name))`);
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS entity_type TEXT NOT NULL DEFAULT 'TEAM'");
+  await pool.query("ALTER TABLE management_teams DROP CONSTRAINT IF EXISTS management_teams_department_name_key");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS management_teams_name_unique_idx ON management_teams(LOWER(name))");
+  await pool.query("CREATE TABLE IF NOT EXISTS management_departments (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL DEFAULT '',color TEXT NOT NULL DEFAULT '#f5c928',created_by TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await pool.query("CREATE TABLE IF NOT EXISTS management_department_members (user_id TEXT NOT NULL,department_id BIGINT NOT NULL REFERENCES management_departments(id) ON DELETE CASCADE,assigned_by TEXT NOT NULL,assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,department_id))");
+  await pool.query("CREATE INDEX IF NOT EXISTS management_department_members_department_idx ON management_department_members(department_id)");
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS auto_assign_mode TEXT NOT NULL DEFAULT 'NONE'");
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS auto_assign_min_rank INTEGER");
   await pool.query("ALTER TABLE management_teams ADD COLUMN IF NOT EXISTS auto_assign_max_rank INTEGER");
