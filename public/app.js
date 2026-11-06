@@ -573,6 +573,7 @@ async function loadTasks(){
     const rows=items.filter(x=>(filter==="ALL"||x.status===filter)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!((x.assigned_team_ids||[]).length):(x.assigned_team_ids||[]).map(String).includes(teamFilter)))&&[x.title,x.description,x.assigned_to_name,x.assigned_team_names,x.assigned_department_names,x.created_by_name,x.priority,x.status].some(v=>String(v||"").toLowerCase().includes(q)));
     const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
     $("taskSummary").innerHTML=counts.map(x=>`<article class="session-stat"><span>✓</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
+    $("taskStorageDiagnostics")?.classList.toggle("hidden",Number(d.rank)<255);
     $("taskAuditCard").classList.toggle("hidden",!d.canManage);
     $("taskTable").innerHTML=rows.length?'<table class="data-table task-data-table"><thead><tr><th>TASK</th><th>ASSIGNED TO</th><th>TEAM</th><th>PRIORITY</th><th>DUE DATE</th><th>CREATED BY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><b>'+escapeHtml(x.title)+'</b><small class="task-id-label">TASK ID · #'+escapeHtml(String(x.id))+'</small><small class="table-subtext">'+escapeHtml(x.description||"No extra details") +'</small></td><td>'+escapeHtml(x.assigned_to_name)+'</td><td>'+escapeHtml(x.assigned_team_names?((x.assigned_department_names?x.assigned_department_names+' · ':'')+x.assigned_team_names):'Unassigned')+'</td><td><span class="priority-pill priority-'+escapeHtml(String(x.priority).toLowerCase())+'">'+escapeHtml(x.priority)+'</span></td><td>'+dateOnly(x.due_date)+'</td><td>'+escapeHtml(x.created_by_name)+'</td><td>'+(x.canUpdate?'<select class="task-status-select" data-task-status="'+escapeHtml(x.id)+'"><option value="OPEN"'+(x.status==="OPEN"?" selected":"")+ '>Open</option><option value="IN_PROGRESS"'+(x.status==="IN_PROGRESS"?" selected":"")+ '>In progress</option><option value="BLOCKED"'+(x.status==="BLOCKED"?" selected":"")+ '>Blocked</option><option value="COMPLETED"'+(x.status==="COMPLETED"?" selected":"")+ '>Completed</option></select>':'<span class="status-pill">'+escapeHtml(x.status)+'</span>')+'</td><td>'+(x.canDelete?'<button class="danger-btn" data-task-delete="'+escapeHtml(x.id)+'">Delete</button>':"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No tasks match this filter.</div>';
     if(d.canManage)await loadTaskAudit();
@@ -591,6 +592,20 @@ $("refreshLeaveAudit")?.addEventListener("click",loadLeaveAudit);
 $("leaveSearch")?.addEventListener("input",()=>loadManagement("leaves"));
 $("leaveStatusFilter")?.addEventListener("change",()=>loadManagement("leaves"));
 $("refreshTasks")?.addEventListener("click",loadTasks);
+$("taskStorageDiagnostics")?.addEventListener("click",async()=>{
+ const panel=$("taskStoragePanel"),details=$("taskStorageDetails");
+ panel.classList.remove("hidden");details.textContent="Checking task storage…";
+ try{
+  const data=await api("/api/management/tasks/diagnostics");details.replaceChildren();
+  const entries=[["TABLE",data.tableExists?"Available":"Missing"],["ID COLUMN",(data.idColumn?.data_type||"Unknown")+" · "+(data.idColumn?.udt_name||"Unknown")],["TOTAL TASKS",data.totalTasks||"0"]];
+  for(const [label,value] of entries){const card=document.createElement("div");card.className="task-storage-stat";const small=document.createElement("small");small.textContent=label;const strong=document.createElement("b");strong.textContent=value;card.append(small,strong);details.append(card);}
+  const recent=document.createElement("div");recent.className="task-storage-recent";const heading=document.createElement("b");heading.textContent="Recent stored task IDs";recent.append(heading);
+  for(const item of data.recentTasks||[]){const row=document.createElement("p");row.textContent="#"+item.id+" · "+item.title+" · "+item.status;recent.append(row);}
+  details.append(recent);
+ }catch(error){details.textContent=error.message;}
+});
+$("closeTaskDiagnostics")?.addEventListener("click",()=>$("taskStoragePanel")?.classList.add("hidden"));
+
 $("refreshTaskAudit")?.addEventListener("click",loadTaskAudit);
 $("taskSearch")?.addEventListener("input",loadTasks);
 $("taskStatusFilter")?.addEventListener("change",loadTasks);$("taskTeamFilter")?.addEventListener("change",loadTasks);$("taskTeamAssignFilter")?.addEventListener("change",loadTasks);
