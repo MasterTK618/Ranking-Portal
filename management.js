@@ -7,6 +7,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     // Rank 243+ is the baseline for day-to-day management. Sensitive approvals
     // and server shutdown controls remain restricted to higher ranks.
     activity_view_rank:243, activity_edit_rank:243,
+    team_view_rank:230, department_view_rank:230, knowledge_view_rank:230, game_links_view_rank:230,
     audit_view_rank:243, profile_view_rank:243, profile_note_rank:243,
     calendar_view_rank:243, quota_view_rank:243, quota_manage_rank:255,
     inactivity_alert_view_rank:243, evidence_view_rank:243, evidence_upload_rank:243, evidence_manage_rank:249,
@@ -150,14 +151,15 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true,settings:result.rows[0]});
     } catch(e){next(e);}
   });
-  router.get("/game-links",async(req,res,next)=>{try{const cfg=await settings();res.json({links:Array.isArray(cfg.game_links)?cfg.game_links:[],canManage:Number((await identity(req))?.rank||0)>=255});}catch(e){next(e);}});
+  router.get("/access",async(req,res,next)=>{try{const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),rank=Number(who.rank||0),can=(field,fallback=243)=>rank>=Number(cfg[field]||fallback);res.json({rank,sections:{overview:rank>=230,views:can("analytics_view_rank"),announcements:rank>=230,notifications:can("notification_view_rank"),approvals:can("session_approve_rank"),analytics:can("analytics_view_rank"),members:can("profile_view_rank"),activity:can("activity_view_rank"),ingame:can("live_server_view_rank"),tasks:can("task_view_rank"),knowledge:can("knowledge_view_rank",230),gameLinks:can("game_links_view_rank",230),sessions:can("calendar_view_rank"),sessionRequests:rank>=230,promotions:can("promotion_suggest_rank"),punishments:can("punishment_view_rank"),leaves:rank>=230,rank:!!who.canRank,logs:can("audit_view_rank"),settings:rank>=255}});}catch(e){next(e);}});
+  router.get("/game-links",async(req,res,next)=>{try{const cfg=await settings(),who=await identity(req);if(!who||Number(who.rank)<Number(cfg.game_links_view_rank||230))return res.status(403).json({error:"Your role cannot view game links."});res.json({links:Array.isArray(cfg.game_links)?cfg.game_links:[],canManage:Number(who.rank)>=255});}catch(e){next(e);}});
   router.put("/game-links",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage game links."});const input=req.body?.links;if(!Array.isArray(input)||input.length>30)return res.status(400).json({error:"Add no more than 30 game links."});const links=[];for(const item of input){const title=String(item?.title||"").trim(),description=String(item?.description||"").trim(),raw=String(item?.url||"").trim();let parsed;try{parsed=new URL(raw);}catch{return res.status(400).json({error:"Each game link needs a valid HTTPS URL."});}if(title.length<2||title.length>60||description.length>200||parsed.protocol!=="https:"||raw.length>500)return res.status(400).json({error:"Check each link title, description, and HTTPS address."});links.push({title,description,url:parsed.toString()});}const result=await pool.query("UPDATE management_settings SET game_links=$1::jsonb,updated_at=NOW() WHERE id=1 RETURNING game_links",[JSON.stringify(links)]);res.json({ok:true,links:result.rows[0]?.game_links||[]});}catch(e){next(e);}});
 
 
 
   // Departments are independent of teams and have their own membership records.
   router.get("/departments",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view departments."});
+    const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.department_view_rank||230))return res.status(403).json({error:"Your role cannot view departments."});
     const departments=await pool.query("SELECT d.*,COUNT(DISTINCT dm.user_id)::INTEGER AS member_count FROM management_departments d LEFT JOIN management_department_members dm ON dm.department_id=d.id GROUP BY d.id ORDER BY d.name");
     const members=await pool.query("SELECT user_id,department_id FROM management_department_members ORDER BY user_id,department_id");
     res.json({departments:departments.rows,members:members.rows,canManage:Number(who.rank)>=255});
@@ -190,7 +192,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   // Teams are independent staff groups.
   router.get("/teams",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view staff teams."});
+    const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.team_view_rank||230))return res.status(403).json({error:"Your role cannot view staff teams."});
     const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.name");
     const members=await pool.query("SELECT user_id,team_id FROM management_team_members ORDER BY user_id,team_id");
     res.json({teams:teams.rows,members:members.rows,canManage:Number(who.rank)>=255});
@@ -238,7 +240,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=await pool.query("DELETE FROM management_teams WHERE id=$1 RETURNING id",[req.params.id]);if(!r.rowCount)return res.status(404).json({error:"Team not found."});res.json({ok:true});
   }catch(e){next(e);}});
   router.get("/knowledge",async(req,res,next)=>{try{
-    const who=await identity(req),s=await settings(),canManage=(who?.rank||0)>=Number(s.knowledge_manage_rank);const r=await pool.query("SELECT k.id,k.title,k.kind,k.url,k.content,k.min_rank,k.category,k.team_id,t.name AS team_name,k.created_by_name,k.updated_by_name,k.created_at,k.updated_at FROM knowledge_hub_items k LEFT JOIN management_teams t ON t.id=k.team_id WHERE k.min_rank <= $1 AND (k.team_id IS NULL OR EXISTS(SELECT 1 FROM management_team_members tm WHERE tm.team_id=k.team_id AND tm.user_id=$2) OR $3=TRUE) ORDER BY k.category,k.title",[who?.rank||0,String(req.session.user.id),canManage]);
+    const who=await identity(req),s=await settings(),canManage=(who?.rank||0)>=Number(s.knowledge_manage_rank);if(!who||Number(who.rank)<Number(s.knowledge_view_rank||230))return res.status(403).json({error:"Your role cannot view the Knowledge Hub."});const r=await pool.query("SELECT k.id,k.title,k.kind,k.url,k.content,k.min_rank,k.category,k.team_id,t.name AS team_name,k.created_by_name,k.updated_by_name,k.created_at,k.updated_at FROM knowledge_hub_items k LEFT JOIN management_teams t ON t.id=k.team_id WHERE k.min_rank <= $1 AND (k.team_id IS NULL OR EXISTS(SELECT 1 FROM management_team_members tm WHERE tm.team_id=k.team_id AND tm.user_id=$2) OR $3=TRUE) ORDER BY k.category,k.title",[who?.rank||0,String(req.session.user.id),canManage]);
     res.json({items:r.rows,rank:who?.rank||0,canManage});
   }catch(e){next(e);}});
   router.post("/knowledge",csrf,async(req,res,next)=>{try{
@@ -349,16 +351,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION",status,String(request.requested_by),request.requested_by_name,"Request #"+request.id+" | "+request.session_type+" | "+request.title+(scheduled?" | Scheduled session #"+scheduled.id:"")+(note?" | "+note:""),String(req.session.user.id),String(req.session.user.name)]);
     await client.query("COMMIT");res.json({ok:true,item:updated.rows[0],session:scheduled});
   }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
-  router.delete("/session-requests/:id",csrf,async(req,res,next)=>{let client;try{
-    if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid request ID."});
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canManage=Number(who.rank)>=Number(cfg.session_approve_rank);
-    client=await pool.connect();await client.query("BEGIN");
-    const result=await client.query("DELETE FROM session_requests WHERE id=$1 AND status='PENDING' AND (requested_by=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
-    if(!result.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"This request is no longer pending, was already removed, or you cannot cancel it."});}
-    const item=result.rows[0];
-    await client.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION","REQUEST_CANCELED",String(item.requested_by),item.requested_by_name,"Request #"+item.id+" | "+item.title,String(req.session.user.id),String(req.session.user.name)]);
-    await client.query("COMMIT");res.json({ok:true});
-  }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
+  // Request deletion is handled once by the complete route below.
   router.get("/session-requests/audit",async(req,res,next)=>{try{const who=await gate(req,res,"session_approve_rank");if(!who)return;const result=await pool.query("SELECT * FROM management_audit_logs WHERE category='SESSION' ORDER BY created_at DESC LIMIT 300");res.json({items:result.rows});}catch(e){next(e);}});
   router.patch("/sessions/:id/roles",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
@@ -885,6 +878,7 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS knowledge_manage_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_create_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_delete_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS task_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS task_manage_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_approve_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS session_status_rank INTEGER NOT NULL DEFAULT 243");
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS audit_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS profile_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS profile_note_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS calendar_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS quota_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS quota_manage_rank INTEGER NOT NULL DEFAULT 255, ADD COLUMN IF NOT EXISTS inactivity_alert_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS evidence_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS evidence_upload_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS evidence_manage_rank INTEGER NOT NULL DEFAULT 249, ADD COLUMN IF NOT EXISTS inactivity_days INTEGER NOT NULL DEFAULT 7, ADD COLUMN IF NOT EXISTS activity_alerts_enabled INTEGER NOT NULL DEFAULT 1");
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS live_server_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS live_player_moderate_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS live_announce_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS live_server_admin_rank INTEGER NOT NULL DEFAULT 255");
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS team_view_rank INTEGER NOT NULL DEFAULT 230, ADD COLUMN IF NOT EXISTS department_view_rank INTEGER NOT NULL DEFAULT 230, ADD COLUMN IF NOT EXISTS knowledge_view_rank INTEGER NOT NULL DEFAULT 230, ADD COLUMN IF NOT EXISTS game_links_view_rank INTEGER NOT NULL DEFAULT 230");
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS notification_view_rank INTEGER NOT NULL DEFAULT 243, ADD COLUMN IF NOT EXISTS quota_hours_week NUMERIC(7,2) NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_sessions_week INTEGER NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS quota_tasks_week INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS notifications_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS recurring_sessions_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS auto_approve_requests_enabled INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS auto_approve_requests_rank INTEGER NOT NULL DEFAULT 249");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_quotas (id BIGSERIAL PRIMARY KEY,scope TEXT NOT NULL DEFAULT 'GLOBAL',scope_id TEXT NOT NULL DEFAULT '',min_rank INTEGER NOT NULL DEFAULT 1,max_rank INTEGER NOT NULL DEFAULT 255,hours_per_week NUMERIC(7,2) NOT NULL DEFAULT 2,sessions_per_week INTEGER NOT NULL DEFAULT 2,tasks_per_week INTEGER NOT NULL DEFAULT 0,enabled BOOLEAN NOT NULL DEFAULT TRUE,updated_by TEXT,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(scope,scope_id,min_rank,max_rank))`);
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS attendance JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS recurrence_rule TEXT, ADD COLUMN IF NOT EXISTS recurrence_until DATE");
