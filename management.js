@@ -242,7 +242,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({items:result.rows.map(x=>({...x,canCancel:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview)})),canReview,rank:Number(who.rank),settings:cfg});
   }catch(e){next(e);}});
   router.post("/session-requests",csrf,async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const who=await identity(req);if(!who||!who.inGroup||Number(who.rank)<1)return res.status(403).json({error:"You must be a current Lemonz group member to request a session."});
     const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||""),hostId=String(b.hostId||""),cohostId=String(b.cohostId||"");
     if(!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(type)||title.length<3||title.length>100||details.length<10||details.length>2000)return res.status(400).json({error:"Choose a session type, enter a clear title, and provide at least 10 characters of details."});
     const parsedDate=new Date(date+"T00:00:00.000Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
@@ -629,7 +629,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const parse=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const d=new Date(s+"T00:00:00.000Z");return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==s?null:d;};
       const a=parse(start),z=parse(end),offset=Number(b.timezoneOffset),safeOffset=Number.isInteger(offset)&&Math.abs(offset)<=840?offset:0,now=new Date(Date.now()-safeOffset*60000);now.setUTCHours(0,0,0,0);
       if(roblox.length<3||roblox.length>40||reason.length<8||reason.length>2000||!a||!z||a<now||z<a||((z-a)/86400000)>29)return res.status(400).json({error:"Check your Roblox username, provide a reason of at least 8 characters, and choose valid dates within a 30-day period starting today or later."});
-      const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+      const who=await identity(req);if(!who||!who.inGroup||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to request staff leave."});
       const client=await pool.connect();let item;
       try{await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[String(req.session.user.id)]);
         const pending=await client.query("SELECT id FROM leave_requests WHERE user_id=$1 AND status=$2 LIMIT 1",[String(req.session.user.id),"PENDING"]);
@@ -749,7 +749,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
 
   router.get("/teams/:id/dashboard",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const who=await identity(req);if(!who||Number(who.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to view team dashboards."});
     const team=await pool.query("SELECT id,name,color FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     const members=await pool.query("SELECT user_id FROM management_team_members WHERE team_id=$1",[req.params.id]),ids=members.rows.map(x=>x.user_id);
     if(Number(who.rank)<245&&!ids.includes(String(req.session.user.id)))return res.status(403).json({error:"Only management or members of this team can view its dashboard."});
