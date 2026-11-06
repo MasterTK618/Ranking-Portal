@@ -33,7 +33,7 @@ if (missing.length) console.warn("Missing environment variables:", missing.join(
 
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc:["'self'"], scriptSrc:["'self'"], styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"], fontSrc:["'self'","https://fonts.gstatic.com","data:"], imgSrc:["'self'","https://*.rbxcdn.com","https://tr.rbxcdn.com","data:"], connectSrc:["'self'"], frameAncestors:["'none'"] } } }));
-app.use(express.json({ limit: "30kb" }));
+app.use(express.json({ limit: "6mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
   store: new PgSession({ pool, tableName: "web_sessions", createTableIfMissing: false }),
