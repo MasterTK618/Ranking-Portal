@@ -36,10 +36,20 @@ local function filter(channel)
     if messageId~="" and not loggedMessages[messageId] then
      loggedMessages[messageId]=true
      local sender=Players:GetPlayerByUserId(userId)
-     local text=tostring(message.Text or ""):sub(1,500)
-     if sender and text~="" then
+     local rawText=tostring(message.Text or ""):sub(1,500)
+     if sender and rawText~="" then
       task.spawn(function()
-       call("/api/management/chat-log","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),userId=tostring(userId),username=sender.Name,displayName=sender.DisplayName,channel=channel.Name,messageId=messageId,message=text})
+       -- ShouldDeliverCallback runs before Roblox's normal delivery filtering.
+       -- Apply Roblox's broadcast filter ourselves and never store raw chat text.
+       local ok,filtered=pcall(function()
+        local result=TextService:FilterStringAsync(rawText,userId)
+        return result:GetNonChatStringForBroadcastAsync()
+       end)
+       if ok and filtered and filtered~="" then
+        call("/api/management/chat-log","POST",{serverId=SERVER_ID,placeId=tostring(game.PlaceId),userId=tostring(userId),username=sender.Name,displayName=sender.DisplayName,channel=channel.Name,messageId=messageId,message=filtered:sub(1,500)})
+       else
+        warn("[Lemonz Portal] Chat log message was skipped because Roblox filtering failed.")
+       end
       end)
      end
      task.delay(300,function() loggedMessages[messageId]=nil end)
