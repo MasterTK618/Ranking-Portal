@@ -452,7 +452,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
         const groupRole=(groupData.data||[]).filter(item=>String(item.group?.id)===String(process.env.ROBLOX_GROUP_ID||"16597698")).map(item=>item.role||{}).sort((a,b)=>Number(b.rank||0)-Number(a.rank||0))[0];
         who={inGroup:!!groupRole,rank:Number(groupRole?.rank||0),roleName:groupRole?.name||"Not in group"};
       }
-      if(!who.inGroup||who.rank<230)return res.status(404).json({error:"Staff member not found."});
+      if(!who.inGroup)return res.status(404).json({error:"Group member not found."});
       const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));
       const user=await profile.json().catch(()=>({}));
       const thumb=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+encodeURIComponent(userId)+"&size=150x150&format=Png&isCircular=true");
