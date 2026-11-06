@@ -22,7 +22,7 @@ function showPage(page,view) {
   if(pageEl?.querySelector("[data-workspace-panel]"))pageEl.querySelectorAll("[data-workspace-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.workspacePanel!==selectedView));
   $("pageTitle").textContent=pageNames[page]||"Workspace";$("crumb").textContent=(selectedView?selectedView+" / ":"")+page.toUpperCase();
   clearNotice();
-  if(page==="logs"){loadLogs();loadManagementAudit();}
+  if(page==="logs"){loadLogs();loadManagementAudit();loadEvidence();}
   if(page==="announcements")loadAnnouncements();
   if(page==="rank")loadRoles();
   if(page==="views")loadViews();
