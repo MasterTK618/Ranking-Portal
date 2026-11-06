@@ -805,7 +805,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 .live-server-card{min-width:0;padding:17px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
 .live-server-card> b{display:block;margin-bottom:8px;font-size:13px}
 .live-server-card>code{font-size:10px;color:var(--muted);overflow-wrap:anywhere}
-.live-server-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:16px 0}
+.live-server-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:16px 0}
 .live-server-stats span{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:10px;background:var(--panel2)}
 .live-server-stats b{font-size:18px}.live-server-stats small{font-size:9px;color:var(--muted)}
 .live-player-search{max-width:280px}
