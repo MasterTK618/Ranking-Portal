@@ -709,6 +709,30 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   }
 
+  // Session-request deletion is separate from scheduled-session deletion.
+  router.delete("/session-requests/:id",csrf,async(req,res,next)=>{
+    let client;
+    try{
+      if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session request ID."});
+      const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+      const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank||243);
+      client=await pool.connect();await client.query("BEGIN");
+      const found=await client.query("SELECT * FROM session_requests WHERE id=$1 FOR UPDATE",[req.params.id]);
+      if(!found.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Session request not found. Refresh the list."});}
+      const item=found.rows[0];
+      if(String(item.requested_by)!==String(req.session.user.id)&&!canReview){
+        await client.query("ROLLBACK");return res.status(403).json({error:"Only the requester or an authorized session reviewer can delete this request."});
+      }
+      await client.query("DELETE FROM session_requests WHERE id=$1",[req.params.id]);
+      await client.query(
+        "INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",
+        ["SESSION_REQUEST","DELETED",String(item.requested_by),String(item.requested_by_name||""),"Session request #"+item.id+" deleted",String(req.session.user.id),String(req.session.user.name||"Staff")]
+      );
+      await client.query("COMMIT");res.json({ok:true});
+    }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}
+    finally{client?.release();}
+  });
+
   router.get("/evidence",async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.evidence_view_rank||243))return res.status(403).json({error:"Your rank cannot view evidence records."});const target=String(req.query.targetUserId||"");const values=[],where=[];if(/^\d+$/.test(target)){values.push(target);where.push("target_user_id=$"+values.length);}const q=await pool.query("SELECT id,target_user_id,target_username,category,title,description,file_name,mime_type,uploaded_by_name,created_at FROM management_evidence "+(where.length?"WHERE "+where.join(" AND "):"")+" ORDER BY created_at DESC LIMIT 250",values);res.json({items:q.rows,canUpload:Number(who.rank)>=Number(cfg.evidence_upload_rank||243),canManage:Number(who.rank)>=Number(cfg.evidence_manage_rank||249)});}catch(e){next(e);}});
   router.post("/evidence",csrf,async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.evidence_upload_rank||243))return res.status(403).json({error:"Your rank cannot upload evidence."});const b=req.body||{},target=String(b.targetUserId||""),title=String(b.title||"").trim(),description=String(b.description||"").trim(),fileName=String(b.fileName||"").trim().replace(/[\u0000-\u001f\u007f\/\\"]/g,"_").slice(0,160),mime=String(b.mimeType||""),raw=String(b.fileData||"");const allowed=["application/pdf","image/png","image/jpeg","image/webp","text/plain"];if(!/^\d+$/.test(target)||title.length<3||title.length>120||description.length>2000||!fileName||!allowed.includes(mime)||!raw.startsWith("data:"+mime+";base64,")||raw.length>5_600_000)return res.status(400).json({error:"Check the member, file type, and file size (maximum 4 MB)."});const targetInfo=await getIdentity(target);if(!targetInfo?.inGroup||Number(targetInfo.rank)<230)return res.status(404).json({error:"Staff member not found."});const buffer=Buffer.from(raw.slice(raw.indexOf(",")+1),"base64");if(!buffer.length||buffer.length>4*1024*1024)return res.status(400).json({error:"Evidence file must be 4 MB or smaller."});const q=await pool.query("INSERT INTO management_evidence(target_user_id,target_username,category,title,description,file_name,mime_type,file_data,uploaded_by,uploaded_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,target_user_id,target_username,category,title,description,file_name,mime_type,uploaded_by_name,created_at",[target,String(b.targetUsername||target).slice(0,80),["PUNISHMENT","STAFF_REPORT","SESSION","OTHER"].includes(String(b.category))?String(b.category):"STAFF_REPORT",title,description,fileName,mime,buffer,String(req.session.user.id),String(req.session.user.name||"Staff")]);res.status(201).json({ok:true,item:q.rows[0]});}catch(e){next(e);}});
   router.get("/evidence/:id/download",async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.evidence_view_rank||243))return res.status(403).json({error:"Your rank cannot download evidence."});const q=await pool.query("SELECT file_name,mime_type,file_data FROM management_evidence WHERE id=$1",[req.params.id]);if(!q.rowCount)return res.status(404).json({error:"Evidence file not found."});const f=q.rows[0];res.setHeader("Content-Type",f.mime_type);res.setHeader("Content-Disposition",'attachment; filename="'+String(f.file_name).replace(/[\u0000-\u001f\u007f\/\\"]/g,"_")+'"');res.setHeader("X-Content-Type-Options","nosniff");res.send(f.file_data);}catch(e){next(e);}});
