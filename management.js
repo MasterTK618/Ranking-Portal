@@ -369,6 +369,14 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{
       const userId=String(req.params.id||"");
       if(!/^\d+$/.test(userId))return res.status(400).json({error:"Invalid staff member."});
+      const viewer=await identity(req),cfg=await settings(),viewerRank=Number(viewer?.rank||0),isSelf=String(req.session.user.id)===userId;
+      if(!viewer||viewerRank<230)return res.status(403).json({error:"Rank 230 or higher is required to view staff profiles."});
+      const canViewActivity=isSelf||viewerRank>=Number(cfg.activity_view_rank||238);
+      const canViewPunishments=isSelf||viewerRank>=Number(cfg.punishment_view_rank||238);
+      const canViewNotes=viewerRank>=238;
+      const canViewTimeline=viewerRank>=238;
+      const canViewTasks=isSelf||viewerRank>=Number(cfg.task_view_rank||238);
+      const canViewPromotions=isSelf||viewerRank>=Number(cfg.promotion_approve_rank||249);
       let who;
       try{who=await getIdentity(userId);}catch{}
       if(!who?.inGroup||who.rank<230){
@@ -384,23 +392,22 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const thumbData=await thumb.json().catch(()=>({}));
       const avatarUrl=thumbData.data?.[0]?.imageUrl||"";
       const sessions=await pool.query("SELECT * FROM staff_shifts WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
-      const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at,decided_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
+      const punishments=canViewPunishments?await pool.query("SELECT type,reason,duration,status,created_by_name,created_at,decided_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
       await pool.query("UPDATE activity_sessions SET ended_at=COALESCE(heartbeat_at,started_at),seconds=GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(heartbeat_at,started_at)-started_at))::INTEGER) WHERE user_id=$1 AND ended_at IS NULL AND COALESCE(heartbeat_at,started_at)<NOW()-INTERVAL '90 seconds'",[userId]);
-      const activity=await pool.query("SELECT (COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)+COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0))::BIGINT AS seconds,COALESCE(SUM(active_seconds),0)::BIGINT AS active_seconds,COALESCE(SUM(afk_seconds),0)::BIGINT AS afk_seconds,COALESCE(SUM(typing_seconds),0)::BIGINT AS typing_seconds,COALESCE(SUM(message_count),0)::BIGINT AS message_count,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
-      const gameSessions=await pool.query("SELECT id,username,started_at,ended_at,CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END AS seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE user_id=$1 ORDER BY started_at DESC LIMIT 250",[userId]);
-      const notes=await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
-      const teamHistory=await pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]);
-      const timeline=await pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]);
-      const tasks=await pool.query("SELECT id::text AS id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
-      const promotions=await pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
-      const viewer=await identity(req),cfg=await settings();
-      const promotionStats=await pool.query("SELECT MAX(decided_at) AS last_promotion_at FROM promotion_suggestions WHERE user_id=$1 AND status='APPROVED'",[userId]);
-      const disciplineStats=await pool.query("SELECT COUNT(*) FILTER (WHERE LOWER(type)='strike')::INTEGER AS strike_count,MAX(COALESCE(decided_at,created_at)) AS last_punishment_at FROM management_punishments WHERE user_id=$1 AND status='APPROVED'",[userId]);
+      const activity=canViewActivity?await pool.query("SELECT (COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)+COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0))::BIGINT AS seconds,COALESCE(SUM(active_seconds),0)::BIGINT AS active_seconds,COALESCE(SUM(afk_seconds),0)::BIGINT AS afk_seconds,COALESCE(SUM(typing_seconds),0)::BIGINT AS typing_seconds,COALESCE(SUM(message_count),0)::BIGINT AS message_count,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]):{rows:[]};
+      const gameSessions=canViewActivity?await pool.query("SELECT id,username,started_at,ended_at,CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END AS seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE user_id=$1 ORDER BY started_at DESC LIMIT 250",[userId]):{rows:[]};
+      const notes=canViewNotes?await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
+      const teamHistory=canViewTimeline?await pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]):{rows:[]};
+      const timeline=canViewTimeline?await pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]):{rows:[]};
+      const tasks=canViewTasks?await pool.query("SELECT id::text AS id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
+      const promotions=canViewPromotions?await pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
+      const promotionStats=canViewPromotions?await pool.query("SELECT MAX(decided_at) AS last_promotion_at FROM promotion_suggestions WHERE user_id=$1 AND status='APPROVED'",[userId]):{rows:[{}]};
+      const disciplineStats=canViewPunishments?await pool.query("SELECT COUNT(*) FILTER (WHERE LOWER(type)='strike')::INTEGER AS strike_count,MAX(COALESCE(decided_at,created_at)) AS last_punishment_at FROM management_punishments WHERE user_id=$1 AND status='APPROVED'",[userId]):{rows:[{}]};
       const lastPromotionAt=promotionStats.rows[0]?.last_promotion_at||null;
       const lastPunishmentAt=disciplineStats.rows[0]?.last_punishment_at||null;
       const strikeCount=Number(disciplineStats.rows[0]?.strike_count||0);
       const viewerRank=Number(viewer?.rank||0);
-      res.json({canAddNotes:viewerRank>=238,canModerateNotes:viewerRank>=245,canRequestPromotion:viewerRank>=Number(cfg.promotion_suggest_rank||238),canRequestPunishment:viewerRank>=Number(cfg.punishment_request_rank||1)||viewerRank>=Number(cfg.punishment_add_rank||245),lastPromotionAt,lastPunishmentAt,strikeCount,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,gameSessions:gameSessions.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
+      res.json({canAddNotes:viewerRank>=238,canModerateNotes:viewerRank>=245,canViewActivity,canViewPunishments,canViewNotes,canViewTimeline,canViewTasks,canViewPromotions,canRequestPromotion:viewerRank>=Number(cfg.promotion_suggest_rank||238),canRequestPunishment:viewerRank>=Number(cfg.punishment_request_rank||1)||viewerRank>=Number(cfg.punishment_add_rank||245),lastPromotionAt,lastPunishmentAt,strikeCount,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,gameSessions:gameSessions.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]||null,notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
     }catch(e){next(e);}
   });
 
