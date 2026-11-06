@@ -463,7 +463,7 @@ let liveServerState={servers:[],players:[],canModerate:false,canAdmin:false};
 function renderLivePlayers(){
  const el=$("inGameRoster"),q=String($("livePlayerSearch")?.value||"").toLowerCase();if(!el)return;
  const rows=liveServerState.players.filter(p=>(p.username+" "+p.display_name).toLowerCase().includes(q));
- el.innerHTML=rows.length?'<table class="data-table in-game-table"><thead><tr><th>PLAYER</th><th>SERVER</th><th>TIME IN SERVER</th><th>GROUP ROLE</th></tr></thead><tbody>'+rows.map(p=>'<tr><td><div class="in-game-person"><img src="https://www.roblox.com/headshot-thumbnail/image?userId='+encodeURIComponent(p.user_id)+'&width=48&height=48&format=png"><span><b>'+escapeHtml(p.username)+'</b><small>'+escapeHtml(p.display_name||p.username)+'</small></span></div></td><td><code>'+escapeHtml(p.server_id.slice(0,12))+'</code></td><td>'+formatDuration(p.current_seconds)+'</td><td>'+ (Number(p.staff_rank)>=230?'Staff · Rank '+p.staff_rank:'Player')+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No players are currently reporting in. Install the Live Server Bridge script.</div>';
+ el.innerHTML=rows.length?'<table class="data-table in-game-table"><thead><tr><th>PLAYER</th><th>SERVER</th><th>TIME IN SERVER</th><th>GROUP ROLE</th><th>PORTAL ACTION</th></tr></thead><tbody>'+rows.map(p=>'<tr><td><div class="in-game-person"><img src="https://www.roblox.com/headshot-thumbnail/image?userId='+encodeURIComponent(p.user_id)+'&width=48&height=48&format=png"><span><b>'+escapeHtml(p.username)+'</b><small>'+escapeHtml(p.display_name||p.username)+'</small></span></div></td><td><code>'+escapeHtml(p.server_id.slice(0,12))+'</code></td><td>'+formatDuration(p.current_seconds)+'</td><td>'+ (Number(p.staff_rank)>=230?'Staff · Rank '+p.staff_rank:'Player')+'</td><td><select data-action-choice="'+escapeHtml(p.user_id)+'"><option value="kick">Kick</option><option value="warn">Warn</option><option value="respawn">Respawn</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select><button class="quiet-btn" data-run-player="'+escapeHtml(p.user_id)+'" data-server="'+escapeHtml(p.server_id)+'">Run</button></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No players are currently reporting in. Install the Live Server Bridge script.</div>';
 }
 async function loadInGame(){
  const el=$("inGameRoster");if(!el)return;el.innerHTML='<div class="empty-state">Refreshing live servers…</div>';
@@ -480,6 +480,24 @@ async function loadInGame(){
 async function loadServerCommandHistory(){const el=$("serverCommandHistory");if(!el)return;try{const d=await api("/api/management/server-command-history");el.innerHTML=d.items.length?'<table class="data-table"><thead><tr><th>TIME</th><th>ACTION</th><th>PLAYER</th><th>STATUS</th><th>BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.status)+'</td><td>'+escapeHtml(x.requested_by_name)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No portal commands have been sent yet.</div>';}catch(e){el.textContent=e.message;}}
 $("livePlayerSearch")?.addEventListener("input",renderLivePlayers);
 $("refreshServerHistory")?.addEventListener("click",loadServerCommandHistory);
+async function portalServerAction(action,serverId,targetUserId,reason,message){
+ const d=await api("/api/management/server-commands",{method:"POST",body:JSON.stringify({action,serverId,targetUserId,reason,message})});
+ notice(d.message||"Command queued for the server.","success");await loadServerCommandHistory();
+}
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("[data-run-player]");if(!b)return;
+ const id=b.dataset.runPlayer,server=b.dataset.server,action=document.querySelector('[data-action-choice="'+id+'"]')?.value||"kick";
+ let reason="";
+ if(["kick","warn","mute"].includes(action)){reason=prompt("Enter a reason for "+action+":")||"";if(!reason.trim())return;}
+ if(!confirm("Confirm "+action+" for this player?"))return;
+ b.disabled=true;try{await portalServerAction(action,server,id,reason,"");await loadInGame();}catch(err){notice(err.message,"error");b.disabled=false;}
+});
+$("sendServerAnnouncement")?.addEventListener("click",async()=>{
+ const server=$("announceServer").value,message=$("serverAnnouncement").value.trim();
+ if(!server||!message)return notice("Choose a server and enter an announcement.","error");
+ const b=$("sendServerAnnouncement");b.disabled=true;
+ try{await portalServerAction("announce",server,"","",message);$("serverAnnouncement").value="";}catch(e){notice(e.message,"error");}finally{b.disabled=false;}
+});
 async function loadGameLinks(){
  const el=$("gameLinksList");if(!el)return;el.innerHTML='<div class="empty-state">Loading game links…</div>';
  try{const d=await api("/api/management/game-links"),links=d.links||[];el.innerHTML=links.length?links.map(x=>'<a class="game-link-card" href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer"><span class="game-link-icon">↗</span><span><b>'+escapeHtml(x.title)+'</b><small>'+escapeHtml(x.description||"Open this resource")+'</small></span><span class="game-link-arrow">Open ↗</span></a>').join(""):'<div class="empty-state">No game links have been added yet. The group owner can add links from Settings.</div>';}
