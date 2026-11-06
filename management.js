@@ -345,11 +345,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const tasks=await pool.query("SELECT id::text AS id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const promotions=await pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const viewer=await identity(req),cfg=await settings();
-      const approvedPromotions=promotions.rows.filter(x=>String(x.status||"").toUpperCase()==="APPROVED"&&x.decided_at).sort((a,b)=>new Date(b.decided_at)-new Date(a.decided_at));
-      const approvedPunishments=punishments.rows.filter(x=>String(x.status||"").toUpperCase()==="APPROVED");
-      const lastPromotionAt=approvedPromotions[0]?.decided_at||null;
-      const lastPunishmentAt=approvedPunishments.map(x=>x.decided_at||x.created_at).sort((a,b)=>new Date(b)-new Date(a))[0]||null;
-      const strikeCount=approvedPunishments.filter(x=>String(x.type||"").toLowerCase()==="strike").length;
+      const promotionStats=await pool.query("SELECT MAX(decided_at) AS last_promotion_at FROM promotion_suggestions WHERE user_id=$1 AND status='APPROVED'",[userId]);
+      const disciplineStats=await pool.query("SELECT COUNT(*) FILTER (WHERE LOWER(type)='strike')::INTEGER AS strike_count,MAX(COALESCE(decided_at,created_at)) AS last_punishment_at FROM management_punishments WHERE user_id=$1 AND status='APPROVED'",[userId]);
+      const lastPromotionAt=promotionStats.rows[0]?.last_promotion_at||null;
+      const lastPunishmentAt=disciplineStats.rows[0]?.last_punishment_at||null;
+      const strikeCount=Number(disciplineStats.rows[0]?.strike_count||0);
       const viewerRank=Number(viewer?.rank||0);
       res.json({canAddNotes:viewerRank>=238,canModerateNotes:viewerRank>=245,canRequestPromotion:viewerRank>=Number(cfg.promotion_suggest_rank||238),canRequestPunishment:viewerRank>=Number(cfg.punishment_request_rank||1)||viewerRank>=Number(cfg.punishment_add_rank||245),lastPromotionAt,lastPunishmentAt,strikeCount,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
     }catch(e){next(e);}
