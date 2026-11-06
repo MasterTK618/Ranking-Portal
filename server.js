@@ -303,11 +303,17 @@ app.get("/api/group/members/search",requireLogin,async(req,res)=>{
   const keyword=String(req.query.q||"").trim().replace(/\s+/g," ");
   if(keyword.length<3||keyword.length>40)return res.status(400).json({error:"Enter at least 3 characters to search group members."});
   try{
-    const endpoint="https://users.roblox.com/v1/users/search?keyword="+encodeURIComponent(keyword)+"&limit=10";
-    const response=await fetch(endpoint);
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error("Roblox user search returned HTTP "+response.status+".");
-    const candidates=(Array.isArray(data.data)?data.data:[]).filter(u=>/^\d+$/.test(String(u.id||"")));
+    const exactResponse=await fetch("https://users.roblox.com/v1/usernames/users",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({usernames:[keyword],excludeBannedUsers:false})
+    });
+    const exactData=await exactResponse.json().catch(()=>({}));
+    const searchResponse=await fetch("https://users.roblox.com/v1/users/search?keyword="+encodeURIComponent(keyword)+"&limit=10");
+    const searchData=await searchResponse.json().catch(()=>({}));
+    if(!searchResponse.ok)throw new Error("Roblox user search returned HTTP "+searchResponse.status+".");
+    const candidateMap=new Map();
+    for(const user of [...(Array.isArray(exactData.data)?exactData.data:[]),...(Array.isArray(searchData.data)?searchData.data:[])])if(/^\d+$/.test(String(user.id||"")))candidateMap.set(String(user.id),user);
+    const candidates=[...candidateMap.values()];
     const checked=await Promise.all(candidates.map(async user=>{
       try{
         const membership=await fetch("https://groups.roblox.com/v1/users/"+encodeURIComponent(user.id)+"/groups/roles");
