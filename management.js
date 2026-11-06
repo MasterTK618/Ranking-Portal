@@ -71,7 +71,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/game-commands/pending", requireGameSecret, async(req,res,next)=>{try{
     const serverId=String(req.query?.serverId||"");if(!serverId||serverId.length>120)return res.status(400).json({error:"A valid server ID is required."});
     const client=await pool.connect();try{await client.query("BEGIN");
-      const found=await client.query("SELECT id,action,target_user_id,payload FROM portal_game_commands WHERE server_id=$1 AND status='PENDING' ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 10",[serverId]);
+      const found=await client.query("SELECT id,action,target_user_id,payload FROM portal_game_commands WHERE server_id=$1 AND status='PENDING' ORDER BY created_at ASC LIMIT 10 FOR UPDATE SKIP LOCKED",[serverId]);
       const ids=found.rows.map(x=>x.id);
       if(ids.length)await client.query("UPDATE portal_game_commands SET status='EXECUTING',started_at=NOW() WHERE id=ANY($1::bigint[])",[ids]);
       await client.query("COMMIT");res.json({commands:found.rows});
