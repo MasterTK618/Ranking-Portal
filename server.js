@@ -323,7 +323,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
             if (item.role?.id && !roles.some(r => String(r.id) === String(item.role.id))) {
               roles.push({id:String(item.role.id),name:role,rank});
             }
-            if (rank >= staffMinRank) base.push({
+            if (rank >= effectiveStaffMinRank) base.push({
               id, rank, role,
               username:String(item.user?.username || ""),
               displayName:String(item.user?.displayName || "")
@@ -362,7 +362,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
         }).filter(m => /^\d+$/.test(m.id));
         diagnostics.openCloudStatus = "success";
         diagnostics.fetchedMembers = Math.max(diagnostics.fetchedMembers, cloudMembers.length);
-        const eligible = cloudMembers.filter(m => m.rank >= staffMinRank);
+        const eligible = cloudMembers.filter(m => m.rank >= effectiveStaffMinRank);
         if (eligible.length || publicError) {
           base = eligible;
           diagnostics.eligibleMembers = eligible.length;
@@ -415,7 +415,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
       roles:roles.sort((x,y) => y.rank-x.rank),
       count:members.length,
       source:diagnostics.source,
-      minRank:staffMinRank,
+      minRank:effectiveStaffMinRank,
       diagnostics
     });
   } catch (err) {
