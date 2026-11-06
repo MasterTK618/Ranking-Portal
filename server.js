@@ -443,12 +443,46 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
   }
 });
 app.get("/api/diagnostics/roblox",requireLogin,async(req,res)=>{
+  const result={
+    groupId:GROUP_ID,
+    apiKeyConfigured:!!process.env.ROBLOX_API_KEY,
+    publicGroupApi:{ok:false,status:null,error:null,groupName:null},
+    publicGroupRoles:{ok:false,status:null,roleCount:0,error:null,roles:[]},
+    openCloudRoles:{ok:false,status:null,roleCount:0,error:null,roles:[]}
+  };
+  // Test the exact public endpoint used by the Settings role dropdown, not just
+  // the group metadata endpoint. This separates group visibility from role access.
   try{
-    const result={groupId:GROUP_ID,apiKeyConfigured:!!process.env.ROBLOX_API_KEY,publicGroupApi:{ok:false,status:null,error:null},openCloudRoles:{ok:false,roleCount:0,error:null}};
-    try{const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID));const data=await response.json().catch(()=>({}));result.publicGroupApi.status=response.status;result.publicGroupApi.ok=response.ok;result.publicGroupApi.groupName=data.name||null;if(!response.ok)result.publicGroupApi.error=data.errors?.[0]?.message||data.message||"Public group request failed.";}catch(e){result.publicGroupApi.error=e.message;}
-    try{const roles=await getRoles();result.openCloudRoles.ok=true;result.openCloudRoles.roleCount=roles.length;result.openCloudRoles.roles=roles.map(r=>({name:r.name,rank:r.rank}));}catch(e){result.openCloudRoles.error=e.message;result.openCloudRoles.status=e.status||null;}
-    res.json(result);
-  }catch(e){res.status(502).json({error:e.message});}
+    const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID));
+    const data=await response.json().catch(()=>({}));
+    result.publicGroupApi.status=response.status;
+    result.publicGroupApi.ok=response.ok;
+    result.publicGroupApi.groupName=data.name||null;
+    if(!response.ok)result.publicGroupApi.error=data.errors?.[0]?.message||data.message||"Public group request failed.";
+  }catch(e){result.publicGroupApi.error=e.message;}
+  try{
+    const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles");
+    const data=await response.json().catch(()=>({}));
+    result.publicGroupRoles.status=response.status;
+    if(!response.ok||!Array.isArray(data.roles)){
+      result.publicGroupRoles.error=data.errors?.[0]?.message||data.message||("Expected a roles array; received HTTP "+response.status+".");
+    }else{
+      result.publicGroupRoles.ok=true;
+      result.publicGroupRoles.roleCount=data.roles.length;
+      result.publicGroupRoles.roles=data.roles.map(r=>({name:String(r.name||"Unnamed role"),rank:Number(r.rank)}));
+    }
+  }catch(e){result.publicGroupRoles.error=e.message;}
+  try{
+    const roles=await getRoles();
+    result.openCloudRoles.ok=true;
+    result.openCloudRoles.roleCount=roles.length;
+    result.openCloudRoles.roles=roles.map(r=>({name:r.name,rank:r.rank}));
+  }catch(e){
+    result.openCloudRoles.error=e.message;
+    result.openCloudRoles.status=e.status||null;
+    result.openCloudRoles.robloxError=e.roblox?.message||e.roblox?.error||null;
+  }
+  res.json(result);
 });
 app.get("/api/roles", requireLogin, requireRanker, async (req,res,next) => {
   try {
