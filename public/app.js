@@ -470,6 +470,7 @@ async function loadInGame(){
  const el=$("inGameRoster");if(!el)return;el.innerHTML='<div class="empty-state">Refreshing live servers…</div>';
  try{
   const d=await api("/api/management/live-servers");liveServerState=d;
+  document.querySelector(".server-announce-form")?.classList.toggle("hidden",!d.canAnnounce);
   const players=d.players||[],servers=d.servers||[];
   $("inGameSummary").innerHTML='<article class="activity-stat"><small>ACTIVE SERVERS</small><b>'+servers.length+'</b></article><article class="activity-stat"><small>PLAYERS IN-GAME</small><b>'+players.length+'</b></article><article class="activity-stat"><small>STAFF IN-GAME</small><b>'+players.filter(p=>Number(p.staff_rank)>=230).length+'</b></article><article class="activity-stat"><small>ACCESS</small><b>'+(d.canAdmin?'Server admin':d.canModerate?'Moderator':'View only')+'</b></article>';
   $("inGameUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString();
