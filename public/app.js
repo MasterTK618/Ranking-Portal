@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[];
-const pageNames = {overview:"Overview",views:"Views & Insights",rank:"Group Ranking",members:"Staff Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
+const pageNames = {overview:"Overview",views:"Views & Insights",rank:"Group Ranking",members:"Staff Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"In-Game Staff",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
@@ -29,6 +29,8 @@ function showPage(page,view) {
   if(page==="sessions"){if(!staffDirectory.length)loadStaffDirectory();if(selectedView==="requests")loadSessionRequests();else loadSessions();}
   if(page==="members")loadStaffDirectory();
   if(page==="activity")loadManagement("activity");
+  if(page==="ingame")loadInGame();
+  if(page==="gameLinks")loadGameLinks();
   if(page==="punishments"){loadManagement("punishments");if(selectedView==="audit")loadPunishmentAudit();}
   if(page==="promotions"){loadManagement("promotions");if(selectedView==="history")loadPromotionAudit();}
   if(page==="leaves")loadManagement("leaves");
@@ -139,7 +141,7 @@ async function loadManagementSettings(){
     const d=await api("/api/management/settings");
     await loadQuotaRules();updateQuotaScope();
     const map={activity_view_rank:"activityViewRank",activity_edit_rank:"activityEditRank",punishment_view_rank:"punishmentViewRank",punishment_add_rank:"punishmentAddRank",punishment_request_rank:"punishmentRequestRank",punishment_approve_rank:"punishmentApproveRank",promotion_suggest_rank:"promotionSuggestRank",promotion_approve_rank:"promotionApproveRank",leave_approve_rank:"leaveApproveRank",knowledge_manage_rank:"knowledgeManageRank",session_create_rank:"sessionCreateRank",session_delete_rank:"sessionDeleteRank",task_view_rank:"taskViewRank",task_manage_rank:"taskManageRank",session_approve_rank:"sessionApproveRank",session_status_rank:"sessionStatusRank",notification_view_rank:"notificationViewRank",analytics_view_rank:"analyticsViewRank",quota_hours_week:"quotaHoursWeek",quota_sessions_week:"quotaSessionsWeek",quota_tasks_week:"quotaTasksWeek",notifications_enabled:"notificationsEnabled",recurring_sessions_enabled:"recurringSessionsEnabled",auto_approve_requests_enabled:"autoApproveRequestsEnabled",auto_approve_requests_rank:"autoApproveRequestsRank"};
-    Object.entries(map).forEach(([key,id])=>{const el=$(id);if(el.type==="checkbox")el.checked=Number(d.settings[key])!==0;else el.value=d.settings[key];});if($("autoApproveRequestsRankValue"))$("autoApproveRequestsRankValue").textContent=$("autoApproveRequestsRank")?.value||"249";
+    Object.entries(map).forEach(([key,id])=>{const el=$(id);if(el.type==="checkbox")el.checked=Number(d.settings[key])!==0;else el.value=d.settings[key];});if($("autoApproveRequestsRankValue"))$("autoApproveRequestsRankValue").textContent=$("autoApproveRequestsRank")?.value||"249";renderGameLinkEditor(Array.isArray(d.settings.game_links)?d.settings.game_links:[]);
   }catch(e){if(!e.message.includes("Only the group owner"))notice(e.message,"error")}
 }
 $("autoApproveRequestsRank")?.addEventListener("input",()=>{$("autoApproveRequestsRankValue").textContent=$("autoApproveRequestsRank").value;});
@@ -455,6 +457,45 @@ document.addEventListener("click",async e=>{
 });
 
 $("refreshViews")?.addEventListener("click",loadViews);
+
+function formatDuration(value){const total=Math.max(0,Math.floor(Number(value||0))),h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return h?String(h)+"h "+String(m).padStart(2,"0")+"m":m?String(m)+"m "+String(s).padStart(2,"0")+"s":String(s)+"s";}
+async function loadInGame(){
+ const roster=$("inGameRoster");if(!roster)return;roster.innerHTML='<div class="empty-state">Refreshing live game presence…</div>';
+ try{
+  if(!staffDirectory.length)try{await loadStaffDirectory();}catch{}
+  const d=await api("/api/management/in-game"),items=d.members||[],people=new Map(staffDirectory.map(x=>[String(x.id),x]));
+  $("inGameSummary").innerHTML='<article class="activity-stat"><small>STAFF IN-GAME NOW</small><b>'+items.length.toLocaleString()+'</b></article><article class="activity-stat"><small>LONGEST CURRENT SESSION</small><b>'+formatDuration(Math.max(0,...items.map(x=>Number(x.current_seconds||0))))+'</b></article><article class="activity-stat"><small>TRACKER STATUS</small><b>Live</b></article>';
+  $("inGameUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString()+" · "+(d.canViewAll?"All tracked staff":"Your current session only");
+  roster.innerHTML=items.length?'<table class="data-table in-game-table"><thead><tr><th>STAFF MEMBER</th><th>GROUP ROLE</th><th>JOINED SERVER</th><th>CURRENT SESSION</th><th>ACTIVE TIME</th><th>MESSAGES</th></tr></thead><tbody>'+items.map(x=>{const p=people.get(String(x.user_id))||{},name=p.username||x.username||"Staff member",avatar=p.avatarUrl||("https://www.roblox.com/headshot-thumbnail/image?userId="+encodeURIComponent(x.user_id)+"&width=48&height=48&format=png");return '<tr><td><button type="button" class="in-game-person" data-live-profile="'+escapeHtml(x.user_id)+'"><img src="'+escapeHtml(avatar)+'" alt="" loading="lazy"><span><b>'+escapeHtml(name)+'</b><small>In Roblox right now</small></span></button></td><td>'+escapeHtml(p.role||"Lemonz staff")+(p.rank?'<small class="table-subtext">Rank '+p.rank+'</small>':'')+'</td><td>'+escapeHtml(formatDate(x.started_at))+'</td><td><b class="live-session-time" data-live-start="'+escapeHtml(x.started_at)+'">'+formatDuration(x.current_seconds)+'</b></td><td>'+formatDuration(x.active_seconds)+'</td><td>'+Number(x.message_count||0).toLocaleString()+'</td></tr>';}).join("")+'</tbody></table>':'<div class="empty-state"><b>No staff members are currently showing as in-game.</b><p>Once the updated Roblox tracker is installed, staff will appear here automatically.</p></div>';
+ }catch(e){roster.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+async function loadGameLinks(){
+ const el=$("gameLinksList");if(!el)return;el.innerHTML='<div class="empty-state">Loading game links…</div>';
+ try{const d=await api("/api/management/game-links"),links=d.links||[];el.innerHTML=links.length?links.map(x=>'<a class="game-link-card" href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer"><span class="game-link-icon">↗</span><span><b>'+escapeHtml(x.title)+'</b><small>'+escapeHtml(x.description||"Open this resource")+'</small></span><span class="game-link-arrow">Open ↗</span></a>').join(""):'<div class="empty-state">No game links have been added yet. The group owner can add links from Settings.</div>';}
+ catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+function renderGameLinkEditor(links){
+ const el=$("gameLinkEditorList");if(!el)return;el.innerHTML="";const items=Array.isArray(links)?links:[];
+ if(!items.length)items.push({title:"",url:"",description:""});items.forEach(item=>addGameLinkEditorRow(item));
+}
+function addGameLinkEditorRow(item={}){
+ const el=$("gameLinkEditorList");if(!el)return;const row=document.createElement("div");row.className="game-link-editor-row";
+ row.innerHTML='<div class="game-link-editor-fields"><div><label>TITLE</label><input class="game-link-title" maxlength="60" placeholder="Main game" value="'+escapeHtml(item.title||"")+'"></div><div><label>HTTPS URL</label><input class="game-link-url" type="url" maxlength="500" placeholder="https://www.roblox.com/games/…" value="'+escapeHtml(item.url||"")+'"></div><div class="full-width"><label>DESCRIPTION (OPTIONAL)</label><input class="game-link-description" maxlength="200" placeholder="Join the main café experience" value="'+escapeHtml(item.description||"")+'"></div></div><button type="button" class="danger-btn game-link-remove">Remove</button>';
+ row.querySelector(".game-link-remove").addEventListener("click",()=>{row.remove();if(!el.children.length)addGameLinkEditorRow();});el.appendChild(row);
+}
+$("addGameLink")?.addEventListener("click",()=>{if($("gameLinkEditorList")?.children.length>=30){notice("You can add up to 30 game links.","error");return;}addGameLinkEditorRow();});
+$("saveGameLinks")?.addEventListener("click",async()=>{
+ const btn=$("saveGameLinks");btn.disabled=true;btn.textContent="Saving…";
+ try{const links=[...$("gameLinkEditorList").querySelectorAll(".game-link-editor-row")].map(row=>({title:row.querySelector(".game-link-title").value.trim(),url:row.querySelector(".game-link-url").value.trim(),description:row.querySelector(".game-link-description").value.trim()})).filter(x=>x.title||x.url||x.description);
+ await api("/api/management/game-links",{method:"PUT",body:JSON.stringify({links})});renderGameLinkEditor(links);notice("Game links saved.","success");await loadGameLinks();}
+ catch(e){notice(e.message,"error");}finally{btn.disabled=false;btn.textContent="Save game links";}
+});
+$("refreshInGame")?.addEventListener("click",loadInGame);
+$("refreshGameLinks")?.addEventListener("click",loadGameLinks);
+document.addEventListener("click",async e=>{const b=e.target.closest("[data-live-profile]");if(!b)return;showPage("members");await showStaffProfile(b.dataset.liveProfile);});
+setInterval(()=>{if(!$("ingamePage")?.classList.contains("hidden"))loadInGame();},30000);
+setInterval(()=>{if($("ingamePage")&&!$("ingamePage").classList.contains("hidden"))document.querySelectorAll("[data-live-start]").forEach(el=>{const started=new Date(el.dataset.liveStart).getTime();if(Number.isFinite(started))el.textContent=formatDuration((Date.now()-started)/1000);});},1000);
+
 async function loadManagement(tab){
   if(!staffDirectory.length){try{await loadStaffDirectory();}catch{}}
   if(tab==="activity"){
@@ -709,7 +750,7 @@ async function showStaffProfile(id,openTeams=false){
   const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML='<div class="profile-loading"><span class="loading-dot"></span> Loading staff profile…</div>';
   try{
     const d=await api("/api/management/members/"+encodeURIComponent(id)),m=d.member;
-    const canManageTeams=Number(sessionData?.identity?.rank)>=255;const tabs=[["overview","Overview"],["requests","Requests"],["timeline","Full history"],["teams","Teams"],["shifts","Shift history"],["discipline","Discipline"],["notes","Management notes"]].filter(t=>t[0]!=="teams"||canManageTeams);
+    const canManageTeams=Number(sessionData?.identity?.rank)>=255;const tabs=[["overview","Overview"],["requests","Requests"],["timeline","Full history"],["teams","Teams"],["shifts","Shift history"],["gameSessions","Game Sessions"],["discipline","Discipline"],["notes","Management notes"]].filter(t=>t[0]!=="teams"||canManageTeams);
     panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">STAFF PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.role)+' · Rank '+m.rank+'</p></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div>'+
     '<div class="profile-stats"><div><b>'+d.sessions.length+'</b><small>Shifts attended</small></div><div><b>'+Number(d.strikeCount||0)+'</b><small>Approved strikes</small></div><div><b>'+escapeHtml(d.lastPromotionAt?formatDate(d.lastPromotionAt):"No record")+'</b><small>Last promotion date · approved Roblox rank request</small></div><div><b>'+escapeHtml(d.lastPunishmentAt?formatDate(d.lastPunishmentAt):"No record")+'</b><small>Last punishment date</small></div><div><b>'+Math.floor(Number(d.activity?.active_seconds||0)/3600)+'h</b><small>Active play time</small></div><div><b>'+Number(d.activity?.message_count||0).toLocaleString()+'</b><small>Chat messages</small></div><div><b>'+Math.floor(Number(d.activity?.typing_seconds||0)/60)+'m</b><small>Chat typing time</small></div><div><b>'+Math.floor(Number(d.activity?.afk_seconds||0)/60)+'m</b><small>AFK time</small></div></div>'+'<div class="profile-activity"><div class="profile-activity-heading"><div><h4>Recent session attendance</h4><p>Sessions recorded over the last seven days</p></div><span>'+d.sessions.filter(s=>new Date(String(s.session_date).slice(0,10)+"T00:00:00")>=new Date(Date.now()-7*86400000)).length+' sessions</span></div><div class="profile-week-chart">'+Array.from({length:7},(_,i)=>{const day=new Date();day.setHours(0,0,0,0);day.setDate(day.getDate()-(6-i));const count=d.sessions.filter(s=>String(s.session_date).slice(0,10)===day.toISOString().slice(0,10)).length;return '<div class="profile-week-day"><b>'+count+'</b><i style="height:'+Math.max(4,Math.min(100,count*24))+'%"></i><small>'+day.toLocaleDateString(undefined,{weekday:"short"})+'</small></div>';}).join("")+'</div></div>'+
     '<nav class="profile-tabs" aria-label="Staff profile sections">'+tabs.map((t,i)=>'<button type="button" class="profile-tab'+(i===0?' active':'')+'" data-profile-tab="'+t[0]+'">'+t[1]+'</button>').join("")+'</nav>'+
@@ -722,6 +763,7 @@ async function showStaffProfile(id,openTeams=false){
     (d.canAddNotes?'<form id="memberNoteForm" class="member-note-form"><label for="memberNoteBody">ADD A NOTE</label><textarea id="memberNoteBody" rows="3" maxlength="2000" placeholder="Write a private management note about this staff member…"></textarea><div class="profile-note-footer"><small>Visible to authorized staff viewing this profile.</small><button class="primary-btn" type="submit">＋ Add note</button></div></form>':'<p class="muted">You need rank 238 or higher to add management notes.</p>')+
     '<div id="memberNotesList" class="member-notes-list">'+((d.notes||[]).length?d.notes.map(n=>'<article class="member-note"><div><b>'+escapeHtml(n.created_by_name)+'</b><time>'+escapeHtml(formatDate(n.created_at))+'</time></div><p>'+escapeHtml(n.body)+'</p>'+((String(n.created_by)===String(sessionData?.user?.id)||d.canModerateNotes)?'<button type="button" class="danger-text-btn" data-note-delete="'+escapeHtml(n.id)+'">Delete note</button>':'')+'</article>').join(""):'<div class="empty-state">No management notes yet.</div>')+'</div></section>';
     panel.insertAdjacentHTML("beforeend",'<section class="profile-panel hidden" data-profile-panel="timeline"><h4>Complete management timeline</h4><p class="muted">Recorded actions involving this staff member, newest first.</p>'+(d.timeline?.length?'<ul class="history-list">'+d.timeline.map(x=>'<li><b>'+escapeHtml(x.category)+' · '+escapeHtml(x.action)+'</b><small>'+escapeHtml(x.details||"Management action")+' · '+escapeHtml(x.actor_name||"Management")+' · '+escapeHtml(formatDate(x.created_at))+'</small></li>').join("")+'</ul>':'<p class="muted">No management actions have been recorded for this staff member yet.</p>')+'</section>');
+     panel.insertAdjacentHTML("beforeend",'<section class="profile-panel hidden" data-profile-panel="gameSessions"><div class="profile-notes-heading"><div><h4>Roblox game session history</h4><p class="muted">Every tracked join session for this staff member, newest first. Up to 250 recent sessions are shown.</p></div><span class="profile-note-count">'+(d.gameSessions||[]).length+' recorded</span></div>'+(d.gameSessions?.length?'<div class="table-wrap"><table class="data-table profile-game-session-table"><thead><tr><th>JOINED</th><th>LEFT</th><th>TIME IN-GAME</th><th>ACTIVE</th><th>AFK</th><th>MESSAGES</th></tr></thead><tbody>'+d.gameSessions.map(s=>'<tr><td>'+escapeHtml(formatDate(s.started_at))+'</td><td>'+(s.ended_at?escapeHtml(formatDate(s.ended_at)):'<span class="status-pill status-ongoing">In-game</span>')+'</td><td><b>'+formatDuration(s.seconds)+'</b></td><td>'+formatDuration(s.active_seconds)+'</td><td>'+formatDuration(s.afk_seconds)+'</td><td>'+Number(s.message_count||0).toLocaleString()+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty-state">No Roblox game sessions have been recorded for this staff member yet. Sessions begin appearing after the tracker is installed.</div>')+'</section>');
     panel.dataset.memberId=String(m.id);
     if(canManageTeams){await loadProfileTeamEditor(m.id);if(openTeams)panel.querySelector('[data-profile-tab="teams"]')?.click();}
     panel.scrollIntoView({behavior:"smooth",block:"start"});
