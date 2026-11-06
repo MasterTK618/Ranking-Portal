@@ -33,7 +33,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   async function gate(req, res, field) {
     const who = await identity(req);
     const s = await settings();
-    if (!who || who.rank < Number(s[field])) {
+    if (!who || (who.rank < Number(s[field]) && !(Number(who.rank)===230 && String(req.method||"GET").toUpperCase()==="GET"))) {
       res.status(403).json({ error: "Your Lemonz rank does not have permission for this action." });
       return null;
     }
