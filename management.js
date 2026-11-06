@@ -62,6 +62,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     }
     if(seen.size)await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND heartbeat_at<NOW()-INTERVAL '90 seconds' AND user_id<>ALL($2::text[])",[serverId,[...seen]]);
     else await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND heartbeat_at<NOW()-INTERVAL '90 seconds'",[serverId]);
+    await pool.query("INSERT INTO live_game_servers(server_id,place_id,heartbeat_at,player_count) VALUES($1,$2,NOW(),$3) ON CONFLICT(server_id) DO UPDATE SET place_id=EXCLUDED.place_id,heartbeat_at=NOW(),player_count=EXCLUDED.player_count",[serverId,placeId,seen.size]);
     res.json({ok:true,received:seen.size});
   }catch(e){next(e);}});
   router.post("/live/leave", requireGameSecret, async(req,res,next)=>{try{
@@ -439,8 +440,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/live-servers",async(req,res,next)=>{try{
     const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view live game servers."});
     await pool.query("DELETE FROM live_game_players WHERE heartbeat_at<NOW()-INTERVAL '90 seconds'");
-    const r=await pool.query(`SELECT server_id,place_id,COUNT(*)::INTEGER AS player_count,COUNT(*) FILTER(WHERE staff_rank>=230)::INTEGER AS staff_count,
-      MIN(joined_at) AS oldest_join FROM live_game_players GROUP BY server_id,place_id ORDER BY player_count DESC`);
+    const r=await pool.query(`SELECT s.server_id,s.place_id,COUNT(p.user_id)::INTEGER AS player_count,COUNT(p.user_id) FILTER(WHERE p.staff_rank>=230)::INTEGER AS staff_count,
+      s.started_at,s.heartbeat_at,(s.heartbeat_at>=NOW()-INTERVAL '90 seconds') AS is_online,
+      GREATEST(0,EXTRACT(EPOCH FROM(NOW()-s.started_at))::INTEGER)::BIGINT AS uptime_seconds
+      FROM live_game_servers s LEFT JOIN live_game_players p ON p.server_id=s.server_id AND p.heartbeat_at>=NOW()-INTERVAL '90 seconds'
+      WHERE s.heartbeat_at>=NOW()-INTERVAL '10 minutes'
+      GROUP BY s.server_id,s.place_id,s.started_at,s.heartbeat_at ORDER BY is_online DESC,player_count DESC`);
     const players=await pool.query("SELECT server_id,place_id,user_id,username,display_name,joined_at,heartbeat_at,staff_rank,GREATEST(0,EXTRACT(EPOCH FROM(NOW()-joined_at))::INTEGER)::BIGINT AS current_seconds FROM live_game_players ORDER BY server_id,joined_at");
     res.json({servers:r.rows,players:players.rows.map(p=>({...p,user_id:String(p.user_id),current_seconds:Number(p.current_seconds||0)})),canModerate:Number(who.rank)>=Number(cfg.live_player_moderate_rank||245),canAnnounce:Number(who.rank)>=Number(cfg.live_announce_rank||238),canAdmin:Number(who.rank)>=Number(cfg.live_server_admin_rank||255)});
   }catch(e){next(e);}});
@@ -459,7 +464,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(playerAction&&!/^\d+$/.test(targetId))return res.status(400).json({error:"Choose a player first."});
     if(["kick","warn","mute"].includes(action)&&!reason)return res.status(400).json({error:"Enter a reason for this action."});
     if(announce&&!message)return res.status(400).json({error:"Enter an announcement."});
-    const server=await pool.query("SELECT server_id FROM live_game_players WHERE server_id=$1 AND heartbeat_at>=NOW()-INTERVAL '90 seconds' LIMIT 1",[serverId]);
+    const server=await pool.query("SELECT server_id FROM live_game_servers WHERE server_id=$1 AND heartbeat_at>=NOW()-INTERVAL '90 seconds' LIMIT 1",[serverId]);
     if(!server.rowCount)return res.status(409).json({error:"That server is no longer active. Refresh the server list."});
     if(playerAction){const target=await pool.query("SELECT user_id,username,staff_rank FROM live_game_players WHERE server_id=$1 AND user_id=$2 AND heartbeat_at>=NOW()-INTERVAL '90 seconds'",[serverId,targetId]);if(!target.rowCount)return res.status(404).json({error:"That player is no longer in the selected server."});
       if(String(targetId)===String(req.session.user.id))return res.status(400).json({error:"You cannot use portal moderation actions on yourself."});
@@ -814,6 +819,10 @@ async function ensureManagementSchema(pool) {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query("ALTER TABLE knowledge_hub_items ADD COLUMN IF NOT EXISTS team_id BIGINT REFERENCES management_teams(id) ON DELETE SET NULL");
 
+  await pool.query(`CREATE TABLE IF NOT EXISTS live_game_servers (
+    server_id TEXT PRIMARY KEY,place_id TEXT NOT NULL,started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),player_count INTEGER NOT NULL DEFAULT 0)`);
+  await pool.query("CREATE INDEX IF NOT EXISTS live_game_servers_heartbeat_idx ON live_game_servers(heartbeat_at)");
   await pool.query(`CREATE TABLE IF NOT EXISTS live_game_players (
     server_id TEXT NOT NULL,place_id TEXT NOT NULL,user_id TEXT NOT NULL,username TEXT NOT NULL,display_name TEXT NOT NULL DEFAULT '',
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),staff_rank INTEGER NOT NULL DEFAULT 0,
