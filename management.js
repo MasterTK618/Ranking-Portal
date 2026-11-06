@@ -480,7 +480,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.status(202).json({ok:true,command:r.rows[0],message:"Command queued for the selected live server."});
   }catch(e){next(e);}});
   router.get("/server-command-history",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who||Number(who.rank)<238)return res.status(403).json({error:"Your rank cannot view server command history."});
+    const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view server command history."});
     await pool.query("UPDATE portal_game_commands SET status='FAILED',result='Server did not acknowledge this command before it expired.',completed_at=NOW() WHERE status='PENDING' AND created_at<NOW()-INTERVAL '2 minutes'");
     await pool.query("UPDATE portal_game_commands SET status='FAILED',result='Server stopped responding while this command was executing.',completed_at=NOW() WHERE status='EXECUTING' AND started_at<NOW()-INTERVAL '90 seconds'");
     const r=await pool.query("SELECT id,server_id,target_user_id,target_username,action,status,result,requested_by_name,created_at,completed_at FROM portal_game_commands ORDER BY created_at DESC LIMIT 100");
