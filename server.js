@@ -317,7 +317,9 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
 
   try {
     const viewer = await getIdentity(req.session.user.id);
-    const effectiveStaffMinRank = Number(viewer.rank)===230 ? 230 : staffMinRank;
+    // Management (rank 238+) must be able to see the directory even if an
+    // older saved threshold is still set to 243. Rank 230 remains read-only.
+    const effectiveStaffMinRank = Number(viewer.rank)===230 ? 230 : Math.min(staffMinRank,238);
     diagnostics.minRank = effectiveStaffMinRank;
     if (!viewer.inGroup || viewer.rank < effectiveStaffMinRank) return res.status(403).json({error:"Rank "+effectiveStaffMinRank+" or higher is required to view the staff directory."});
     let base = [], roles = [], publicError = null;
