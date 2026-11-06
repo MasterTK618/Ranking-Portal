@@ -714,6 +714,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave|announcement)-\d+$/.test(x)))]:[];
     if(ids.length>100)return res.status(400).json({error:"You can update up to 100 notifications at once."});
     if(ids.length)await pool.query("INSERT INTO management_notification_reads(user_id,notification_key,read_at) SELECT $1,x,NOW() FROM unnest($2::text[]) x ON CONFLICT(user_id,notification_key) DO UPDATE SET read_at=EXCLUDED.read_at",[String(req.session.user.id),ids]);
+    const announcementIds=ids.filter(x=>x.startsWith("announcement-")).map(x=>x.slice(12)).filter(x=>/^\\d+$/.test(x));
+    for(const announcementId of announcementIds)await pool.query("INSERT INTO management_announcement_reads(announcement_id,user_id,username,read_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(announcement_id,user_id) DO UPDATE SET read_at=EXCLUDED.read_at",[announcementId,String(req.session.user.id),String(req.session.user.name||"Staff")]);
     res.json({ok:true,updated:ids.length});
   }catch(e){next(e);}});
   router.get("/notifications",async(req,res,next)=>{try{
@@ -890,6 +892,8 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS announcements_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS announcement_view_rank INTEGER NOT NULL DEFAULT 230, ADD COLUMN IF NOT EXISTS announcement_publish_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS announcement_publish_team_ids JSONB NOT NULL DEFAULT '[]'::jsonb");
   await pool.query(`CREATE TABLE IF NOT EXISTS management_announcements (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',audience JSONB NOT NULL DEFAULT '{"all":true,"teamIds":[],"ranks":[]}'::jsonb,status TEXT NOT NULL DEFAULT 'PUBLISHED',publish_at TIMESTAMPTZ,expires_at TIMESTAMPTZ,published_at TIMESTAMPTZ,created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query(`CREATE TABLE IF NOT EXISTS management_announcement_reads (announcement_id BIGINT NOT NULL REFERENCES management_announcements(id) ON DELETE CASCADE,user_id TEXT NOT NULL,username TEXT NOT NULL,read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(announcement_id,user_id))`);
+  await pool.query("ALTER TABLE management_announcements ADD COLUMN IF NOT EXISTS image_url TEXT, ADD COLUMN IF NOT EXISTS link_url TEXT");
+
   await pool.query("CREATE INDEX IF NOT EXISTS management_announcements_status_idx ON management_announcements(status,publish_at,created_at DESC)");
 
 }
