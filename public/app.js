@@ -860,6 +860,7 @@ function renderDirectoryMembers(members){
  result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
 }
 function renderStaffDirectory(){
+ activeDirectoryRank="STAFF";renderDirectoryRankSidebar();
  if($("directoryHeading"))$("directoryHeading").textContent="Staff members";
  if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" group members ranked "+staffMinRank+"+";
  if($("directoryStatus"))$("directoryStatus").textContent="Showing all Lemonz staff ranked 230 and above. Choose a rank on the left to browse other members.";
