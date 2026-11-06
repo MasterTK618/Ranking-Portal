@@ -46,9 +46,8 @@ end
 local function addPlayer(p)
  joined[p]=tostring(DateTime.now().UnixTimestamp)
  local rank=0;pcall(function() rank=p:GetRankInGroup(16597698) end);ranks[p]=rank
- task.defer(report)
 end
-Players.PlayerAdded:Connect(addPlayer)
+Players.PlayerAdded:Connect(function(p) addPlayer(p);task.defer(report) end)
 Players.PlayerRemoving:Connect(function(p) call("/api/management/live/leave","POST",{serverId=SERVER_ID,userId=tostring(p.UserId)});joined[p]=nil;muted[p.UserId]=nil;ranks[p]=nil end)
 for _,p in ipairs(Players:GetPlayers()) do addPlayer(p) end
 task.spawn(function() while task.wait(25) do report() end end)
