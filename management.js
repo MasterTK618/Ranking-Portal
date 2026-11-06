@@ -55,7 +55,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const userId=String(p?.userId||""),username=String(p?.username||"").trim().slice(0,40),displayName=String(p?.displayName||username).trim().slice(0,40),rank=Number(p?.staffRank||0);
       if(!/^\d+$/.test(userId)||!username||seen.has(userId))continue;seen.add(userId);
       await pool.query(`INSERT INTO live_game_players(server_id,place_id,user_id,username,display_name,joined_at,heartbeat_at,staff_rank)
-        VALUES($1,$2,$3,$4,$5,COALESCE(NULLIF($6,'')::timestamptz,NOW()),NOW(),$7)
+        VALUES($1,$2,$3,$4,$5,COALESCE(to_timestamp(NULLIF($6,'')::double precision),NOW()),NOW(),$7)
         ON CONFLICT(server_id,user_id) DO UPDATE SET place_id=EXCLUDED.place_id,username=EXCLUDED.username,display_name=EXCLUDED.display_name,heartbeat_at=NOW(),staff_rank=EXCLUDED.staff_rank`,
         [serverId,placeId,userId,username,displayName,String(p?.joinedAt||""),Number.isInteger(rank)&&rank>=0&&rank<=255?rank:0]);
     }
