@@ -296,6 +296,8 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
   };
 
   try {
+    const viewer = await getIdentity(req.session.user.id);
+    if (!viewer.inGroup || viewer.rank < staffMinRank) return res.status(403).json({error:"Rank "+staffMinRank+" or higher is required to view the staff directory."});
     let base = [], roles = [], publicError = null;
     // First use Roblox's public group endpoint. It does not require an Open Cloud key.
     try {
