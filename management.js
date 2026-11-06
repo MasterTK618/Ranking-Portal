@@ -74,7 +74,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await pool.query("UPDATE portal_game_commands SET status='FAILED',result='Server did not acknowledge this command before it expired.',completed_at=NOW() WHERE server_id=$1 AND status='PENDING' AND created_at<NOW()-INTERVAL '2 minutes'",[serverId]);
     await pool.query("UPDATE portal_game_commands SET status='FAILED',result='Server stopped responding while this command was executing.',completed_at=NOW() WHERE server_id=$1 AND status='EXECUTING' AND started_at<NOW()-INTERVAL '90 seconds'",[serverId]);
     const client=await pool.connect();try{await client.query("BEGIN");
-      const found=await client.query("SELECT id,action,target_user_id,payload FROM portal_game_commands WHERE server_id=$1 AND status='PENDING' ORDER BY created_at ASC LIMIT 10 FOR UPDATE SKIP LOCKED",[serverId]);
+      const found=await client.query("SELECT id,action,target_user_id,payload,requested_by FROM portal_game_commands WHERE server_id=$1 AND status='PENDING' ORDER BY created_at ASC LIMIT 10 FOR UPDATE SKIP LOCKED",[serverId]);
       const ids=found.rows.map(x=>x.id);
       if(ids.length)await client.query("UPDATE portal_game_commands SET status='EXECUTING',started_at=NOW() WHERE id=ANY($1::bigint[])",[ids]);
       await client.query("COMMIT");res.json({commands:found.rows});
@@ -467,6 +467,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
   router.get("/server-command-history",async(req,res,next)=>{try{
     const who=await identity(req);if(!who||Number(who.rank)<238)return res.status(403).json({error:"Your rank cannot view server command history."});
+    await pool.query("UPDATE portal_game_commands SET status='FAILED',result='Server did not acknowledge this command before it expired.',completed_at=NOW() WHERE status='PENDING' AND created_at<NOW()-INTERVAL '2 minutes'");
+    await pool.query("UPDATE portal_game_commands SET status='FAILED',result='Server stopped responding while this command was executing.',completed_at=NOW() WHERE status='EXECUTING' AND started_at<NOW()-INTERVAL '90 seconds'");
     const r=await pool.query("SELECT id,server_id,target_user_id,target_username,action,status,result,requested_by_name,created_at,completed_at FROM portal_game_commands ORDER BY created_at DESC LIMIT 100");
     res.json({items:r.rows});
   }catch(e){next(e);}});
