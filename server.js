@@ -545,8 +545,10 @@ app.post("/api/game/rank", requireGameSecret, async (req,res,next) => {
     next(e);
   }
 });
-app.get("/api/logs", requireLogin, requireRanker, async (req,res,next) => {
+app.get("/api/logs", requireLogin, async (req,res,next) => {
   try {
+    const identity = await getIdentity(req.session.user.id);
+    if (!identity.inGroup || Number(identity.rank)<230) return res.status(403).json({error:"Rank 230 or higher is required to view ranking history."});
     const result = await pool.query("SELECT id,actor_id,actor_name,target_id,target_name,previous_role,new_role,action,reason,status,details,created_at FROM ranking_logs ORDER BY created_at DESC LIMIT 100");
     res.json({logs:result.rows});
   } catch(e) { next(e); }
