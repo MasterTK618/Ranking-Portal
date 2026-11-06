@@ -453,6 +453,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req),cfg=await settings();
     if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view in-game chat logs."});
     const serverId=String(req.query?.serverId||"").trim().slice(0,120),search=String(req.query?.search||"").trim().slice(0,100);
+    await pool.query("DELETE FROM live_chat_logs WHERE created_at<NOW()-INTERVAL '30 days'");
     const values=[],where=[];
     if(serverId){values.push(serverId);where.push("server_id=$"+values.length);}
     if(search){values.push("%"+search+"%");where.push("(username ILIKE $"+values.length+" OR display_name ILIKE $"+values.length+" OR message_text ILIKE $"+values.length+")");}
