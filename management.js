@@ -5,7 +5,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   const defaults = {
     activity_view_rank:238, activity_edit_rank:245,
     punishment_view_rank:238, punishment_add_rank:245, punishment_request_rank:1, punishment_approve_rank:249,
-    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245, session_approve_rank:245, session_status_rank:245, notification_view_rank:238, analytics_view_rank:238, quota_hours_week:2, quota_sessions_week:2, quota_tasks_week:0, notifications_enabled:1, recurring_sessions_enabled:1, auto_approve_requests_enabled:0, auto_approve_requests_rank:249
+    promotion_suggest_rank:238, promotion_approve_rank:249, leave_approve_rank:245, knowledge_manage_rank:245, session_create_rank:238, session_delete_rank:245, task_view_rank:238, task_manage_rank:245, session_approve_rank:245, session_status_rank:245, notification_view_rank:238, analytics_view_rank:238, quota_hours_week:2, quota_sessions_week:2, quota_tasks_week:0, notifications_enabled:1, recurring_sessions_enabled:1, auto_approve_requests_enabled:0, auto_approve_requests_rank:249, game_links:[]
   };
   const columns = Object.keys(defaults);
   function requestAutoApproved(who, cfg) { return Number(cfg.auto_approve_requests_enabled)===1 && Number(who?.rank||0)>=Number(cfg.auto_approve_requests_rank||256); }
@@ -37,9 +37,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const {event,userId,username,jobId}=req.body||{};
       if(!["join","leave","metrics","message"].includes(event)||!/^[0-9]+$/.test(String(userId||""))||!String(username||"").trim())return res.status(400).json({error:"Invalid activity event."});
       const key=String(jobId||"unknown")+":"+String(userId),name=String(username).slice(0,40);
-      if(event==="join")await pool.query("INSERT INTO activity_sessions(session_key,user_id,username,started_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(session_key) DO UPDATE SET username=EXCLUDED.username,started_at=NOW(),ended_at=NULL,seconds=0,active_seconds=0,afk_seconds=0,typing_seconds=0,message_count=0",[key,String(userId),name]);
-      else if(event==="metrics"){const d=req.body?.metrics||{},safe=(n,max=30)=>Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=max?Number(n):0;await pool.query("UPDATE activity_sessions SET username=$2,active_seconds=active_seconds+$3,afk_seconds=afk_seconds+$4,typing_seconds=typing_seconds+$5,message_count=message_count+$6 WHERE session_key=$1 AND ended_at IS NULL",[key,name,safe(d.activeSeconds),safe(d.afkSeconds),safe(d.typingSeconds),safe(d.messages,100)]);}
-      else if(event==="message")await pool.query("UPDATE activity_sessions SET message_count=message_count+1,username=$2 WHERE session_key=$1 AND ended_at IS NULL",[key,name]);
+      if(event==="join")await pool.query("INSERT INTO activity_sessions(session_key,user_id,username,started_at,heartbeat_at) VALUES($1,$2,$3,NOW(),NOW()) ON CONFLICT(session_key) DO UPDATE SET username=EXCLUDED.username,started_at=NOW(),heartbeat_at=NOW(),ended_at=NULL,seconds=0,active_seconds=0,afk_seconds=0,typing_seconds=0,message_count=0",[key,String(userId),name]);
+      else if(event==="metrics"){const d=req.body?.metrics||{},safe=(n,max=30)=>Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=max?Number(n):0;await pool.query("UPDATE activity_sessions SET username=$2,heartbeat_at=NOW(),active_seconds=active_seconds+$3,afk_seconds=afk_seconds+$4,typing_seconds=typing_seconds+$5,message_count=message_count+$6 WHERE session_key=$1 AND ended_at IS NULL",[key,name,safe(d.activeSeconds),safe(d.afkSeconds),safe(d.typingSeconds),safe(d.messages,100)]);}
+      else if(event==="message")await pool.query("UPDATE activity_sessions SET message_count=message_count+1,username=$2,heartbeat_at=NOW() WHERE session_key=$1 AND ended_at IS NULL",[key,name]);
       else await pool.query("UPDATE activity_sessions SET ended_at=NOW(),seconds=GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) WHERE session_key=$1 AND ended_at IS NULL",[key]);
       res.json({ok:true});
     } catch(e){next(e);}
@@ -63,6 +63,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       res.json({ok:true,settings:result.rows[0]});
     } catch(e){next(e);}
   });
+  router.get("/game-links",async(req,res,next)=>{try{const cfg=await settings();res.json({links:Array.isArray(cfg.game_links)?cfg.game_links:[],canManage:Number((await identity(req))?.rank||0)>=255});}catch(e){next(e);}});
+  router.put("/game-links",csrf,async(req,res,next)=>{try{const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can manage game links."});const input=req.body?.links;if(!Array.isArray(input)||input.length>30)return res.status(400).json({error:"Add no more than 30 game links."});const links=[];for(const item of input){const title=String(item?.title||"").trim(),description=String(item?.description||"").trim(),raw=String(item?.url||"").trim();let parsed;try{parsed=new URL(raw);}catch{return res.status(400).json({error:"Each game link needs a valid HTTPS URL."});}if(title.length<2||title.length>60||description.length>200||parsed.protocol!=="https:"||raw.length>500)return res.status(400).json({error:"Check each link title, description, and HTTPS address."});links.push({title,description,url:parsed.toString()});}const result=await pool.query("UPDATE management_settings SET game_links=$1::jsonb,updated_at=NOW() WHERE id=1 RETURNING game_links",[JSON.stringify(links)]);res.json({ok:true,links:result.rows[0]?.game_links||[]});}catch(e){next(e);}});
+
 
 
   // Teams and departments are owner-managed. Staff can belong to multiple teams.
@@ -333,6 +336,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const sessions=await pool.query("SELECT * FROM staff_shifts WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
       const punishments=await pool.query("SELECT type,reason,duration,status,created_by_name,created_at,decided_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const activity=await pool.query("SELECT (COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)+COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0))::BIGINT AS seconds,COALESCE(SUM(active_seconds),0)::BIGINT AS active_seconds,COALESCE(SUM(afk_seconds),0)::BIGINT AS afk_seconds,COALESCE(SUM(typing_seconds),0)::BIGINT AS typing_seconds,COALESCE(SUM(message_count),0)::BIGINT AS message_count,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]);
+      const gameSessions=await pool.query("SELECT id,username,started_at,ended_at,CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END AS seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE user_id=$1 ORDER BY started_at DESC LIMIT 250",[userId]);
       const notes=await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]);
       const teamHistory=await pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]);
       const timeline=await pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]);
@@ -345,7 +349,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const lastPunishmentAt=disciplineStats.rows[0]?.last_punishment_at||null;
       const strikeCount=Number(disciplineStats.rows[0]?.strike_count||0);
       const viewerRank=Number(viewer?.rank||0);
-      res.json({canAddNotes:viewerRank>=238,canModerateNotes:viewerRank>=245,canRequestPromotion:viewerRank>=Number(cfg.promotion_suggest_rank||238),canRequestPunishment:viewerRank>=Number(cfg.punishment_request_rank||1)||viewerRank>=Number(cfg.punishment_add_rank||245),lastPromotionAt,lastPunishmentAt,strikeCount,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
+      res.json({canAddNotes:viewerRank>=238,canModerateNotes:viewerRank>=245,canRequestPromotion:viewerRank>=Number(cfg.promotion_suggest_rank||238),canRequestPunishment:viewerRank>=Number(cfg.punishment_request_rank||1)||viewerRank>=Number(cfg.punishment_add_rank||245),lastPromotionAt,lastPunishmentAt,strikeCount,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,gameSessions:gameSessions.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0],notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
     }catch(e){next(e);}
   });
 
@@ -372,6 +376,16 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       ? await pool.query("SELECT user_id,username,minutes,reason,actor_name,created_at FROM activity_adjustments ORDER BY created_at DESC LIMIT 100")
       : {rows:[]};
     res.json({members,adjustments:adjustments.rows,canEdit:Number(who.rank)>=Number(s.activity_edit_rank),canViewAll});
+  }catch(e){next(e);}});
+
+  router.get("/in-game",async(req,res,next)=>{try{
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const cfg=await settings(),canViewAll=Number(who.rank)>=Number(cfg.activity_view_rank);
+    await pool.query("UPDATE activity_sessions SET ended_at=COALESCE(heartbeat_at,started_at),seconds=GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(heartbeat_at,started_at)-started_at))::INTEGER) WHERE ended_at IS NULL AND COALESCE(heartbeat_at,started_at)<NOW()-INTERVAL '90 seconds'");
+    const result=canViewAll
+      ? await pool.query("SELECT user_id,username,started_at,heartbeat_at,GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER)::BIGINT AS current_seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE ended_at IS NULL AND heartbeat_at>=NOW()-INTERVAL '90 seconds' ORDER BY started_at ASC")
+      : await pool.query("SELECT user_id,username,started_at,heartbeat_at,GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER)::BIGINT AS current_seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE user_id=$1 AND ended_at IS NULL AND heartbeat_at>=NOW()-INTERVAL '90 seconds' ORDER BY started_at ASC",[String(req.session.user.id)]);
+    res.json({members:result.rows.map(x=>({...x,user_id:String(x.user_id),current_seconds:Number(x.current_seconds||0)})),canViewAll});
   }catch(e){next(e);}});
   router.post("/activity/adjust", csrf, async (req,res,next) => {
     try {
@@ -704,6 +718,9 @@ async function ensureManagementSchema(pool) {
   await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS afk_seconds BIGINT NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS typing_seconds BIGINT NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS message_count BIGINT NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ");
+  await pool.query("UPDATE activity_sessions SET heartbeat_at=COALESCE(ended_at,started_at) WHERE heartbeat_at IS NULL");
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS game_links JSONB NOT NULL DEFAULT '[]'::jsonb");
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_adjustments (
     id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,username TEXT NOT NULL,minutes INTEGER NOT NULL,reason TEXT NOT NULL,
     actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
