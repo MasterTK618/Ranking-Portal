@@ -284,7 +284,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await client.query("COMMIT");res.json({ok:true,item:updated.rows[0],session:scheduled});
   }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   router.delete("/session-requests/:id",csrf,async(req,res,next)=>{let client;try{
-    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid request ID."});
+    if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid request ID."});
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings(),canManage=Number(who.rank)>=Number(cfg.session_approve_rank);
     client=await pool.connect();await client.query("BEGIN");
     const result=await client.query("DELETE FROM session_requests WHERE id=$1 AND status='PENDING' AND (requested_by=$2 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
@@ -654,7 +654,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
 
   router.delete("/sessions/:id",csrf,async(req,res,next)=>{let client;try{
-    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session ID."});
+    if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session ID."});
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const cfg=await settings();client=await pool.connect();await client.query("BEGIN");
     const found=await client.query("SELECT * FROM staff_shifts WHERE id=$1 FOR UPDATE",[req.params.id]);
@@ -667,7 +667,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   for(const [path,table,ownerCol,rankField] of [["punishments","management_punishments","created_by","punishment_approve_rank"],["promotions","promotion_suggestions","suggested_by","promotion_approve_rank"],["leaves","leave_requests","user_id","leave_approve_rank"]]){
     router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{let client;try{
-      if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid record ID."});
+      if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid record ID."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const s=await settings(),canManage=who.rank>=Number(s[rankField]);client=await pool.connect();await client.query("BEGIN");
       const r=await client.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE) AND ($4 IS NULL OR status=$4 OR $3=TRUE) RETURNING *",[req.params.id,String(req.session.user.id),canManage,path==="leaves"?"PENDING":null]);
@@ -714,7 +714,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const ids=Array.isArray(req.body?.ids)?[...new Set(req.body.ids.map(x=>String(x)).filter(x=>/^(task|session|promotion|punishment|leave|announcement)-\d+$/.test(x)))]:[];
     if(ids.length>100)return res.status(400).json({error:"You can update up to 100 notifications at once."});
     if(ids.length)await pool.query("INSERT INTO management_notification_reads(user_id,notification_key,read_at) SELECT $1,x,NOW() FROM unnest($2::text[]) x ON CONFLICT(user_id,notification_key) DO UPDATE SET read_at=EXCLUDED.read_at",[String(req.session.user.id),ids]);
-    const announcementIds=ids.filter(x=>x.startsWith("announcement-")).map(x=>x.slice(12)).filter(x=>/^\\d+$/.test(x));
+    const announcementIds=ids.filter(x=>x.startsWith("announcement-")).map(x=>x.slice(12)).filter(x=>/^\d+$/.test(x));
     for(const announcementId of announcementIds)await pool.query("INSERT INTO management_announcement_reads(announcement_id,user_id,username,read_at) VALUES($1,$2,$3,NOW()) ON CONFLICT(announcement_id,user_id) DO UPDATE SET read_at=EXCLUDED.read_at",[announcementId,String(req.session.user.id),String(req.session.user.name||"Staff")]);
     res.json({ok:true,updated:ids.length});
   }catch(e){next(e);}});
