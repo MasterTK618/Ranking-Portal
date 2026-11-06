@@ -790,3 +790,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(245,201,40,.28);o
 
 /* Task IDs stay visible and use the exact database string value. */
 .task-id-label{display:block;margin-top:4px;color:var(--yellow,#f5c928);font-size:9px;font-weight:750;letter-spacing:.07em;font-variant-numeric:tabular-nums}
+
+.member-request-form{display:grid;gap:9px;padding:18px;margin:14px 0;border:1px solid var(--stroke-soft);border-radius:14px;background:rgba(255,255,255,.018)}
+.member-request-form h5{margin:0 0 5px;font-size:13px}.member-request-form label{font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--muted)}.member-request-form textarea{min-height:84px}
+.profile-stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.profile-stats>div{min-width:0}.profile-stats b{overflow-wrap:anywhere;font-size:clamp(14px,1.5vw,20px)}
