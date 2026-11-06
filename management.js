@@ -409,11 +409,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!["Strike","Demotion","Termination","Ban","Suspension","Other"].includes(type)||!reason)
         return res.status(400).json({error:"Complete the member, punishment type, and reason."});
-      const cfg=await settings(),auto=requestAutoApproved(who,cfg),status=auto?"APPROVED":"PENDING";
-      const r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name,decided_by,decided_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
-        [userId,username,type,reason,String(b.duration||"").slice(0,80),status,req.session.user.id,req.session.user.name,auto?req.session.user.id:null,auto?req.session.user.name:null]);
-      await writeAudit(auto?"AUTO_APPROVED":"REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,reason);
-      res.json({ok:true,item:r.rows[0]});
+      const cfg=await settings(),auto=requestAutoApproved(who,cfg);
+      let r=await pool.query("INSERT INTO management_punishments(user_id,username,type,reason,duration,status,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,'PENDING',$6,$7) RETURNING *",[userId,username,type,reason,String(b.duration||"").slice(0,80),req.session.user.id,req.session.user.name]);
+      let rankChange=null,rankingError=null;
+      if(auto){try{if(type==="Demotion")rankChange=await applyManagementRole(userId,"","DEMOTION",who.rank);r=await pool.query("UPDATE management_punishments SET status='APPROVED',decided_by=$1,decided_by_name=$2,decided_at=NOW() WHERE id=$3 RETURNING *",[req.session.user.id,req.session.user.name,r.rows[0].id]);}catch(error){rankingError=error.message;}}
+      await writeAudit(r.rows[0].status==="APPROVED"?"AUTO_APPROVED":"REQUESTED",r.rows[0],req.session.user.id,req.session.user.name,[reason,rankChange?"Roblox role: "+rankChange.previousRole+" → "+rankChange.newRole:"",rankingError?"Ranking pending: "+rankingError:""].filter(Boolean).join(" | "));
+      res.json({ok:true,item:r.rows[0],rankChange,rankingError});
     }catch(e){next(e);}
   });
   router.post("/punishments/:id/decision", csrf, async(req,res,next)=>{
@@ -459,10 +460,12 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
       const b=req.body||{},userId=String(b.userId||""),username=String(b.username||"").trim(),role=String(b.suggestedRole||"").trim(),reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!role||!reason)return res.status(400).json({error:"Complete the member, suggested role, and reason."});
-      const cfg=await settings(),auto=requestAutoApproved(who,cfg),status=auto?"APPROVED":"PENDING";
-      const r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name,decided_by,decided_by_name,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $5='APPROVED' THEN NOW() ELSE NULL END) RETURNING *",[userId,username,role,reason,status,req.session.user.id,req.session.user.name,auto?req.session.user.id:null,auto?req.session.user.name:null]);
-      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",auto?"AUTO_APPROVED":"REQUESTED",userId,username,"Suggested role: "+role+" | "+reason,String(req.session.user.id),String(req.session.user.name)]);
-      res.json({ok:true,item:r.rows[0]});
+      const cfg=await settings(),auto=requestAutoApproved(who,cfg);
+      let r=await pool.query("INSERT INTO promotion_suggestions(user_id,username,suggested_role,reason,status,suggested_by,suggested_by_name) VALUES($1,$2,$3,$4,'PENDING',$5,$6) RETURNING *",[userId,username,role,reason,req.session.user.id,req.session.user.name]);
+      let rankChange=null,rankingError=null;
+      if(auto){try{rankChange=await applyManagementRole(userId,role,"PROMOTION",who.rank);r=await pool.query("UPDATE promotion_suggestions SET status='APPROVED',decided_by=$1,decided_by_name=$2,decided_at=NOW() WHERE id=$3 RETURNING *",[req.session.user.id,req.session.user.name,r.rows[0].id]);}catch(error){rankingError=error.message;}}
+      await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["PROMOTION",r.rows[0].status==="APPROVED"?"AUTO_APPROVED":"REQUESTED",userId,username,"Suggested role: "+role+" | "+reason+(rankChange?" | Roblox role: "+rankChange.previousRole+" → "+rankChange.newRole:"")+(rankingError?" | Ranking pending: "+rankingError:""),String(req.session.user.id),String(req.session.user.name)]);
+      res.json({ok:true,item:r.rows[0],rankChange,rankingError});
     }catch(e){next(e);}
   });
   router.post("/promotions/:id/decision",csrf,async(req,res,next)=>{
