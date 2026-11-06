@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[];
-const pageNames = {overview:"Overview",views:"Views & Insights",rank:"Group Ranking",members:"Staff Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",chatLogs:"Chat Logs",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
+const pageNames = {overview:"Overview",views:"Views & Insights",rank:"Group Ranking",members:"Staff Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
@@ -30,7 +30,6 @@ function showPage(page,view) {
   if(page==="members")loadStaffDirectory();
   if(page==="activity")loadManagement("activity");
   if(page==="ingame")loadInGame();
-  if(page==="chatLogs")loadChatLogs();
   if(page==="gameLinks")loadGameLinks();
   if(page==="punishments"){loadManagement("punishments");if(selectedView==="audit")loadPunishmentAudit();}
   if(page==="promotions"){loadManagement("promotions");if(selectedView==="history")loadPromotionAudit();}
@@ -530,21 +529,6 @@ document.addEventListener("click",async e=>{
  if(!confirm("Are you sure you want to "+action+" this entire server?"))return;
  b.disabled=true;try{await portalServerAction(action,server,"","","");}catch(err){notice(err.message,"error");b.disabled=false;}
 });
-async function loadChatLogs(){
- const el=$("chatLogTable");if(!el)return;el.innerHTML='<div class="empty-state">Loading chat logs…</div>';
- try{
-  const params=new URLSearchParams(),search=$("chatLogSearch")?.value.trim()||"",server=$("chatLogServer")?.value||"";
-  if(search)params.set("search",search);if(server)params.set("serverId",server);
-  const d=await api("/api/management/chat-logs?"+params.toString()),messages=d.messages||[];
-  const select=$("chatLogServer"),prior=server;select.innerHTML='<option value="">All servers</option>'+(d.servers||[]).map(id=>'<option value="'+escapeHtml(id)+'">'+escapeHtml(id.slice(0,22))+'</option>').join("");if((d.servers||[]).includes(prior))select.value=prior;
-  $("chatLogSummary").innerHTML='<article class="activity-stat"><small>MESSAGES SHOWN</small><b>'+messages.length+'</b></article><article class="activity-stat"><small>SERVERS WITH LOGS</small><b>'+(d.servers||[]).length+'</b></article><article class="activity-stat"><small>RETENTION</small><b>'+Number(d.retentionDays||30)+' days</b></article>';
-  $("chatLogUpdated").textContent="Last refreshed "+new Date().toLocaleTimeString()+" · Showing the newest 300 matching messages";
-  el.innerHTML=messages.length?'<table class="data-table chat-log-table"><thead><tr><th>TIME</th><th>PLAYER</th><th>CHANNEL</th><th>MESSAGE</th><th>SERVER</th></tr></thead><tbody>'+messages.map(m=>'<tr><td>'+escapeHtml(formatDate(m.created_at))+'</td><td><a href="https://www.roblox.com/users/'+encodeURIComponent(m.user_id)+'/profile" target="_blank" rel="noopener noreferrer">'+escapeHtml(m.username)+'</a><small class="chat-log-display">'+escapeHtml(m.display_name||m.username)+'</small></td><td>'+escapeHtml(m.channel_name||"General")+'</td><td class="chat-log-message">'+escapeHtml(m.message_text)+'</td><td><code>'+escapeHtml(String(m.server_id).slice(0,14))+'</code></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No chat messages match these filters. New messages will appear after the Live Server Bridge is updated and the game is running.</div>';
- }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
-}
-$("refreshChatLogs")?.addEventListener("click",loadChatLogs);
-$("chatLogSearch")?.addEventListener("keydown",e=>{if(e.key==="Enter")loadChatLogs();});
-$("chatLogServer")?.addEventListener("change",loadChatLogs);
 async function loadGameLinks(){
  const el=$("gameLinksList");if(!el)return;el.innerHTML='<div class="empty-state">Loading game links…</div>';
  try{const d=await api("/api/management/game-links"),links=d.links||[];el.innerHTML=links.length?links.map(x=>'<a class="game-link-card" href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer"><span class="game-link-icon">↗</span><span><b>'+escapeHtml(x.title)+'</b><small>'+escapeHtml(x.description||"Open this resource")+'</small></span><span class="game-link-arrow">Open ↗</span></a>').join(""):'<div class="empty-state">No game links have been added yet. The group owner can add links from Settings.</div>';}
