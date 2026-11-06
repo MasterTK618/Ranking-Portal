@@ -192,7 +192,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
   // Teams are independent staff groups.
   router.get("/teams",async(req,res,next)=>{try{
-    const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.team_view_rank||230))return res.status(403).json({error:"Your role cannot view staff teams."});
+    const who=await identity(req),cfg=await settings();
+    // Keep the team directory visible to Management (rank 238+) even when
+    // an older permission value still has the previous 243 threshold.
+    const teamViewThreshold=Math.min(Number(cfg.team_view_rank||230),238);
+    if(!who||Number(who.rank)<teamViewThreshold)return res.status(403).json({error:"Your role cannot view staff teams."});
     const teams=await pool.query("SELECT t.*,COUNT(DISTINCT tm.user_id)::INTEGER AS member_count FROM management_teams t LEFT JOIN management_team_members tm ON tm.team_id=t.id GROUP BY t.id ORDER BY t.name");
     const members=await pool.query("SELECT user_id,team_id FROM management_team_members ORDER BY user_id,team_id");
     res.json({teams:teams.rows,members:members.rows,canManage:Number(who.rank)>=255});
@@ -853,7 +857,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
 
 
   router.get("/teams/:id/dashboard",async(req,res,next)=>{try{
-    const who=await identity(req);const cfg=await settings();if(!who||Number(who.rank)<Number(cfg.profile_view_rank||243))return res.status(403).json({error:"Your rank cannot view team dashboards."});
+    const who=await identity(req);const cfg=await settings();
+    const dashboardViewThreshold=Math.min(Number(cfg.profile_view_rank||243),238);
+    if(!who||Number(who.rank)<dashboardViewThreshold)return res.status(403).json({error:"Your rank cannot view team dashboards."});
     const team=await pool.query("SELECT id,name,color FROM management_teams WHERE id=$1",[req.params.id]);if(!team.rowCount)return res.status(404).json({error:"Team not found."});
     const members=await pool.query("SELECT user_id FROM management_team_members WHERE team_id=$1",[req.params.id]),ids=members.rows.map(x=>x.user_id);
     if(Number(who.rank)<245&&!ids.includes(String(req.session.user.id)))return res.status(403).json({error:"Only management or members of this team can view its dashboard."});
