@@ -63,6 +63,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(seen.size)await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND heartbeat_at<NOW()-INTERVAL '90 seconds' AND user_id<>ALL($2::text[])",[serverId,[...seen]]);
     else await pool.query("DELETE FROM live_game_players WHERE server_id=$1 AND heartbeat_at<NOW()-INTERVAL '90 seconds'",[serverId]);
     await pool.query("INSERT INTO live_game_servers(server_id,place_id,heartbeat_at,player_count) VALUES($1,$2,NOW(),$3) ON CONFLICT(server_id) DO UPDATE SET place_id=EXCLUDED.place_id,heartbeat_at=NOW(),player_count=EXCLUDED.player_count",[serverId,placeId,seen.size]);
+    await pool.query("DELETE FROM live_game_servers WHERE heartbeat_at<NOW()-INTERVAL '7 days'");
     res.json({ok:true,received:seen.size});
   }catch(e){next(e);}});
   router.post("/live/leave", requireGameSecret, async(req,res,next)=>{try{
@@ -459,6 +460,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const cfg=await settings();
     const requiredRank=admin?Number(cfg.live_server_admin_rank||255):announce?Number(cfg.live_announce_rank||238):Number(cfg.live_player_moderate_rank||245);
     if(Number(who.rank)<requiredRank)return res.status(403).json({error:admin?"Your rank cannot restart or shut down servers.":announce?"Your rank cannot send server announcements.":"Your rank cannot moderate live players."});
+    const recent=await pool.query("SELECT COUNT(*)::INTEGER AS count FROM portal_game_commands WHERE requested_by=$1 AND created_at>NOW()-INTERVAL '30 seconds'",[String(req.session.user.id)]);
+    if(Number(recent.rows[0]?.count||0)>=15)return res.status(429).json({error:"Command cooldown: wait 30 seconds before sending more server commands."});
     if(!serverId||serverId.length>120)return res.status(400).json({error:"Choose an active server first."});
     const playerAction=["kick","warn","respawn","mute","unmute"].includes(action);
     if(playerAction&&!/^\d+$/.test(targetId))return res.status(400).json({error:"Choose a player first."});
@@ -834,6 +837,7 @@ async function ensureManagementSchema(pool) {
     status TEXT NOT NULL DEFAULT 'PENDING',result TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     started_at TIMESTAMPTZ,completed_at TIMESTAMPTZ)`);
   await pool.query("CREATE INDEX IF NOT EXISTS portal_game_commands_server_pending_idx ON portal_game_commands(server_id,status,created_at)");
+  await pool.query("CREATE INDEX IF NOT EXISTS portal_game_commands_actor_created_idx ON portal_game_commands(requested_by,created_at DESC)");
 
   await pool.query(`CREATE TABLE IF NOT EXISTS activity_sessions (
     id BIGSERIAL PRIMARY KEY, session_key TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, username TEXT NOT NULL,
