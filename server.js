@@ -299,6 +299,40 @@ app.get("/api/group/roles",requireLogin,async(req,res)=>{
   res.json({groupId:GROUP_ID,roles,count:roles.length,source:attempts.every(x=>x.status==="fulfilled")?"roblox-apis":"roblox-fallback"});
 });
 
+app.get("/api/group/members/search",requireLogin,async(req,res)=>{
+  const keyword=String(req.query.q||"").trim().replace(/\s+/g," ");
+  if(keyword.length<3||keyword.length>40)return res.status(400).json({error:"Enter at least 3 characters to search group members."});
+  try{
+    const endpoint="https://users.roblox.com/v1/users/search?keyword="+encodeURIComponent(keyword)+"&limit=10";
+    const response=await fetch(endpoint);
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error("Roblox user search returned HTTP "+response.status+".");
+    const candidates=(Array.isArray(data.data)?data.data:[]).filter(u=>/^\d+$/.test(String(u.id||"")));
+    const checked=await Promise.all(candidates.map(async user=>{
+      try{
+        const membership=await fetch("https://groups.roblox.com/v1/users/"+encodeURIComponent(user.id)+"/groups/roles");
+        const groupData=await membership.json().catch(()=>({}));
+        if(!membership.ok)return null;
+        const role=(groupData.data||[]).filter(item=>String(item.group?.id)===String(GROUP_ID)).map(item=>item.role||{}).sort((a,b)=>Number(b.rank||0)-Number(a.rank||0))[0];
+        return role?{id:String(user.id),username:String(user.name||""),displayName:String(user.displayName||""),rank:Number(role.rank||0),role:String(role.name||"Member")}:null;
+      }catch{return null;}
+    }));
+    const members=checked.filter(Boolean);
+    if(members.length){
+      const ids=members.map(m=>m.id).join(",");
+      const thumbs=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids+"&size=150x150&format=Png&isCircular=true");
+      const thumbData=await thumbs.json().catch(()=>({}));
+      const avatars=new Map((thumbData.data||[]).map(t=>[String(t.targetId),t.imageUrl||""]));
+      members.forEach(m=>m.avatarUrl=avatars.get(m.id)||"");
+    }
+    res.set("Cache-Control","private, max-age=30");
+    res.json({members,count:members.length,keyword});
+  }catch(err){
+    console.error("Group member search failed:",err.message);
+    res.status(502).json({error:"Could not search Roblox group members right now: "+err.message});
+  }
+});
+
 app.get("/api/staff",requireLogin,async(req,res)=>{
   const staffPermission = await pool.query("SELECT profile_view_rank FROM management_settings WHERE id=1").catch(()=>({rows:[]}));
   const staffMinRank = Number(staffPermission.rows[0]?.profile_view_rank || 243);
