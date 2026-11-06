@@ -1,4 +1,5 @@
 const express = require("express");
+const { createAnnouncementsRouter } = require("./announcements");
 
 function createManagementRouter({ pool, getIdentity, requireLogin, csrf, requireGameSecret, applyRobloxRank }) {
   const router = express.Router();
@@ -97,6 +98,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){next(e);}});
 
   router.use(requireLogin);
+  router.use("/announcements", createAnnouncementsRouter({pool,getIdentity,csrf,settings}));
   router.get("/settings", async (req,res,next) => {
     try {
       const who=await identity(req);
@@ -879,5 +881,10 @@ async function ensureManagementSchema(pool) {
     start_date DATE NOT NULL,end_date DATE NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL,last_leave_at DATE,
     decided_by TEXT,decided_by_name TEXT,decision_note TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),decided_at TIMESTAMPTZ)`);
   await pool.query("ALTER TABLE leave_requests ALTER COLUMN discord_username DROP NOT NULL");
+  await pool.query("ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS announcements_enabled INTEGER NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS announcement_view_rank INTEGER NOT NULL DEFAULT 230, ADD COLUMN IF NOT EXISTS announcement_publish_rank INTEGER NOT NULL DEFAULT 245, ADD COLUMN IF NOT EXISTS announcement_publish_team_ids JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await pool.query(`CREATE TABLE IF NOT EXISTS management_announcements (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',audience JSONB NOT NULL DEFAULT '{"all":true,"teamIds":[],"ranks":[]}'::jsonb,status TEXT NOT NULL DEFAULT 'PUBLISHED',publish_at TIMESTAMPTZ,expires_at TIMESTAMPTZ,published_at TIMESTAMPTZ,created_by TEXT NOT NULL,created_by_name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS management_announcement_reads (announcement_id BIGINT NOT NULL REFERENCES management_announcements(id) ON DELETE CASCADE,user_id TEXT NOT NULL,username TEXT NOT NULL,read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(announcement_id,user_id))`);
+  await pool.query("CREATE INDEX IF NOT EXISTS management_announcements_status_idx ON management_announcements(status,publish_at,created_at DESC)");
+
 }
 module.exports = { createManagementRouter, ensureManagementSchema };
