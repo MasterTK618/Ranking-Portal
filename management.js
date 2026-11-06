@@ -391,8 +391,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({ok:true,note:r.rows[0]});
   }catch(e){next(e);}});
   router.delete("/members/:id/notes/:noteId",csrf,async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-    const result=await pool.query("DELETE FROM management_member_notes WHERE id=$1 AND user_id=$2 AND (created_by=$3 OR $4>=245) RETURNING *",[req.params.noteId,req.params.id,String(req.session.user.id),Number(who.rank)]);
+    const who=await identity(req),cfg=await settings();if(!who)return res.status(401).json({error:"Sign in first."});
+    const result=await pool.query("DELETE FROM management_member_notes WHERE id=$1 AND user_id=$2 AND (created_by=$3 OR $4>=$5) RETURNING *",[req.params.noteId,req.params.id,String(req.session.user.id),Number(who.rank),Number(cfg.profile_note_rank||243)]);
     if(!result.rowCount)return res.status(404).json({error:"Note not found, or you do not have permission to remove it."});
     await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["MEMBER_NOTE","DELETED",String(req.params.id),"Staff member","Note #"+req.params.noteId,String(req.session.user.id),String(req.session.user.name)]);
     res.json({ok:true});
