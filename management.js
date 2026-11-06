@@ -406,7 +406,6 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const lastPromotionAt=promotionStats.rows[0]?.last_promotion_at||null;
       const lastPunishmentAt=disciplineStats.rows[0]?.last_punishment_at||null;
       const strikeCount=Number(disciplineStats.rows[0]?.strike_count||0);
-      const viewerRank=Number(viewer?.rank||0);
       res.json({canAddNotes:viewerRank>=238,canModerateNotes:viewerRank>=245,canViewActivity,canViewPunishments,canViewNotes,canViewTimeline,canViewTasks,canViewPromotions,canRequestPromotion:viewerRank>=Number(cfg.promotion_suggest_rank||238),canRequestPunishment:viewerRank>=Number(cfg.punishment_request_rank||1)||viewerRank>=Number(cfg.punishment_add_rank||245),lastPromotionAt,lastPunishmentAt,strikeCount,member:{id:userId,username:user.name||"Staff member",role:who.roleName,rank:who.rank,avatarUrl},teamHistory:teamHistory.rows,timeline:timeline.rows,gameSessions:gameSessions.rows,sessions:sessions.rows.map(s=>({...s,member_role:s.host_id===userId?"Host":s.cohost_id===userId?"Co-Host":s.promoter_id===userId?"Promoter":(s.oversee_id===userId||(s.oversee_ids||[]).includes(userId))?"Oversee":"Attendee"})),punishments:punishments.rows,activity:activity.rows[0]||null,notes:notes.rows,tasks:tasks.rows,promotions:promotions.rows});
     }catch(e){next(e);}
   });
