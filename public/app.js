@@ -940,7 +940,7 @@ async function loadStaffDirectory(force=false){
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
   // Load the roster first; role counts and team synchronization are optional.
-  const d=await api("/api/staff");
+  const d=await api("/api/staff"+(force?"?refresh=1":""),{signal:AbortSignal.timeout(45000)});
   staffDirectory=Array.isArray(d.members)?d.members:[];
   staffMinRank=230;staffDiagnostics=d.diagnostics||null;
   renderStaffDirectory();
@@ -971,7 +971,7 @@ async function loadStaffDirectory(force=false){
  })();
  try{return await staffDirectoryPromise;}finally{staffDirectoryPromise=null;}
 }
-$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();renderStaffDirectory();});
+$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();loadStaffDirectory(true);});
 $("searchGroupMember")?.addEventListener("click",searchGroupMembers);
 $("directorySearch")?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();searchGroupMembers();}});
 $("directoryRankSidebar")?.addEventListener("click",event=>{const button=event.target.closest("[data-directory-rank]");if(button)loadDirectoryRank(button.dataset.directoryRank);});
