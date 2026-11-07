@@ -23,7 +23,7 @@ function showPage(page,view) {
   if(pageEl?.querySelector("[data-workspace-panel]"))pageEl.querySelectorAll("[data-workspace-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.workspacePanel!==selectedView));
   $("pageTitle").textContent=pageNames[page]||"Workspace";$("crumb").textContent=(selectedView?selectedView+" / ":"")+page.toUpperCase();
   clearNotice();
-  if(page==="logs"){loadLogs();loadManagementAudit();loadEvidence();}
+  if(page==="logs")loadManagementAudit();
   if(page==="announcements")loadAnnouncements();
   if(page==="rank")loadRoles();
   if(page==="views")loadViews();
@@ -33,8 +33,8 @@ function showPage(page,view) {
   if(page==="activity"){loadManagement("activity");loadActivityAlerts();}
   if(page==="ingame")loadInGame();
   if(page==="gameLinks")loadGameLinks();
-  if(page==="punishments"){loadManagement("punishments");if(selectedView==="audit")loadPunishmentAudit();}
-  if(page==="promotions"){loadManagement("promotions");if(selectedView==="history")loadPromotionAudit();}
+  if(page==="punishments"){loadManagement("punishments");if(selectedView==="evidence")loadEvidence();}
+  if(page==="promotions")loadManagement("promotions");
   if(page==="leaves")loadManagement("leaves");
   if(page==="tasks")loadTasks();
   if(page==="knowledge")loadKnowledge();if(page==="notifications")loadNotifications();if(page==="approvals")loadApprovals();if(page==="analytics")loadAnalytics();
@@ -107,18 +107,8 @@ $("submitRank").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="Confirm ranking";}
 });
 function formatDate(s){try{return new Date(s).toLocaleString()}catch{return s||"—"}}
-async function loadLogs(){
-  $("logsTable").textContent="Loading logs…";
-  try{
-    const d=await api("/api/logs");
-    $("recentCount").textContent=d.logs.length;
-    if(!d.logs.length){$("logsTable").textContent="No ranking actions have been recorded yet.";return}
-    const logs=searchRows(d.logs,"logsSearch",["actor_name","target_name","previous_role","new_role","action","status","reason"]);
-    $("logsTable").innerHTML=logs.length?`<table class="data-table"><thead><tr><th>DATE</th><th>RANKED BY</th><th>MEMBER</th><th>CHANGE</th><th>ACTION</th><th>STATUS</th></tr></thead><tbody>${logs.map(l=>`<tr><td>${escapeHtml(formatDate(l.created_at))}</td><td>${escapeHtml(l.actor_name)}</td><td>${escapeHtml(l.target_name)}</td><td>${escapeHtml(l.previous_role||"—")} → ${escapeHtml(l.new_role||"—")}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.status)}</td></tr>`).join("")}</tbody></table>`:"No ranking logs match your search.";
-  }catch(e){$("logsTable").textContent=e.message}
-}
-$("refreshLogs").addEventListener("click",loadLogs);
-$("logsSearch")?.addEventListener("input",()=>{const q=$("logsSearch").value.toLowerCase();document.querySelectorAll("#logsTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
+
+
 
 const PRESET_GROUP_ROLES=[
  {id:"preset-0",name:"Guest",rank:0},
@@ -711,7 +701,7 @@ async function loadManagement(tab){
     $("punishmentTable").textContent="Loading records…";
     try{const d=await api("/api/management/punishments"),all=d.items||[],rows=searchRows(all,"punishmentSearch",["username","type","reason","status","created_by_name","decision_note"]);$("punishmentSummary").innerHTML=[["PENDING",all.filter(x=>x.status==="PENDING").length,"Awaiting review"],["APPROVED",all.filter(x=>x.status==="APPROVED").length,"Approved actions"],["REJECTED",all.filter(x=>x.status==="REJECTED").length,"Declined requests"],["TOTAL",all.length,"Records and requests"]].map(x=>'<article class="session-stat"><span>⚑</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
       $("punishmentTable").innerHTML=rows.length?'<table class="data-table"><thead><tr><th>MEMBER</th><th>ACTION</th><th>REASON</th><th>STATUS</th><th>SUBMITTED BY</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr><td><b>'+escapeHtml(i.username)+'</b></td><td>'+escapeHtml(i.type)+' '+escapeHtml(i.duration||"")+'</td><td>'+escapeHtml(i.reason)+'</td><td><span class="status-pill">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.created_by_name)+'</td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td>'+escapeHtml(i.decision_note||"—")+'</td><td>'+actionButtons("punishment",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':"No matching punishment records.";
-      await loadPunishmentAudit();
+      // Discipline actions are tracked in the unified Audit Log.
     }catch(e){$("punishmentTable").textContent=e.message}
   }
   if(tab==="promotions"){
@@ -729,7 +719,7 @@ async function loadManagement(tab){
       const pending=all.filter(x=>x.status==="PENDING").length,approved=all.filter(x=>x.status==="APPROVED").length,rejected=all.filter(x=>x.status==="REJECTED").length;
       $("leaveSummary").innerHTML=[["PENDING",pending,"Awaiting a decision"],["APPROVED",approved,"Approved requests"],["REJECTED",rejected,"Declined requests"]].map(x=>`<article class="session-stat"><span>▤</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
       $("leaveTable").innerHTML=rows.length?'<table class="data-table leave-data-table"><thead><tr><th>STAFF MEMBER</th><th>DATES</th><th>REASON / HANDOVER</th><th>LAST APPROVED LEAVE</th><th>STATUS</th><th>REVIEWED BY</th><th>REVIEW NOTE</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(i=>'<tr data-leave-status="'+escapeHtml(i.status)+'"><td><b>'+escapeHtml(i.roblox_username)+'</b><small class="table-subtext">Submitted '+escapeHtml(formatDate(i.created_at))+'</small></td><td><b>'+dateOnly(i.start_date)+'</b><small class="table-subtext">through '+dateOnly(i.end_date)+'</small></td><td class="reason-cell">'+escapeHtml(i.reason)+'</td><td>'+dateOnly(i.last_leave_at)+'</td><td><span class="status-pill status-'+escapeHtml(String(i.status).toLowerCase())+'">'+escapeHtml(i.status)+'</span></td><td>'+escapeHtml(i.decided_by_name||"—")+'</td><td class="reason-cell">'+escapeHtml(i.decision_note||"—")+(i.decided_at?'<small class="table-subtext">'+escapeHtml(formatDate(i.decided_at))+'</small>':"")+'</td><td>'+actionButtons("leave",i,d.rank,d.settings)+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave requests match this filter.</div>';
-      await loadLeaveAudit();
+      // Leave actions are tracked in the unified Audit Log.
     }catch(e){$("leaveTable").textContent=e.message}
   }
 }
@@ -743,21 +733,9 @@ $("saveActivityAdjust").addEventListener("click",async()=>{
     notice("Activity adjustment saved.","success");["activityUserId","activityUsername","activityMinutes","activityReason"].forEach(id=>$(id).value="");loadManagement("activity");
   }catch(e){notice(e.message,"error")}
 });
-async function loadPunishmentAudit(){
-  const el=$("punishmentAuditTable");if(!el)return;el.textContent="Loading audit log…";
-  try{const d=await api("/api/management/punishments/audit"),items=d.items||[];
-    el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name)+'</td></tr>').join("")+'</tbody></table>':"No discipline actions have been logged yet.";
-  }catch(e){el.textContent=e.message}
-}
-$("refreshPunishmentAudit")?.addEventListener("click",loadPunishmentAudit);
 
-async function loadPromotionAudit(){
- const el=$("promotionAuditTable");if(!el)return;el.textContent="Loading promotion history…";
- try{const d=await api("/api/management/promotions/audit"),items=d.items||[];
-  el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No promotion history recorded yet.</div>';
- }catch(e){el.textContent=e.message;}
-}
-$("refreshPromotionAudit")?.addEventListener("click",loadPromotionAudit);
+
+
 
 $("submitPunishment").addEventListener("click",async()=>{
   try{
@@ -772,12 +750,6 @@ $("submitPromotion").addEventListener("click",async()=>{
     notice("Promotion request submitted and logged.","success");$("promotionUsername").value="";$("promotionUserId").value="";$("promotionReason").value="";loadManagement("promotions");
   }catch(e){notice(e.message,"error")}
 });
-async function loadLeaveAudit(){
-  const el=$("leaveAuditTable");if(!el)return;el.textContent="Loading leave activity…";
-  try{const d=await api("/api/management/leaves/audit"),items=d.items||[];
-    el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>STAFF MEMBER</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><span class="status-pill">'+escapeHtml(x.action)+'</span></td><td>'+escapeHtml(x.target_username||"—")+'</td><td class="reason-cell">'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No leave activity has been recorded yet.</div>';
-  }catch(e){el.textContent=e.message}
-}
 function fillTeamFilter(id){
  const el=$(id);if(!el)return "ALL";const previous=el.value;
  el.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
@@ -793,21 +765,14 @@ async function loadTasks(){
     const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
     $("taskSummary").innerHTML=counts.map(x=>`<article class="session-stat"><span>✓</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
     $("taskStorageDiagnostics")?.classList.toggle("hidden",Number(d.rank)<255);
-    $("taskAuditCard").classList.toggle("hidden",!d.canManage);
+    // Task history is available in the unified Audit Log.
     $("taskTable").innerHTML=rows.length?'<table class="data-table task-data-table"><thead><tr><th>TASK</th><th>ASSIGNED TO</th><th>TEAM</th><th>PRIORITY</th><th>DUE DATE</th><th>CREATED BY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><b>'+escapeHtml(x.title)+'</b><small class="task-id-label">TASK ID · #'+escapeHtml(String(x.id))+'</small><small class="table-subtext">'+escapeHtml(x.description||"No extra details") +'</small></td><td>'+escapeHtml(x.assigned_to_name)+'</td><td>'+escapeHtml(x.assigned_team_names||'Unassigned')+'</td><td><span class="priority-pill priority-'+escapeHtml(String(x.priority).toLowerCase())+'">'+escapeHtml(x.priority)+'</span></td><td>'+dateOnly(x.due_date)+'</td><td>'+escapeHtml(x.created_by_name)+'</td><td>'+(x.canUpdate?'<select class="task-status-select" data-task-status="'+escapeHtml(x.id)+'"><option value="OPEN"'+(x.status==="OPEN"?" selected":"")+ '>Open</option><option value="IN_PROGRESS"'+(x.status==="IN_PROGRESS"?" selected":"")+ '>In progress</option><option value="BLOCKED"'+(x.status==="BLOCKED"?" selected":"")+ '>Blocked</option><option value="COMPLETED"'+(x.status==="COMPLETED"?" selected":"")+ '>Completed</option></select>':'<span class="status-pill">'+escapeHtml(x.status)+'</span>')+'</td><td>'+(x.canDelete?'<button class="danger-btn" data-task-delete="'+escapeHtml(x.id)+'">Delete</button>':"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No tasks match this filter.</div>';
-    if(d.canManage)await loadTaskAudit();
+    // Task actions are tracked in the unified Audit Log.
   }catch(e){$("taskTable").textContent=e.message}
-}
-async function loadTaskAudit(){const el=$("taskAuditTable");if(!el)return;try{const d=await api("/api/management/tasks/audit");el.innerHTML=(d.items||[]).length?'<table class="data-table"><thead><tr><th>DATE &amp; TIME</th><th>EVENT</th><th>ASSIGNED STAFF</th><th>DETAILS</th><th>PERFORMED BY</th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No task actions logged yet.</div>';}catch(e){el.textContent=e.message}}
-function setupLeaveDateLimits(){
-  const start=$("leaveStart"),end=$("leaveEnd");if(!start||!end)return;
-  const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10);};
-  start.min=today();end.min=start.value||today();
-  start.addEventListener("change",()=>{end.min=start.value||today();if(end.value&&end.value<end.min)end.value=end.min;});
 }
 setupLeaveDateLimits();
 $("refreshLeaves")?.addEventListener("click",()=>loadManagement("leaves"));
-$("refreshLeaveAudit")?.addEventListener("click",loadLeaveAudit);
+
 $("leaveSearch")?.addEventListener("input",()=>loadManagement("leaves"));
 $("leaveStatusFilter")?.addEventListener("change",()=>loadManagement("leaves"));
 $("refreshTasks")?.addEventListener("click",loadTasks);
@@ -825,7 +790,7 @@ $("taskStorageDiagnostics")?.addEventListener("click",async()=>{
 });
 $("closeTaskDiagnostics")?.addEventListener("click",()=>$("taskStoragePanel")?.classList.add("hidden"));
 
-$("refreshTaskAudit")?.addEventListener("click",loadTaskAudit);
+
 $("taskSearch")?.addEventListener("input",loadTasks);
 $("taskStatusFilter")?.addEventListener("change",loadTasks);$("taskTeamFilter")?.addEventListener("change",loadTasks);$("taskTeamAssignFilter")?.addEventListener("change",loadTasks);
 $("createTask")?.addEventListener("click",async()=>{
@@ -1065,11 +1030,8 @@ async function loadSessionRequests(){
  try{const d=await api("/api/management/session-requests"),items=d.items||[];
   const pending=items.filter(x=>x.status==="PENDING").length,approved=items.filter(x=>x.status==="APPROVED").length;
   el.innerHTML='<div class="request-summary"><span>'+items.length+' total requests</span><span>'+pending+' pending</span><span>'+approved+' approved</span></div>'+(items.length?'<div class="session-request-list">'+items.map(x=>'<article class="session-request-card"><div class="session-request-card-main"><div><span class="session-type-pill">'+sessionTypeLabel(x.session_type)+'</span><h3>'+escapeHtml(x.title)+'</h3><p>'+escapeHtml(x.details||"No additional details provided.")+'</p></div><span class="status-pill status-'+String(x.status).toLowerCase()+'">'+escapeHtml(x.status)+'</span></div><div class="session-request-meta"><span><small>PROPOSED DATE</small><b>'+dateOnly(x.preferred_date)+' · '+escapeHtml(String(x.preferred_time||"").slice(0,5))+'</b></span><span><small>HOST</small><b>'+escapeHtml(x.host_name||"—")+(x.cohost_name?" · "+escapeHtml(x.cohost_name):"") +'</b></span><span><small>REQUESTED BY</small><b>'+escapeHtml(x.requested_by_name)+'</b></span></div>'+(x.review_note?'<div class="session-request-review"><small>REVIEW NOTE</small><p>'+escapeHtml(x.review_note)+'</p></div>':"") +'<footer>'+(d.canReview&&x.status==="PENDING"?'<button class="primary-btn" data-session-request-decision="'+x.id+'" data-status="APPROVED">Approve request</button> <button class="quiet-btn" data-session-request-decision="'+x.id+'" data-status="REJECTED">Decline</button>':"")+(x.canCancel?' <button class="danger-btn" data-session-request-cancel="'+x.id+'">Cancel</button>':"") +'</footer></article>').join("")+'</div>':'<div class="empty-state">No session requests have been submitted yet.</div>');
-  $("sessionRequestAuditCard").classList.toggle("hidden",!d.canReview);if(d.canReview)await loadSessionRequestAudit();
+  // Session request actions are tracked in the unified Audit Log.
  }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
-}
-async function loadSessionRequestAudit(){
- const el=$("sessionRequestAuditTable");if(!el)return;try{const d=await api("/api/management/session-requests/audit"),items=d.items||[];el.innerHTML=items.length?'<table class="data-table"><thead><tr><th>DATE</th><th>ACTION</th><th>REQUESTER</th><th>DETAILS</th><th>REVIEWED BY</th></tr></thead><tbody>'+items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.action)+'</td><td>'+escapeHtml(x.target_username||"—")+'</td><td>'+escapeHtml(x.details||"—")+'</td><td>'+escapeHtml(x.actor_name||"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No session request actions logged yet.</div>';}catch(e){el.textContent=e.message;}
 }
 $("submitSessionRequest")?.addEventListener("click",async()=>{
  const b=$("submitSessionRequest");b.disabled=true;b.textContent="Sending…";
@@ -1077,7 +1039,7 @@ $("submitSessionRequest")?.addEventListener("click",async()=>{
  catch(e){notice(e.message,"error");}finally{b.disabled=false;b.textContent="Send session request";}
 });
 $("refreshSessionRequests")?.addEventListener("click",loadSessionRequests);
-$("refreshSessionAudit")?.addEventListener("click",loadSessionRequestAudit);
+
 $("sessionHistorySearch")?.addEventListener("input",loadSessions);$("sessionHistoryFilter")?.addEventListener("change",loadSessions);
 document.addEventListener("change",async e=>{
  const select=e.target.closest("[data-session-status]");if(!select)return;
