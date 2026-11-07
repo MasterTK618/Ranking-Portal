@@ -647,6 +647,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!["Strike","Demotion","Termination","Ban","Suspension","Other"].includes(type)||!reason)
         return res.status(400).json({error:"Complete the member, punishment type, and reason."});
+       const target=await getIdentity(userId);
+       if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"The selected user is no longer a Lemonz staff member."});
       const cfg=await settings(),auto=requestAutoApproved(who,cfg);
       let targetUsername=username;
       try{const profileResponse=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));const profileData=await profileResponse.json().catch(()=>({}));if(profileResponse.ok&&profileData.name)targetUsername=String(profileData.name).slice(0,40);}catch{}
@@ -701,6 +703,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
       const b=req.body||{},userId=String(b.userId||""),username=String(b.username||"").trim(),role=String(b.suggestedRole||"").trim(),reason=String(b.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!role||!reason)return res.status(400).json({error:"Complete the member, suggested role, and reason."});
+       const target=await getIdentity(userId);
+       if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"The selected user is no longer a Lemonz staff member."});
       const cfg=await settings(),auto=requestAutoApproved(who,cfg);
       let targetUsername=username;
       try{const profileResponse=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));const profileData=await profileResponse.json().catch(()=>({}));if(profileResponse.ok&&profileData.name)targetUsername=String(profileData.name).slice(0,40);}catch{}
