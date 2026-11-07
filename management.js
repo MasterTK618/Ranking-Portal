@@ -487,23 +487,34 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
         if(!userResponse.ok||!userData.id)return res.status(404).json({error:"Roblox user not found."});
         return res.json({member:{id:String(userData.id),username:String(userData.name||"Unknown"),displayName:String(userData.displayName||""),role:"Not in group",rank:0,avatarUrl:thumbData.data?.[0]?.imageUrl||"",inGroup:false},sessions:[],punishments:[],notes:[],timeline:[],gameSessions:[],activity:{},strikeCount:0,canViewActivity:false,canViewPunishments:false,canViewPromotions:false,canViewNotes:false,canViewTimeline:false,canAddNotes:false,canModerateNotes:false,canRequestPromotion:false,canRequestPunishment:false});
       }
-      const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));
-      const user=await profile.json().catch(()=>({}));
-      const thumb=await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+encodeURIComponent(userId)+"&size=150x150&format=Png&isCircular=true");
-      const thumbData=await thumb.json().catch(()=>({}));
+      // Roblox user details and avatar are independent network requests; fetch together.
+      const [profile,thumb]=await Promise.all([
+        fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId)),
+        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+encodeURIComponent(userId)+"&size=150x150&format=Png&isCircular=true")
+      ]);
+      const [user,thumbData]=await Promise.all([
+        profile.json().catch(()=>({})),thumb.json().catch(()=>({}))
+      ]);
+      if(!profile.ok||!user.id)return res.status(404).json({error:"Roblox user profile could not be found."});
       const avatarUrl=thumbData.data?.[0]?.imageUrl||"";
-      const sessions=await pool.query("SELECT * FROM staff_shifts WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]);
-      const punishments=canViewPunishments?await pool.query("SELECT type,reason,duration,status,created_by_name,created_at,decided_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
       await pool.query("UPDATE activity_sessions SET ended_at=COALESCE(heartbeat_at,started_at),seconds=GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(heartbeat_at,started_at)-started_at))::INTEGER) WHERE user_id=$1 AND ended_at IS NULL AND COALESCE(heartbeat_at,started_at)<NOW()-INTERVAL '90 seconds'",[userId]);
-      const activity=canViewActivity?await pool.query("SELECT (COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)+COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0))::BIGINT AS seconds,COALESCE(SUM(active_seconds),0)::BIGINT AS active_seconds,COALESCE(SUM(afk_seconds),0)::BIGINT AS afk_seconds,COALESCE(SUM(typing_seconds),0)::BIGINT AS typing_seconds,COALESCE(SUM(message_count),0)::BIGINT AS message_count,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]):{rows:[]};
-      const gameSessions=canViewActivity?await pool.query("SELECT id,username,started_at,ended_at,CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END AS seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE user_id=$1 ORDER BY started_at DESC LIMIT 250",[userId]):{rows:[]};
-      const notes=canViewNotes?await pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
-      const teamHistory=canViewTimeline?await pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]):{rows:[]};
-      const timeline=canViewTimeline?await pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]):{rows:[]};
-      const tasks=canViewTasks?await pool.query("SELECT id::text AS id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
-      const promotions=canViewPromotions?await pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):{rows:[]};
-      const promotionStats=canViewPromotions?await pool.query("SELECT MAX(decided_at) AS last_promotion_at FROM promotion_suggestions WHERE user_id=$1 AND status='APPROVED'",[userId]):{rows:[{}]};
-      const disciplineStats=canViewPunishments?await pool.query("SELECT COUNT(*) FILTER (WHERE LOWER(type)='strike')::INTEGER AS strike_count,MAX(COALESCE(decided_at,created_at)) AS last_punishment_at FROM management_punishments WHERE user_id=$1 AND status='APPROVED'",[userId]):{rows:[{}]};
+      // All profile sections are independent after the stale-session cleanup. Run them concurrently.
+      const empty={rows:[]};
+      const [
+        sessions,punishments,activity,gameSessions,notes,teamHistory,timeline,tasks,promotions,promotionStats,disciplineStats
+      ]=await Promise.all([
+        pool.query("SELECT * FROM staff_shifts WHERE host_id=$1 OR cohost_id=$1 OR promoter_id=$1 OR $1=ANY(attendee_ids) OR oversee_id=$1 OR $1=ANY(oversee_ids) ORDER BY session_date DESC NULLS LAST,session_time DESC NULLS LAST",[userId]),
+        canViewPunishments?pool.query("SELECT type,reason,duration,status,created_by_name,created_at,decided_at FROM management_punishments WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):Promise.resolve(empty),
+        canViewActivity?pool.query("SELECT (COALESCE(SUM(CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END),0)+COALESCE((SELECT SUM(minutes)*60 FROM activity_adjustments WHERE user_id=$1),0))::BIGINT AS seconds,COALESCE(SUM(active_seconds),0)::BIGINT AS active_seconds,COALESCE(SUM(afk_seconds),0)::BIGINT AS afk_seconds,COALESCE(SUM(typing_seconds),0)::BIGINT AS typing_seconds,COALESCE(SUM(message_count),0)::BIGINT AS message_count,COUNT(*)::INTEGER AS sessions,MAX(COALESCE(ended_at,NOW())) AS last_seen FROM activity_sessions WHERE user_id=$1",[userId]):Promise.resolve(empty),
+        canViewActivity?pool.query("SELECT id,username,started_at,ended_at,CASE WHEN ended_at IS NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (NOW()-started_at))::INTEGER) ELSE seconds END AS seconds,active_seconds,afk_seconds,typing_seconds,message_count FROM activity_sessions WHERE user_id=$1 ORDER BY started_at DESC LIMIT 250",[userId]):Promise.resolve(empty),
+        canViewNotes?pool.query("SELECT id,body,created_by,created_by_name,created_at FROM management_member_notes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):Promise.resolve(empty),
+        canViewTimeline?pool.query("SELECT id,action,details,actor_name,created_at FROM management_audit_logs WHERE category=$2 AND target_id=$1 ORDER BY created_at DESC LIMIT 100",[userId,"TEAM"]):Promise.resolve(empty),
+        canViewTimeline?pool.query("SELECT id,category,action,target_username,details,actor_name,created_at FROM management_audit_logs WHERE target_id=$1 OR actor_id=$1 ORDER BY created_at DESC LIMIT 150",[userId]):Promise.resolve(empty),
+        canViewTasks?pool.query("SELECT id::text AS id,title,priority,status,due_date,created_at,completed_at FROM management_tasks WHERE assigned_to_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):Promise.resolve(empty),
+        canViewPromotions?pool.query("SELECT id,suggested_role,reason,status,suggested_by_name,created_at,decided_at FROM promotion_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[userId]):Promise.resolve(empty),
+        canViewPromotions?pool.query("SELECT MAX(decided_at) AS last_promotion_at FROM promotion_suggestions WHERE user_id=$1 AND status='APPROVED'",[userId]):Promise.resolve({rows:[{}]}),
+        canViewPunishments?pool.query("SELECT COUNT(*) FILTER (WHERE LOWER(type)='strike')::INTEGER AS strike_count,MAX(COALESCE(decided_at,created_at)) AS last_punishment_at FROM management_punishments WHERE user_id=$1 AND status='APPROVED'",[userId]):Promise.resolve({rows:[{}]})
+      ]);
       const lastPromotionAt=promotionStats.rows[0]?.last_promotion_at||null;
       const lastPunishmentAt=disciplineStats.rows[0]?.last_punishment_at||null;
       const strikeCount=Number(disciplineStats.rows[0]?.strike_count||0);
