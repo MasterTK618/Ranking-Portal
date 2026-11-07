@@ -533,9 +533,14 @@ function renderCommandResults(){
  commandSelection=0;
  commandResults.innerHTML=commandItems.length?commandItems.map((x,i)=>'<button type="button" class="command-result" data-command-index="'+i+'" aria-selected="'+(i===0?'true':'false')+'"><span class="command-result-icon">'+x.icon+'</span><span class="command-result-copy"><b>'+escapeHtml(x.label)+'</b><small>'+escapeHtml(x.detail)+'</small></span></button>').join(""):'<div class="command-empty">No matching pages or staff members found.</div>';
 }
-function openCommandPalette(){
+async function openCommandPalette(){
  if(!commandDialog)return;
- renderCommandResults();if(!commandDialog.open)commandDialog.showModal();commandInput.value="";renderCommandResults();commandInput.focus();
+ if(!commandDialog.open)commandDialog.showModal();
+ commandInput.value="";renderCommandResults();commandInput.focus();
+ if(!staffDirectory.length){
+  try{await loadStaffDirectory();}catch(error){console.warn("Workspace search could not load staff:",error);}
+  if(commandDialog.open)renderCommandResults();
+ }
 }
 function chooseCommand(index){
  const item=commandItems[index];if(!item)return;
@@ -937,52 +942,48 @@ function attachStaffAutocomplete(inputId,options={}){
  const input=$(inputId),hidden=$(options.hiddenId||inputId+"Id"),results=document.querySelector('[data-staff-results="'+inputId+'"]');
  if(!input||!hidden||!results||input.dataset.autocompleteReady)return;
  input.dataset.autocompleteReady="1";
+ let requestToken=0,visibleMatches=[];
  const eligible=()=>staffDirectory.filter(m=>!options.senior||Number(m.rank)>=245);
- const close=()=>{results.classList.remove("is-open");results.innerHTML="";};
- const render=()=>{
-  const q=input.value.trim().toLowerCase();
+ const close=()=>{results.classList.remove("is-open");results.innerHTML="";visibleMatches=[];};
+ const render=async()=>{
+  const q=input.value.trim().toLowerCase(),token=++requestToken;
   hidden.value="";
   if(!q){close();return;}
-  const matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
-  results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Staff")+' · Rank '+Number(m.rank||0)+'</small></span></button><button type="button" class="staff-suggestion-profile" data-staff-profile="'+escapeHtml(m.id)+'" aria-label="Open '+escapeHtml(m.username)+' profile">Profile ↗</button></div>').join(""):'<div class="staff-suggestion-empty">No matching staff usernames.</div>';
+  let matches=[];
+  if(options.allGroupMembers){
+   results.innerHTML='<div class="staff-suggestion-empty">Searching group members…</div>';results.classList.add("is-open");
+   try{const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q));if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
+   catch(error){if(token!==requestToken)return;results.innerHTML='<div class="staff-suggestion-empty">'+escapeHtml(error.message||"Could not search group members.")+'</div>';results.classList.add("is-open");return;}
+  }else matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
+  if(token!==requestToken)return;
+  visibleMatches=matches;
+  results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Group member")+' · Rank '+Number(m.rank||0)+'</small></span></button>'+(options.allGroupMembers?"":'<button type="button" class="staff-suggestion-profile" data-staff-profile="'+escapeHtml(m.id)+'" aria-label="Open '+escapeHtml(m.username)+' profile">Profile ↗</button>')+'</div>').join(""):'<div class="staff-suggestion-empty">No matching group members.</div>';
   results.classList.add("is-open");
  };
  input.addEventListener("input",render);
  input.addEventListener("focus",render);
  input.addEventListener("keydown",e=>{
   if(e.key==="Escape"){close();return;}
-  if(e.key==="Enter"){
-   const first=results.querySelector("[data-staff-suggestion]");
-   if(first){e.preventDefault();first.click();}
-  }
+  if(e.key==="Enter"){const first=results.querySelector("[data-staff-suggestion]");if(first){e.preventDefault();first.click();}}
  });
  results.addEventListener("click",e=>{
   const target=e.target instanceof Element?e.target:e.target?.parentElement;
   const profile=target?.closest?.("[data-staff-profile]");
-  if(profile){
-   close();
-   showPage("members");
-   showStaffProfile(profile.dataset.staffProfile);
-   return;
-  }
-  const button=target?.closest?.("[data-staff-suggestion]");
-  if(!button)return;
-  const member=eligible().find(m=>String(m.id)===String(button.dataset.staffSuggestion));
-  if(!member)return;
-  input.value=member.username;
-  hidden.value=String(member.id);
-  close();
+  if(profile){close();showPage("members");showStaffProfile(profile.dataset.staffProfile);return;}
+  const button=target?.closest?.("[data-staff-suggestion]");if(!button)return;
+  const member=visibleMatches.find(m=>String(m.id)===String(button.dataset.staffSuggestion));if(!member)return;
+  input.value=member.username;hidden.value=String(member.id);close();
  });
  results.addEventListener("pointerdown",event=>{if(event.target instanceof Element&&event.target.closest("button"))event.preventDefault();});
-  input.addEventListener("blur",()=>setTimeout(close,220));
+ input.addEventListener("blur",()=>setTimeout(close,220));
 }
 function staffIdFor(inputId,hiddenId){
  return String($(hiddenId||inputId+"Id")?.value||"");
 }
 function setupStaffAutocompleteFields(){
  const fields=[
-  ["punishUsername","punishUserId",false],
-  ["promotionUsername","promotionUserId",false],
+  ["punishUsername","punishUserId",false,true],
+  ["promotionUsername","promotionUserId",false,true],
   ["activityUsername","activityUserId",false],
   ["sessionHost","sessionHostId",false],
   ["sessionCoHost","sessionCoHostId",false],
@@ -994,7 +995,7 @@ function setupStaffAutocompleteFields(){
   ["editSessionPromoter","editSessionPromoterId",true],
   ["evidenceTargetUsername","evidenceTargetId",false]
  ];
- fields.forEach(([inputId,hiddenId,senior])=>attachStaffAutocomplete(inputId,{hiddenId,senior}));
+ fields.forEach(([inputId,hiddenId,senior,allGroupMembers])=>attachStaffAutocomplete(inputId,{hiddenId,senior,allGroupMembers}));
 }
 setupStaffAutocompleteFields();
 
@@ -1115,7 +1116,22 @@ return data;
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";activeDirectoryRank="STAFF";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directoryClearRank")?.addEventListener("click",()=>{activeDirectoryRank="STAFF";renderStaffDirectory();});
-$("directorySearch")?.addEventListener("input",renderStaffDirectory);
+function renderDirectorySearchSuggestions(){
+ const input=$("directorySearch");if(!input)return;
+ let panel=$("directorySearchSuggestions");
+ if(!panel){panel=document.createElement("div");panel.id="directorySearchSuggestions";panel.className="staff-autocomplete-results directory-search-suggestions";input.insertAdjacentElement("afterend",panel);}
+ const q=input.value.trim().toLowerCase();
+ if(!q){panel.classList.remove("is-open");panel.innerHTML="";return;}
+ const matches=staffDirectory.filter(m=>[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).slice(0,8);
+ panel.innerHTML=matches.length?matches.map(m=>'<button type="button" class="staff-suggestion" data-directory-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Staff")+' · Rank '+Number(m.rank||0)+'</small></span></button>').join(""):'<div class="staff-suggestion-empty">No matching staff members.</div>';
+ panel.classList.add("is-open");
+}
+$("directorySearch")?.addEventListener("input",()=>{renderStaffDirectory();renderDirectorySearchSuggestions();});
+$("directorySearch")?.addEventListener("focus",renderDirectorySearchSuggestions);
+$("directorySearch")?.addEventListener("blur",()=>setTimeout(()=>$( "directorySearchSuggestions")?.classList.remove("is-open"),220));
+$("directorySearch")?.addEventListener("keydown",event=>{if(event.key==="Escape")$( "directorySearchSuggestions")?.classList.remove("is-open");});
+$("directorySearch")?.parentElement?.addEventListener("click",event=>{const b=event.target.closest("[data-directory-suggestion]");if(!b)return;const panel=$("directorySearchSuggestions");panel?.classList.remove("is-open");showStaffProfile(b.dataset.directorySuggestion);});
+
 $("directorySearch")?.addEventListener("keydown",event=>{if(event.key==="Escape"){$("directorySearch").value="";renderStaffDirectory();return;}if(event.key==="Enter"){event.preventDefault();$("directoryResult")?.querySelector(".staff-card")?.click();}});
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
