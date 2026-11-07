@@ -1157,3 +1157,8 @@ button[type="button"],button[type="submit"]{touch-action:manipulation}
 .form-grid .staff-suggestion{min-height:46px}
 .form-grid .staff-suggestion:focus-visible,
 .form-grid .staff-suggestion-profile:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
+
+/* Search suggestion layers: keep dropdowns visible above nearby cards and dialogs. */
+.directory-filters{position:relative;}
+.directory-search-suggestions{position:absolute;z-index:80;left:0;right:0;top:calc(100% + 4px);max-height:320px;overflow:auto;}
+.directory-filters:has(.directory-search-suggestions.is-open){z-index:81;}
