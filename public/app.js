@@ -28,16 +28,26 @@ const defaultViews={sessions:"schedule",promotions:"requests",punishments:"reque
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
 async function api(url,options={}) {
-  const headers = {...(options.headers||{})};
-  if (options.body) headers["Content-Type"]="application/json";
-  if (options.method && options.method!=="GET" && sessionData?.csrfToken) headers["x-csrf-token"]=sessionData.csrfToken;
+  const headers={...(options.headers||{})};
+  if(options.body)headers["Content-Type"]="application/json";
+  const method=String(options.method||"GET").toUpperCase(),mutating=!["GET","HEAD","OPTIONS"].includes(method);
+  if(mutating&&sessionData?.csrfToken)headers["x-csrf-token"]=sessionData.csrfToken;
   const {timeoutMs,...fetchOptions}=options;
   const controller=timeoutMs?new AbortController():null;
   let timeout=null;
   if(controller)timeout=setTimeout(()=>controller.abort(),Number(timeoutMs));
+  const request=()=>fetch(url,{...fetchOptions,headers,credentials:"same-origin",...(controller?{signal:controller.signal}:{})});
   try{
-    const response=await fetch(url,{...fetchOptions,headers,credentials:"same-origin",...(controller?{signal:controller.signal}:{})});
-    const data=await response.json().catch(()=>({}));
+    let response=await request(),data=await response.json().catch(()=>({}));
+    // A stale CSRF token otherwise makes every submit/edit/delete action fail.
+    // Refresh it once from the authenticated session and retry only that specific error.
+    if(mutating&&response.status===403&&/security token expired/i.test(String(data.error||""))){
+      const tokenResponse=await fetch("/api/me",{credentials:"same-origin",headers:{"Accept":"application/json"},...(controller?{signal:controller.signal}:{})});
+      if(tokenResponse.ok){
+        const freshSession=await tokenResponse.json().catch(()=>null);
+        if(freshSession?.csrfToken){sessionData=freshSession;headers["x-csrf-token"]=freshSession.csrfToken;response=await request();data=await response.json().catch(()=>({}));}
+      }
+    }
     if(!response.ok){const error=new Error(data.error||"Request failed.");error.status=response.status;throw error;}
     return data;
   }catch(error){
