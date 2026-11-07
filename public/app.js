@@ -16,7 +16,7 @@ const $ = (id) => document.getElementById(id);
  button.addEventListener("click",()=>{collapsed=!collapsed;apply();try{localStorage.setItem("lemonz-sidebar-collapsed",collapsed?"1":"0");}catch{}});
  apply();
 })();
-let sessionData = null, selectedMember = null, roles = [];
+let sessionData = null, selectedMember = null, roles = [], activeProfileRequest = 0;
 // Directory state is initialized before any navigation, diagnostics, or page loaders can reference it.
 let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
@@ -944,29 +944,39 @@ async function loadStaffDirectory(force=false){
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-// Capture profile activation at document level so it survives directory re-renders and nested elements.
-document.addEventListener("click",e=>{
- const card=e.target.closest?.("#directoryResult [data-staff-id]");
- if(!card)return;
- e.preventDefault();
+// Delegate clicks from the directory itself. Native buttons already support Enter/Space,
+ // so one click handler covers mouse, touch, and keyboard without duplicate activation.
+$("directoryResult")?.addEventListener("click",e=>{
+ const card=e.target.closest?.("button.staff-card[data-staff-id]");
+ if(!card||!$("directoryResult")?.contains(card))return;
  const id=String(card.dataset.staffId||"");
- if(/^\d+$/.test(id))showStaffProfile(id);
-},true);
-document.addEventListener("keydown",e=>{
- if(e.key!=="Enter"&&e.key!==" ")return;
- const card=e.target.closest?.("#directoryResult [data-staff-id]");
- if(!card)return;
+ if(!/^\d+$/.test(id))return;
  e.preventDefault();
- const id=String(card.dataset.staffId||"");
- if(/^\d+$/.test(id))showStaffProfile(id);
-},true);
+ showStaffProfile(id);
+});
 
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
 async function showStaffProfile(id,openTeams=false){
-  const panel=$("memberProfile");panel.classList.remove("hidden");panel.innerHTML='<div class="profile-loading"><span class="loading-dot"></span> Loading staff profile…</div>';
+  const panel=$("memberProfile");
+  if(!panel){console.error("Staff profile panel #memberProfile is missing.");return;}
+  const userId=String(id||"");
+  if(!/^\d+$/.test(userId)){panel.classList.remove("hidden");panel.innerHTML='<div class="profile-error">This staff member has an invalid Roblox user ID.</div>';return;}
+  const requestToken=++activeProfileRequest;
+  panel.classList.remove("hidden");
+  panel.dataset.memberId=userId;
+  panel.innerHTML='<div class="profile-loading"><span class="loading-dot"></span> Loading staff profile…</div>';
+  panel.scrollIntoView({behavior:"smooth",block:"start"});
+  document.querySelectorAll("#directoryResult .staff-card").forEach(card=>{
+    const selected=String(card.dataset.staffId)===userId;
+    card.classList.toggle("is-opening",selected);
+    card.setAttribute("aria-busy",String(selected));
+  });
   try{
-    const d=await api("/api/management/members/"+encodeURIComponent(id)),m=d.member;
+    const d=await api("/api/management/members/"+encodeURIComponent(userId),{timeoutMs:45000});
+    if(requestToken!==activeProfileRequest)return;
+    if(!d||!d.member)throw new Error("The server returned an incomplete staff profile. Please retry.");
+    const m=d.member;
     if(m.inGroup===false){
       panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">ROBLOX PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.displayName||"")+' · Not in Lemonz</p></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div><p class="muted">This Roblox user is not currently a member of the Lemonz group, so staff history, requests, and internal management records are not available.</p>';
       panel.dataset.memberId=String(m.id);panel.dataset.memberUsername=String(m.username||"");return;
@@ -997,7 +1007,15 @@ async function showStaffProfile(id,openTeams=false){
     }
     if(canManageTeams){await loadProfileTeamEditor(m.id);if(openTeams)panel.querySelector('[data-profile-tab="teams"]')?.click();}
     panel.scrollIntoView({behavior:"smooth",block:"start"});
-  }catch(e){panel.innerHTML='<div class="profile-error">'+escapeHtml(e.message)+'</div>';}
+  }catch(e){
+    if(requestToken!==activeProfileRequest)return;
+    panel.innerHTML='<div class="profile-error"><b>Could not load this staff profile</b><p>'+escapeHtml(e.message||"Unknown error")+'</p><button type="button" class="quiet-btn" id="retryProfileLoad">Try profile again</button></div>';
+    $("retryProfileLoad")?.addEventListener("click",()=>showStaffProfile(userId,openTeams),{once:true});
+  }finally{
+    if(requestToken===activeProfileRequest){
+      document.querySelectorAll("#directoryResult .staff-card").forEach(card=>card.setAttribute("aria-busy","false"));
+    }
+  }
 }
 async function loadProfileTeamEditor(userId){
  const choices=$("profileTeamChoices"),status=$("profileTeamStatus"),save=$("saveProfileTeams");
