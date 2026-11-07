@@ -345,33 +345,40 @@ app.get("/api/group/role-members",requireLogin,async(req,res)=>{
   try{
     const viewer=await getIdentity(req.session.user.id);
     if(!viewer?.inGroup||Number(viewer.rank)<230)return res.status(403).json({error:"Rank 230 or higher is required to browse group members."});
-    let cursor="",pages=0,base=[];
+    const roles=await getRoles();
+    const role=roles.find(item=>Number(item.rank)===rank);
+    if(!role)return res.status(404).json({error:"That rank was not found in the Roblox group."});
+    const rolePath=role.path||("groups/"+GROUP_ID+"/roles/"+role.id);
+    let pageToken="",pages=0,base=[];
     do{
-      const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
-      const response=await fetch(url,{signal:AbortSignal.timeout(15000)}),data=await response.json().catch(()=>({}));
-      if(!response.ok||!Array.isArray(data.data))throw new Error(data.errors?.[0]?.message||data.message||("Roblox group members returned HTTP "+response.status));
-      for(const item of data.data){
-        const id=String(item.user?.userId||item.user?.id||"");
-        if(/^\d+$/.test(id)&&Number(item.role?.rank||0)===rank)base.push({id,rank,role:String(item.role?.name||("Rank "+rank)),username:String(item.user?.username||""),displayName:String(item.user?.displayName||"")});
+      const q=new URLSearchParams({maxPageSize:"100",filter:"role == '"+rolePath+"'"});
+      if(pageToken)q.set("pageToken",pageToken);
+      const data=await roblox("/groups/"+GROUP_ID+"/memberships?"+q.toString(),{signal:AbortSignal.timeout(15000)});
+      for(const membership of(Array.isArray(data.groupMemberships)?data.groupMemberships:[])){
+        const id=String(membership.user||"").match(/^users\/(\d+)$/)?.[1];
+        if(id)base.push({id,rank,role:role.name});
       }
-      cursor=data.nextPageCursor||"";
-      if(++pages>200)throw new Error("The group directory exceeded 20,000 members.");
-    }while(cursor);
+      pageToken=data.nextPageToken||"";
+      if(++pages>200)throw new Error("The selected rank exceeded the safe pagination limit.");
+    }while(pageToken);
     const profiles=[],thumbs=[];
     for(let i=0;i<base.length;i+=100){
       const ids=base.slice(i,i+100).map(x=>Number(x.id));
       const [pr,tr]=await Promise.all([
-        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false})}),
-        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true")
+        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false}),signal:AbortSignal.timeout(10000)}),
+        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true",{signal:AbortSignal.timeout(10000)})
       ]);
       const [pd,td]=await Promise.all([pr.json().catch(()=>({})),tr.json().catch(()=>({}))]);
       if(pr.ok&&Array.isArray(pd.data))profiles.push(...pd.data);
       if(tr.ok&&Array.isArray(td.data))thumbs.push(...td.data);
     }
     const byId=new Map(profiles.map(x=>[String(x.id),x])),avatarById=new Map(thumbs.map(x=>[String(x.targetId),x.imageUrl||""]));
-    const members=base.map(x=>({...x,username:byId.get(x.id)?.name||x.username||("User "+x.id),displayName:byId.get(x.id)?.displayName||x.displayName||"",avatarUrl:avatarById.get(x.id)||"",inGroup:true})).sort((x,y)=>x.username.localeCompare(y.username));
-    res.set("Cache-Control","private, max-age=45");res.json({rank,role:members[0]?.role||"",members,count:members.length,pagesScanned:pages});
-  }catch(error){console.error("Group rank member list failed:",error.message);res.status(502).json({error:"Could not load members in that rank: "+error.message});}
+    const members=base.map(x=>({...x,username:byId.get(x.id)?.name||"Unknown username",displayName:byId.get(x.id)?.displayName||"",avatarUrl:avatarById.get(x.id)||"",inGroup:true})).sort((a,b)=>a.username.localeCompare(b.username));
+    res.set("Cache-Control","private, max-age=45");res.json({rank,role:role.name,members,count:members.length,pagesScanned:pages,source:"roblox-open-cloud"});
+  }catch(error){
+    console.error("Open Cloud group rank member list failed:",error.message,error.roblox||"");
+    res.status(error.status||502).json({error:"Could not load members in that rank: "+error.message});
+  }
 });
 
 let staffDirectoryCache={at:0,data:null};
