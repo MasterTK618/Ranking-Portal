@@ -348,7 +348,7 @@ app.get("/api/group/role-members",requireLogin,async(req,res)=>{
     let cursor="",pages=0,base=[];
     do{
       const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
-      const response=await fetch(url),data=await response.json().catch(()=>({}));
+      const response=await fetch(url,{signal:AbortSignal.timeout(15000)}),data=await response.json().catch(()=>({}));
       if(!response.ok||!Array.isArray(data.data))throw new Error(data.errors?.[0]?.message||data.message||("Roblox group members returned HTTP "+response.status));
       for(const item of data.data){
         const id=String(item.user?.userId||item.user?.id||"");
@@ -374,7 +374,12 @@ app.get("/api/group/role-members",requireLogin,async(req,res)=>{
   }catch(error){console.error("Group rank member list failed:",error.message);res.status(502).json({error:"Could not load members in that rank: "+error.message});}
 });
 
+let staffDirectoryCache={at:0,data:null};
 app.get("/api/staff",requireLogin,async(req,res)=>{
+  if(staffDirectoryCache.data&&Date.now()-staffDirectoryCache.at<120000){
+    res.set("Cache-Control","private, max-age=60");
+    return res.json({...staffDirectoryCache.data,cached:true});
+  }
   const staffPermission = await pool.query("SELECT profile_view_rank FROM management_settings WHERE id=1").catch(()=>({rows:[]}));
   const staffMinRank = Number(staffPermission.rows[0]?.profile_view_rank || 243);
   const diagnostics = {
@@ -404,7 +409,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
       do {
         const url = "https://groups.roblox.com/v1/groups/" + encodeURIComponent(GROUP_ID) +
           "/users?limit=100&sortOrder=Asc" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
-        const response = await fetch(url);
+        const response = await fetch(url,{signal:AbortSignal.timeout(15000)});
         diagnostics.publicApiStatus = response.status;
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error("Roblox public Groups API returned HTTP " + response.status + ": " + (data.errors?.[0]?.message || data.message || "request failed"));
@@ -513,14 +518,16 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     diagnostics.profilesFound = profiles.length;
     diagnostics.avatarsFound = thumbs.length;
     res.set("Cache-Control","private, max-age=60");
-    res.json({
+    const payload={
       members,
       roles:roles.sort((x,y) => y.rank-x.rank),
       count:members.length,
       source:diagnostics.source,
       minRank:effectiveStaffMinRank,
       diagnostics
-    });
+    };
+    staffDirectoryCache={at:Date.now(),data:payload};
+    res.json(payload);
   } catch (err) {
     console.error("Lemonz staff directory failed:",err.message,err.roblox || "");
     res.status(502).json({error:"The staff directory could not finish loading: " + err.message,diagnostics});
