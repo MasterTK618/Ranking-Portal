@@ -731,7 +731,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     })();
     try{return await groupStaffSearchPromise;}finally{groupStaffSearchPromise=null;}
   }
-  router.get("/group-members/search",async(req,res,next)=>{try{
+  router.get("/group-members/search",requireLogin,async(req,res,next)=>{try{
     const query=String(req.query.q||"").trim().toLowerCase(),minimumRank=Math.max(230,Math.min(255,Number(req.query.minRank)||230));
     if(query.length<2||query.length>40)return res.json({members:[]});
     const roster=await getGroupStaffSearchRoster();
