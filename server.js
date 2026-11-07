@@ -477,25 +477,32 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     }
 
     const profiles = [], thumbs = [];
-    for (let i=0; i<base.length; i+=100) {
-      const ids = base.slice(i,i+100).map(m => Number(m.id));
-      const pr = await fetch("https://users.roblox.com/v1/users", {
+    // Enrich batches concurrently. Avatar/profile lookups are optional and
+    // must not hold the entire directory hostage when Roblox throttles them.
+    const batches = [];
+    for (let i=0; i<base.length; i+=100) batches.push(base.slice(i,i+100));
+    await Promise.all(batches.map(async batch => {
+      const ids=batch.map(m=>Number(m.id));
+      const profileTask=fetch("https://users.roblox.com/v1/users",{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({userIds:ids,excludeBannedUsers:false})
-      });
-      const pd = await pr.json().catch(() => ({}));
-      if (pr.ok && Array.isArray(pd.data)) profiles.push(...pd.data);
-      const tr = await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" +
-        ids.join(",") + "&size=150x150&format=Png&isCircular=true");
-      const td = await tr.json().catch(() => ({}));
-      if (tr.ok && Array.isArray(td.data)) thumbs.push(...td.data);
-    }
+      }).then(async response=>{
+        const data=await response.json().catch(()=>({}));
+        if(response.ok&&Array.isArray(data.data))profiles.push(...data.data);
+      }).catch(error=>console.warn("Directory profile enrichment skipped:",error.message));
+      const avatarTask=fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true")
+        .then(async response=>{
+          const data=await response.json().catch(()=>({}));
+          if(response.ok&&Array.isArray(data.data))thumbs.push(...data.data);
+        }).catch(error=>console.warn("Directory avatar enrichment skipped:",error.message));
+      await Promise.all([profileTask,avatarTask]);
+    }));
 
     const byId = new Map(profiles.map(p => [String(p.id),p]));
     const avatars = new Map(thumbs.map(t => [String(t.targetId),t.imageUrl || ""]));
     const members = base.map(m => ({
       id:m.id,rank:m.rank,role:m.role,
-      username:byId.get(m.id)?.name || m.username || ("User " + m.id),
+      username:byId.get(m.id)?.name || m.username || "Unknown username",
       displayName:byId.get(m.id)?.displayName || m.displayName || "",
       avatarUrl:avatars.get(m.id) || ""
     })).sort((x,y) =>
