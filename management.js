@@ -60,8 +60,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const {event,userId,username,jobId}=req.body||{};
       if(!["join","leave","metrics","message"].includes(event)||!/^[0-9]+$/.test(String(userId||""))||!String(username||"").trim())return res.status(400).json({error:"Invalid activity event."});
       const key=String(jobId||"unknown")+":"+String(userId),name=String(username).slice(0,40);
-      const memberIdentity=await getIdentity(String(userId));
-      if(!memberIdentity?.inGroup||Number(memberIdentity.rank)<230){
+      const groupRoster=await getGroupStaffSearchRoster();
+      const memberIdentity=groupRoster.find(member=>String(member.id)===String(userId));
+      if(!memberIdentity||Number(memberIdentity.rank)<230){
         await pool.query("DELETE FROM activity_sessions WHERE session_key=$1",[key]);
         return res.json({ok:true,ignored:true,reason:"Activity tracking is limited to Lemonz staff rank 230 and above."});
       }
@@ -353,7 +354,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const parsedDate=new Date(date+"T00:00:00.000Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
     if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
     const staff=await Promise.all([hostId,...(cohostId?[cohostId]:[])].map(async id=>({id,who:await getIdentity(id)})));
-    if(staff.some(x=>!x.who?.inGroup))return res.status(400).json({error:"The host and co-host must be current Lemonz staff members."});
+    if(staff.some(x=>!x.who?.inGroup))return res.status(400).json({error:"The host and co-host must be current Lemonz group members."});
     const userNames=await Promise.all(staff.map(async x=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,u.name||x.id];}));
     const names=Object.fromEntries(userNames);
     const cfg=await settings(),auto=requestAutoApproved(who,cfg);
@@ -401,7 +402,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(!title||title.length>100||! /^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||! /^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!hostId||!["PLANNED","ONGOING","DELAYED","CANCELED","COMPLETED"].includes(status)||!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(sessionType))return res.status(400).json({error:"Check the session name, date, time, type, status, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"Each staff member can only have one session role."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-    if(identities.some(x=>!x.who?.inGroup))return res.status(400).json({error:"All assigned people must be current Lemonz staff."});
+    if(identities.some(x=>!x.who?.inGroup))return res.status(400).json({error:"All assigned people must be current Lemonz group members."});
     const ranks=new Map(identities.map(x=>[x.id,Number(x.who.rank)]));
     if([...overseeIds,...(promoterId?[promoterId]:[])].some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Oversee and Promoter must be rank 245 or higher."});
     const names=await Promise.all(ids.map(async id=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];})),map=Object.fromEntries(names);
@@ -429,7 +430,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const parsedSessionDate=new Date(date+"T00:00:00.000Z");if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedSessionDate.getTime())||parsedSessionDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a valid session name, date, time, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-    if(identities.some(x=>!x.who?.inGroup))return res.status(400).json({error:"Every assigned person must be current Lemonz staff (rank 230 or higher)."});
+    if(identities.some(x=>!x.who?.inGroup))return res.status(400).json({error:"Every assigned person must be a current Lemonz group member."});
     const ranks=new Map(identities.map(x=>[x.id,x.who.rank]));
     if(overseeIds.some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Every Oversee must be rank 245 or higher."});
     if(b.promoterId&&Number(ranks.get(String(b.promoterId))||0)<245)return res.status(400).json({error:"Promoter must be rank 245 or higher."});
@@ -543,9 +544,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const shiftSql="SELECT person_id,COUNT(*)::INTEGER AS shifts_attended FROM (SELECT id AS shift_id,host_id AS person_id FROM staff_shifts WHERE host_id IS NOT NULL UNION SELECT id,cohost_id FROM staff_shifts WHERE cohost_id IS NOT NULL UNION SELECT id,promoter_id FROM staff_shifts WHERE promoter_id IS NOT NULL UNION SELECT id,unnest(oversee_ids) FROM staff_shifts WHERE cardinality(oversee_ids)>0 UNION SELECT id,unnest(attendee_ids) FROM staff_shifts WHERE cardinality(attendee_ids)>0) AS assigned_people WHERE ($1::TEXT IS NULL OR person_id=$1) GROUP BY person_id";
     const shiftResult=await pool.query(shiftSql,[canViewAll?null:userId]);
     const shiftCounts=new Map(shiftResult.rows.map(row=>[String(row.person_id),Number(row.shifts_attended||0)]));
-    const candidateIds=[...new Set([...stats.keys(),...shiftCounts.keys()])];
-    const staffIdentityResults=await Promise.all(candidateIds.map(async id=>{try{return [id,await getIdentity(id)];}catch{return [id,null];}}));
-    const verifiedStaffIds=new Set(staffIdentityResults.filter(([,member])=>member?.inGroup&&Number(member.rank)>=230).map(([id])=>id));
+    const currentGroupRoster=await getGroupStaffSearchRoster();
+    const verifiedStaffIds=new Set(currentGroupRoster.filter(member=>Number(member.rank)>=230).map(member=>String(member.id)));
     for(const id of [...stats.keys()])if(!verifiedStaffIds.has(id))stats.delete(id);
     for(const id of [...shiftCounts.keys()])if(!verifiedStaffIds.has(id))shiftCounts.delete(id);
     if(canViewAll)for(const [id,count] of shiftCounts){const existing=stats.get(id)||{user_id:id,username:id,seconds:0,last_seen:null,game_sessions:0};existing.shifts_attended=count;stats.set(id,existing);}
@@ -559,7 +559,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({members,adjustments:adjustments.rows,canEdit:Number(who.rank)>=Number(s.activity_edit_rank),canViewAll,daily:dailyResult.rows.map(x=>({...x,seconds:Number(x.seconds||0),visits:Number(x.visits||0)})),recent:recentResult.rows.map(x=>({...x,seconds:Number(x.seconds||0)})),quotaHours:Number(s.quota_hours_week||2)});
   }catch(e){next(e);}});
 
-  router.get("/activity-alerts",async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.inactivity_alert_view_rank||243))return res.status(403).json({error:"Your rank cannot view inactivity alerts."});if(Number(cfg.activity_alerts_enabled)!==1)return res.json({enabled:false,items:[]});const days=Math.max(1,Math.min(90,Number(cfg.inactivity_days)||7));const q=await pool.query("SELECT user_id,MAX(username) AS username,MAX(COALESCE(ended_at,heartbeat_at,started_at)) AS last_seen,COUNT(*)::int AS sessions FROM activity_sessions GROUP BY user_id HAVING MAX(COALESCE(ended_at,heartbeat_at,started_at))<NOW()-($1::text||' days')::interval ORDER BY last_seen ASC LIMIT 200",[days]);const verified=await Promise.all(q.rows.map(async row=>{try{const member=await getIdentity(String(row.user_id));return member?.inGroup&&Number(member.rank)>=230?row:null;}catch{return null;}}));res.json({enabled:true,days,items:verified.filter(Boolean)});}catch(e){next(e);}});
+  router.get("/activity-alerts",async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.inactivity_alert_view_rank||243))return res.status(403).json({error:"Your rank cannot view inactivity alerts."});if(Number(cfg.activity_alerts_enabled)!==1)return res.json({enabled:false,items:[]});const days=Math.max(1,Math.min(90,Number(cfg.inactivity_days)||7));const q=await pool.query("SELECT user_id,MAX(username) AS username,MAX(COALESCE(ended_at,heartbeat_at,started_at)) AS last_seen,COUNT(*)::int AS sessions FROM activity_sessions GROUP BY user_id HAVING MAX(COALESCE(ended_at,heartbeat_at,started_at))<NOW()-($1::text||' days')::interval ORDER BY last_seen ASC LIMIT 200",[days]);const currentGroupRoster=await getGroupStaffSearchRoster(),staffIds=new Set(currentGroupRoster.filter(member=>Number(member.rank)>=230).map(member=>String(member.id)));res.json({enabled:true,days,items:q.rows.filter(row=>staffIds.has(String(row.user_id)))});}catch(e){next(e);}});
   router.get("/live-servers",async(req,res,next)=>{try{
     const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view live game servers."});
     await pool.query("DELETE FROM live_game_players WHERE heartbeat_at<NOW()-INTERVAL '90 seconds'");
