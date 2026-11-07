@@ -337,7 +337,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await client.query("COMMIT");res.json({ok:true,deletedId:deleted.rows[0].id});
   }catch(e){if(client)try{await client.query("ROLLBACK")}catch{};next(e);}finally{client?.release();}});
   router.get("/session-requests",async(req,res,next)=>{try{
-    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings();if(Number(who.rank)<Number(cfg.session_requests_view_rank||230))return res.status(403).json({error:"Your role cannot view session requests."});const canReview=Number(who.rank)>=Number(cfg.session_approve_rank);
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings();if(Number(who.rank)<Number(cfg.session_requests_view_rank||230))return res.status(403).json({error:"Your role cannot view session requests."});const canReview=Number(who.rank)>=Number(cfg.session_approve_rank||243);
     const result=canReview?await pool.query("SELECT * FROM session_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM session_requests WHERE requested_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
     res.json({items:result.rows.map(x=>({...x,canCancel:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview)})),canReview,rank:Number(who.rank),settings:cfg});
   }catch(e){next(e);}});
