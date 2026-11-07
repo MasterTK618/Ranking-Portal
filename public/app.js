@@ -30,7 +30,7 @@ async function api(url,options={}) {
   if (options.method && options.method!=="GET" && sessionData?.csrfToken) headers["x-csrf-token"]=sessionData.csrfToken;
   const response = await fetch(url,{...options,headers,credentials:"same-origin"});
   const data = await response.json().catch(()=>({}));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (!response.ok) { const error=new Error(data.error || "Request failed."); error.status=response.status; throw error; }
   return data;
 }
 function showPage(page,view) {
@@ -874,7 +874,20 @@ async function loadStaffDirectory(force=false){
   if(result)result.innerHTML='<div class="empty-state">Loading staff directory…</div>';
   if(button)button.disabled=true;
   try{
-   const data=await api("/api/staff"+(force?"?refresh=1":""));
+   let data=null,lastError=null;
+   // Render can briefly return a gateway/network error while the service is waking up.
+   // Retry transient failures automatically so users do not have to press Try again.
+   for(let attempt=0;attempt<3;attempt++){
+    try{data=await api("/api/staff"+(force?"?refresh=1":""));lastError=null;break;}
+    catch(error){
+     lastError=error;
+     const transient=!error.status||error.status===408||error.status===429||error.status>=500;
+     if(!transient||attempt===2)throw error;
+     if(status)status.textContent="Waking up the staff directory… retrying ("+(attempt+1)+"/2)";
+     await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+    }
+   }
+   if(lastError)throw lastError;
    if(requestId!==directoryRequestToken)return data;
    const members=Array.isArray(data.members)?data.members:[];
    staffDirectory=members;
@@ -907,7 +920,7 @@ async function loadStaffDirectory(force=false){
     if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(error.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
     $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
    }
-   throw error;
+   return null;
   }finally{
    if(requestId===directoryRequestToken&&button)button.disabled=false;
   }
@@ -917,7 +930,16 @@ async function loadStaffDirectory(force=false){
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-$("directoryResult")?.addEventListener("click",e=>{const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
+// Delegate from document so profile opening keeps working if the directory contents are re-rendered.
+document.addEventListener("click",e=>{
+ const card=e.target.closest?.("#directoryResult [data-staff-id]");
+ if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\\d+$/.test(id))showStaffProfile(id);}
+});
+document.addEventListener("keydown",e=>{
+ if(e.key!=="Enter"&&e.key!==" ")return;
+ const card=e.target.closest?.("#directoryResult [data-staff-id]");
+ if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\\d+$/.test(id))showStaffProfile(id);}
+});
 
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
