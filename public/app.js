@@ -833,7 +833,7 @@ function fillTeamFilter(id){
 function populateTaskAssignees(){
  const select=$("taskAssignedTo");if(!select)return;
  const previous=select.value,teamFilter=$("taskTeamAssignFilter")?.value||"ALL",minRank=Number(taskSettingsCache.task_view_rank||230);
- const eligible=staffDirectory.filter(member=>Number(member.rank)>=minRank&&(teamFilter==="ALL"||(teamAssignments.get(String(member.id))||new Set()).has(String(teamFilter))));
+ const eligible=staffDirectory.filter(member=>{const teams=teamAssignments.get(String(member.id))||new Set();return Number(member.rank)>=minRank&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?teams.size===0:teams.has(String(teamFilter))));});
  select.innerHTML='<option value="">Choose a staff member…</option>'+eligible.map(member=>'<option value="'+escapeHtml(member.id)+'">'+escapeHtml(member.username)+' · '+escapeHtml(member.role)+'</option>').join("");
  if(previous&&eligible.some(member=>String(member.id)===previous))select.value=previous;
  if(!eligible.length)select.innerHTML='<option value="">'+(staffDirectory.length?"No eligible staff in this team":"Staff directory is still loading — refresh in a moment")+'</option>';
