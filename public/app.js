@@ -903,7 +903,7 @@ function attachStaffAutocomplete(inputId,options={}){
  };
  input.addEventListener("input",render);input.addEventListener("focus",render);
  input.addEventListener("keydown",e=>{if(e.key==="Escape")close();if(e.key==="Enter"){e.preventDefault();const first=results.querySelector("[data-staff-suggestion]");if(first)first.click();}});
- results.addEventListener("click",e=>{const profile=e.target.closest("[data-staff-profile]");if(profile){showStaffProfile(profile.dataset.staffProfile);return;}const b=e.target.closest("[data-staff-suggestion]");if(!b)return;const m=eligible().find(x=>String(x.id)===String(b.dataset.staffSuggestion));if(!m)return;input.value=m.username;hidden.value=String(m.id);close();});
+ results.addEventListener("click",e=>{const profile=e.target.closest("[data-staff-profile]");if(profile){showPage("members");showStaffProfile(profile.dataset.staffProfile);return;}const b=e.target.closest("[data-staff-suggestion]");if(!b)return;const m=eligible().find(x=>String(x.id)===String(b.dataset.staffSuggestion));if(!m)return;input.value=m.username;hidden.value=String(m.id);close();});
  input.addEventListener("blur",()=>setTimeout(close,180));
 }
 function staffIdFor(inputId){return String($(inputId+"Id")?.value||"");}
