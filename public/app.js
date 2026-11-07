@@ -916,15 +916,32 @@ async function loadStaffDirectory(force=false){
  if(staffDirectory.length&&!force){setupStaffAutocompleteFields();renderStaffDirectory();return;}
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
-  const roleData=await api("/api/group/roles");directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];groupRoleCache=directoryRoles;renderDirectoryRankSidebar();
-  const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=230;staffDiagnostics=d.diagnostics||null;if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
+  // Role metadata is helpful for the rank sidebar, but it must never block the
+  // actual staff roster. Roblox's role endpoint can fail independently.
+  let roleLoadWarning="";
+  try{
+   const roleData=await api("/api/group/roles");
+   directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];
+   groupRoleCache=directoryRoles;
+  }catch(roleError){
+   roleLoadWarning="Group role counts are temporarily unavailable. ";
+   console.warn("Directory role metadata unavailable; continuing with staff roster:",roleError.message);
+  }
+  renderDirectoryRankSidebar();
+  const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=230;staffDiagnostics=d.diagnostics||null;
+  if(!directoryRoles.length&&Array.isArray(d.roles)){
+   directoryRoles=d.roles.map(r=>({...r,memberCount:Number(r.memberCount||0)}));
+   groupRoleCache=directoryRoles;
+   renderDirectoryRankSidebar();
+  }
+  if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
   try{
    const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map();for(const x of(teams.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}teamStaffCache=staffDirectory;await syncTeamsByGroupRole();
    const filter=$("directoryTeamFilter");
    if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
   }catch{}
 
-  renderStaffDirectory();if(!staffDirectory.length){const z=d.diagnostics||{};status.textContent="No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+". Check STAFF_MIN_RANK and the group ID."; }
+  renderStaffDirectory();if(!staffDirectory.length){const z=d.diagnostics||{};status.textContent=roleLoadWarning+"No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+". Check the configured group ID and Roblox group API access.";}else if(roleLoadWarning&&status){status.textContent=roleLoadWarning+"Showing all "+staffDirectory.length+" staff members ranked 230+.";}
   try{if(!groupRoleCache.length){const groupRoleData=await api("/api/group/roles");groupRoleCache=groupRoleData.roles||[];}}catch(roleError){console.warn("Complete group role list unavailable:",roleError);}
   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(groupRoleCache.length?groupRoleCache:d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
   const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
