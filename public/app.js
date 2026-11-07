@@ -1057,7 +1057,7 @@ function renderSessionTable(items,el,searchText=""){
 async function loadSessions(){
  try{
   if(!staffDirectory.length)await loadStaffDirectory();
-  const d=await api("/api/management/sessions"),all=d.sessions||[];window.__lemonzSessions=all;$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);
+  const d=await api("/api/management/sessions"),all=d.sessions||[];window.__lemonzSessions=all;$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);$("jumpScheduleBtn")?.classList.toggle("hidden",!d.canCreate);
   const now=new Date(),upcoming=all.filter(s=>s.status==="PLANNED"||s.status==="DELAYED").filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;const teamFilter=fillTeamFilter("sessionTeamFilter");
   const counts=[["TOTAL SESSIONS",all.length,"All recorded events"],["UPCOMING",upcoming,"Planned or delayed"],["ON-GOING",all.filter(s=>s.status==="ONGOING").length,"Currently running"],["COMPLETED",all.filter(s=>s.status==="COMPLETED").length,"Successfully delivered"]];
   $("sessionSummary").innerHTML=counts.map(x=>'<article class="session-stat"><span>▦</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
