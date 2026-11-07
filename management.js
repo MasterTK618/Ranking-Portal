@@ -614,7 +614,9 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const userId=String(req.body?.userId||""), username=String(req.body?.username||"").trim();
       const minutes=Number(req.body?.minutes), reason=String(req.body?.reason||"").trim();
       if(!/^\d+$/.test(userId)||!username||!Number.isInteger(minutes)||minutes===0||Math.abs(minutes)>100000||!reason)
-        return res.status(400).json({error:"Enter a Roblox user ID, username, non-zero minutes, and reason."});
+        return res.status(400).json({error:"Choose a staff member, enter a non-zero whole number of minutes, and provide a reason."});
+      const target=await getIdentity(userId);
+      if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"The selected user is no longer a Lemonz staff member."});
       await pool.query("INSERT INTO activity_adjustments(user_id,username,minutes,reason,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6)",
         [userId,username,minutes,reason,req.session.user.id,req.session.user.name]);
       res.json({ok:true});
@@ -786,7 +788,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid record ID."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const s=await settings(),canManage=who.rank>=Number(s[rankField]);client=await pool.connect();await client.query("BEGIN");
-      const pendingOnly=path==="leaves"?" AND status='PENDING'":"";
+       const pendingOnly=path==="leaves"?" AND ($3=TRUE OR status='PENDING')":"";
       const r=await client.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE)"+pendingOnly+" RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
       if(!r.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Record not found, already deleted, or you do not have permission to remove it."});}
       const item=r.rows[0];
