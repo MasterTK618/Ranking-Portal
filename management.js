@@ -762,7 +762,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   });
   router.post("/leaves",csrf,async(req,res,next)=>{
     try{
-      const b=req.body||{},roblox=String(b.robloxUsername||"").trim(),reason=String(b.reason||"").trim(),start=String(b.startDate||""),end=String(b.endDate||"");
+      const b=req.body||{},roblox=String(b.robloxUsername||req.session.user?.name||"").trim(),reason=String(b.reason||"").trim(),start=String(b.startDate||""),end=String(b.endDate||"");
       const parse=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const d=new Date(s+"T00:00:00.000Z");return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==s?null:d;};
       const a=parse(start),z=parse(end),offset=Number(b.timezoneOffset),safeOffset=Number.isInteger(offset)&&Math.abs(offset)<=840?offset:0,now=new Date(Date.now()-safeOffset*60000);now.setUTCHours(0,0,0,0);
       if(roblox.length<3||roblox.length>40||reason.length<8||reason.length>2000||!a||!z||a<now||z<a||((z-a)/86400000)>29)return res.status(400).json({error:"Check your Roblox username, provide a reason of at least 8 characters, and choose valid dates within a 30-day period starting today or later."});
