@@ -1256,9 +1256,14 @@ async function loadSessionRequests(){
  }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
 }
 $("submitSessionRequest")?.addEventListener("click",async()=>{
- const b=$("submitSessionRequest");b.disabled=true;b.textContent="Sending…";
- try{await api("/api/management/session-requests",{method:"POST",body:JSON.stringify({sessionType:$("sessionRequestType").value,title:$("sessionRequestTitle").value.trim(),details:$("sessionRequestDetails").value.trim(),preferredDate:$("sessionRequestDate").value,preferredTime:$("sessionRequestTime").value,hostId:staffIdFor("sessionRequestHost"),cohostId:staffIdFor("sessionRequestCoHost")})});["sessionRequestTitle","sessionRequestDetails","sessionRequestDate","sessionRequestTime"].forEach(id=>$(id).value="");$("sessionRequestHost").value="";$("sessionRequestHostId").value="";$("sessionRequestCoHost").value="";$("sessionRequestCoHostId").value="";notice("Session request submitted and logged.","success");await loadSessionRequests();}
- catch(e){notice(e.message,"error");}finally{b.disabled=false;b.textContent="Send session request";}
+ const b=$("submitSessionRequest"),title=$("sessionRequestTitle").value.trim(),date=$("sessionRequestDate").value,time=$("sessionRequestTime").value,hostId=staffIdFor("sessionRequestHost"),cohostId=staffIdFor("sessionRequestCoHost");
+ if(!title||!date||!time||!hostId){notice("Enter a session title, preferred date and time, and choose a host from the suggestions.","error");return;}
+ if(b.disabled)return;b.disabled=true;b.textContent="Sending…";
+ try{
+  await api("/api/management/session-requests",{method:"POST",body:JSON.stringify({sessionType:$("sessionRequestType").value,title,details:$("sessionRequestDetails").value.trim(),preferredDate:date,preferredTime:time,hostId,cohostId})});
+  ["sessionRequestTitle","sessionRequestDetails","sessionRequestDate","sessionRequestTime"].forEach(id=>$(id).value="");$("sessionRequestHost").value="";$("sessionRequestHostId").value="";$("sessionRequestCoHost").value="";$("sessionRequestCoHostId").value="";
+  notice("Session request submitted and logged.","success");await loadSessionRequests();
+ }catch(e){notice(e.message,"error");}finally{b.disabled=false;b.textContent="Send session request";}
 });
 $("refreshSessionRequests")?.addEventListener("click",loadSessionRequests);
 
@@ -1291,7 +1296,18 @@ async function openSessionRoles(id){const s=(window.__lemonzSessions||[]).find(x
 document.addEventListener("click",e=>{const b=e.target.closest("[data-edit-session-roles]");if(b){e.preventDefault();openSessionRoles(b.dataset.editSessionRoles).catch(err=>notice(err.message,"error"));}});
 // Status changes are handled once by the earlier prompt-and-save listener.
 ["closeSessionRoles","cancelSessionRoles"].forEach(id=>$(id)?.addEventListener("click",()=> $("sessionRolesDialog").close()));
-$("sessionRolesForm")?.addEventListener("submit",async e=>{e.preventDefault();const btn=$("saveSessionRoles");btn.disabled=true;const body={title:$("editSessionTitle").value.trim(),sessionType:$("editSessionType").value,date:$("editSessionDate").value,time:$("editSessionTime").value,status:$("editSessionStatus").value,statusNote:$("editSessionStatusNote").value,hostId:staffIdFor("editSessionHost"),cohostId:staffIdFor("editSessionCoHost"),promoterId:staffIdFor("editSessionPromoter"),overseeSlots:collectSessionRoleSlots("editOverseeSlots"),attendeeSlots:collectSessionRoleSlots("editAttendeeSlots")};try{await api("/api/management/sessions/"+encodeURIComponent($("editSessionId").value)+"/roles",{method:"PATCH",body:JSON.stringify(body)});notice("Session updated.","success");$("sessionRolesDialog").close();await loadSessions();}catch(err){notice(err.message,"error");}finally{btn.disabled=false;}});
+$("sessionRolesForm")?.addEventListener("submit",async e=>{
+ e.preventDefault();const btn=$("saveSessionRoles");if(btn.disabled)return;
+ const body={title:$("editSessionTitle").value.trim(),sessionType:$("editSessionType").value,date:$("editSessionDate").value,time:$("editSessionTime").value,status:$("editSessionStatus").value,statusNote:$("editSessionStatusNote").value,hostId:staffIdFor("editSessionHost"),cohostId:staffIdFor("editSessionCoHost"),promoterId:staffIdFor("editSessionPromoter"),overseeSlots:collectSessionRoleSlots("editOverseeSlots"),attendeeSlots:collectSessionRoleSlots("editAttendeeSlots")};
+ if(!body.title||!body.date||!body.time||!body.hostId){notice("Enter the session name, date, time, and select a host from the suggestions.","error");return;}
+ const assigned=[body.hostId,body.cohostId,body.promoterId,...body.overseeSlots.map(x=>x.userId),...body.attendeeSlots.map(x=>x.userId)].filter(Boolean);
+ if(new Set(assigned).size!==assigned.length){notice("Each staff member can only have one role in a session.","error");return;}
+ if(body.overseeSlots.some(x=>x.userId&&!staffDirectory.some(m=>String(m.id)===String(x.userId)&&Number(m.rank)>=245))||body.promoterId&&!staffDirectory.some(m=>String(m.id)===String(body.promoterId)&&Number(m.rank)>=245)){notice("Oversees and the promoter must be rank 245 or higher.","error");return;}
+ btn.disabled=true;btn.textContent="Saving…";
+ try{await api("/api/management/sessions/"+encodeURIComponent($("editSessionId").value)+"/roles",{method:"PATCH",body:JSON.stringify(body)});notice("Session updated.","success");$("sessionRolesDialog").close();await loadSessions();}
+ catch(err){notice(err.message,"error");}
+ finally{btn.disabled=false;btn.textContent="Save all changes";}
+});
 $("calendarPrev")?.addEventListener("click",()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()-1,1);loadSessions();});
 $("calendarNext")?.addEventListener("click",()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);loadSessions();});
 $("refreshSessions")?.addEventListener("click",loadSessions);
