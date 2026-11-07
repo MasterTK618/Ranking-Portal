@@ -879,8 +879,20 @@ async function loadStaffDirectory(force=false){
  const requestId=++directoryRequestToken;
  const task=(async()=>{
   const result=$("directoryResult"),status=$("directoryStatus"),button=$("directoryButton");
-  if(status)status.textContent="Loading staff ranked "+staffMinRank+"+…";
-  if(result)result.innerHTML='<div class="empty-state">Loading staff directory…</div>';
+  // Render the last successful browser snapshot immediately while the server refreshes.
+  // This avoids a blank directory on navigation and after a sleeping Render instance wakes.
+  if(!force&&!staffDirectory.length){
+   try{
+    const saved=JSON.parse(localStorage.getItem("lemonz-staff-directory-v1")||"null");
+    if(saved&&Array.isArray(saved.members)&&saved.members.length&&Date.now()-Number(saved.savedAt||0)<86400000){
+     staffDirectory=saved.members;staffMinRank=Number(saved.minRank||230);teamStaffCache=staffDirectory;
+     renderStaffDirectory();
+     if(status)status.textContent="Showing recently saved staff · Checking for updates…";
+    }
+   }catch{}
+  }
+  if(status&&!staffDirectory.length)status.textContent="Loading staff ranked "+staffMinRank+"+…";
+  if(result&&!staffDirectory.length)result.innerHTML='<div class="empty-state">Loading staff directory…</div>';
   if(button)button.disabled=true;
   try{
    let data=null,lastError=null;
@@ -908,6 +920,7 @@ async function loadStaffDirectory(force=false){
    staffMinRank=Number(data.minRank||data.diagnostics?.minRank||230);
    staffDiagnostics=data.diagnostics||null;
    teamStaffCache=members;
+   try{localStorage.setItem("lemonz-staff-directory-v1",JSON.stringify({savedAt:Date.now(),minRank:staffMinRank,members}));}catch{}
    renderStaffDirectory();
    if(!members.length){
     const info=data.diagnostics||{};
@@ -930,9 +943,14 @@ async function loadStaffDirectory(force=false){
    return data;
   }catch(error){
    if(requestId===directoryRequestToken){
-    if(status)status.textContent="Could not load staff: "+error.message;
-    if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(error.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
-    $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
+    if(staffDirectory.length){
+     if(status)status.textContent="Showing saved staff directory · Update failed: "+error.message;
+     if(result&&!result.querySelector(".directory-stale-note"))result.insertAdjacentHTML("afterbegin",'<div class="directory-stale-note">Showing the last saved staff list. Refresh to try again.</div>');
+    }else{
+     if(status)status.textContent="Could not load staff: "+error.message;
+     if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(error.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
+     $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
+    }
    }
    return null;
   }finally{
