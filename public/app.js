@@ -975,10 +975,23 @@ function attachStaffAutocomplete(inputId,options={}){
   input.value=member.username;hidden.value=String(member.id);close();
  });
  results.addEventListener("pointerdown",event=>{if(event.target instanceof Element&&event.target.closest("button"))event.preventDefault();});
- input.addEventListener("blur",()=>setTimeout(close,220));
+ const resolveExact=()=>{
+  const typed=input.value.trim().toLowerCase();if(!typed)return;
+  const source=options.allGroupMembers?visibleMatches:eligible();
+  const exact=source.find(m=>String(m.username||"").trim().toLowerCase()===typed);
+  if(exact)hidden.value=String(exact.id);
+ };
+ input.addEventListener("change",resolveExact);
+ input.addEventListener("blur",()=>{resolveExact();setTimeout(close,220);});
 }
 function staffIdFor(inputId,hiddenId){
- return String($(hiddenId||inputId+"Id")?.value||"");
+ const hidden=$(hiddenId||inputId+"Id"),existing=String(hidden?.value||"");
+ if(existing)return existing;
+ const input=$(inputId),typed=String(input?.value||"").trim().toLowerCase();
+ if(!typed)return "";
+ const match=staffDirectory.find(m=>String(m.username||"").trim().toLowerCase()===typed);
+ if(match&&hidden)hidden.value=String(match.id);
+ return match?String(match.id):"";
 }
 function setupStaffAutocompleteFields(){
  const fields=[
