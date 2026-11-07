@@ -1172,14 +1172,14 @@ document.addEventListener("submit",async e=>{
 });
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
- const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
- const dateKey=value=>{if(!value)return "";const raw=String(value),match=raw.match(/^(\d{4}-\d{2}-\d{2})/);if(match)return match[1];const d=new Date(value);return Number.isNaN(d.getTime())?"":d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
- const grouped=new Map();for(const session of items){const key=dateKey(session.session_date);if(key){if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(session);}}
- for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
- const today=new Date(),todayKey=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
- for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0"),events=grouped.get(date)||[];cells.push('<div class="calendar-day'+(date===todayKey?' is-today':'')+'"><b class="calendar-day-number">'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'" title="'+escapeHtml(s.title)+'"><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+sessionTypeLabel(s.session_type)+'</small></div>').join("")+'</div>');}
- while(cells.length%7)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
- const calendar=$("sessionsCalendar");if(calendar)calendar.innerHTML='<div class="calendar-weekdays">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
+  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
+  const dateKey=value=>{if(!value)return "";const raw=String(value),match=raw.match(/^(\d{4}-\d{2}-\d{2})/);if(match)return match[1];const d=new Date(value);return Number.isNaN(d.getTime())?"":d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+  const grouped=new Map();for(const session of items){const key=dateKey(session.session_date);if(key){if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(session);}}
+  for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
+  const today=new Date(),todayKey=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0"),events=grouped.get(date)||[];cells.push('<div class="calendar-day'+(date===todayKey?' is-today':'')+'"><b class="calendar-day-number">'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'" title="'+escapeHtml(s.title)+'"><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+sessionTypeLabel(s.session_type)+'</small></div>').join("")+'</div>');}
+  while(cells.length%7)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
+  const calendar=$("sessionsCalendar");if(calendar)calendar.innerHTML='<div class="calendar-weekdays">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
 function sessionTypeLabel(v){return v==="RECRUITMENT"?"Recruitment":v==="MINI_GAMES"?"Mini-Games":"Promotional";}
 function sessionStatusLabel(v){return ({PLANNED:"Planned",ONGOING:"On-Going",DELAYED:"Delayed",CANCELED:"Canceled",COMPLETED:"Completed"})[v]||"Planned";}
@@ -1196,7 +1196,7 @@ async function loadSessions(){
   const now=new Date(),upcoming=all.filter(s=>s.status==="PLANNED"||s.status==="DELAYED").filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;const teamFilter=fillTeamFilter("sessionTeamFilter");
   const counts=[["TOTAL SESSIONS",all.length,"All recorded events"],["UPCOMING",upcoming,"Planned or delayed"],["ON-GOING",all.filter(s=>s.status==="ONGOING").length,"Currently running"],["COMPLETED",all.filter(s=>s.status==="COMPLETED").length,"Successfully delivered"]];
   $("sessionSummary").innerHTML=counts.map(x=>'<article class="session-stat"><span>▦</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
-  const items=all.filter(s=>{const teamIds=Array.isArray(s.host_team_ids)?s.host_team_ids.map(String):[];return String(s.session_date).slice(0,7)===calendarMonthKey(calendarCursor)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?teamIds.length===0:teamIds.includes(String(teamFilter))));});
+  const items=all.filter(s=>{const raw=String(s.session_date||"");const monthKey=/^\d{4}-\d{2}-\d{2}/.test(raw)?raw.slice(0,7):calendarMonthKey(new Date(s.session_date));const teamIds=Array.isArray(s.host_team_ids)?s.host_team_ids.map(String):[];return monthKey===calendarMonthKey(calendarCursor)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?teamIds.length===0:teamIds.includes(String(teamFilter))));});
   $("calendarMonth").textContent=calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});drawSessionsCalendar(items);
   const q=$("sessionSearch")?.value||"",filter=$("sessionFilter")?.value||"all";
   const visible=all.filter(s=>{const future=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now;const teamIds=Array.isArray(s.host_team_ids)?s.host_team_ids.map(String):[];const teamMatch=teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?teamIds.length===0:teamIds.includes(String(teamFilter)));return teamMatch&&(filter==="all"||(filter==="upcoming"&&future&&["PLANNED","DELAYED"].includes(s.status))||(filter==="past"&&(!future||["CANCELED","COMPLETED"].includes(s.status))));});
@@ -1262,10 +1262,16 @@ $("calendarNext")?.addEventListener("click",()=>{calendarCursor=new Date(calenda
 $("refreshSessions")?.addEventListener("click",loadSessions);
 $("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);$("sessionTeamFilter")?.addEventListener("change",loadSessions);
 populateCreateRoleSlots();
-$("addOverseeSlot")?.addEventListener("click",()=>addSessionRoleSlot("createOverseeSlots","Oversee "+($("createOverseeSlots").children.length+1),{},true));
-$("addAttendeeSlot")?.addEventListener("click",()=>addSessionRoleSlot("createAttendeeSlots","Attendee "+($("createAttendeeSlots").children.length+1)));
-$("editAddOverseeSlot")?.addEventListener("click",()=>addSessionRoleSlot("editOverseeSlots","Oversee "+($("editOverseeSlots").children.length+1),{},true));
-$("editAddAttendeeSlot")?.addEventListener("click",()=>addSessionRoleSlot("editAttendeeSlots","Attendee "+($("editAttendeeSlots").children.length+1)));
+// Delegate role-slot controls so they remain active after the session workspace is shown.
+document.addEventListener("click",e=>{
+ const button=e.target.closest("#addOverseeSlot,#addAttendeeSlot,#editAddOverseeSlot,#editAddAttendeeSlot");
+ if(!button)return;
+ e.preventDefault();
+ const map={addOverseeSlot:["createOverseeSlots","Oversee ",true],addAttendeeSlot:["createAttendeeSlots","Attendee ",false],editAddOverseeSlot:["editOverseeSlots","Oversee ",true],editAddAttendeeSlot:["editAttendeeSlots","Attendee ",false]};
+ const [containerId,label,senior]=map[button.id],container=$(containerId);
+ if(!container)return;
+ addSessionRoleSlot(containerId,label+(container.children.length+1),{},senior);
+},{capture:true});
 $("sessionRepeat")?.addEventListener("change",()=>{$("sessionRepeatUntilWrap").classList.toggle("hidden",$("sessionRepeat").value==="NONE");});
 $("createSession").addEventListener("click",async()=>{
  const hostId=staffIdFor("sessionHost"),cohostId=staffIdFor("sessionCoHost"),promoterId=staffIdFor("sessionPromoter");
