@@ -865,13 +865,16 @@ $("taskStorageDiagnostics")?.addEventListener("click",async()=>{
 $("closeTaskDiagnostics")?.addEventListener("click",()=>$("taskStoragePanel")?.classList.add("hidden"));
 
 
-$("taskSearch")?.addEventListener("input",loadTasks);
-$("taskStatusFilter")?.addEventListener("change",loadTasks);$("taskTeamFilter")?.addEventListener("change",loadTasks);$("taskTeamAssignFilter")?.addEventListener("change",loadTasks);
+$("taskSearch")?.addEventListener("input",renderTasks);
+$("taskStatusFilter")?.addEventListener("change",renderTasks);$("taskTeamFilter")?.addEventListener("change",renderTasks);$("taskTeamAssignFilter")?.addEventListener("change",populateTaskAssignees);
 $("createTask")?.addEventListener("click",async()=>{
-  const btn=$("createTask");btn.disabled=true;btn.textContent="Creating…";
-  try{await api("/api/management/tasks",{method:"POST",body:JSON.stringify({title:$("taskTitle").value.trim(),description:$("taskDescription").value.trim(),assignedToId:$("taskAssignedTo").value,priority:$("taskPriority").value,dueDate:$("taskDueDate").value})});
-    ["taskTitle","taskDescription","taskDueDate"].forEach(id=>$(id).value="");$("taskAssignedTo").value="";$("taskPriority").value="NORMAL";notice("Staff task created and logged.","success");await loadTasks();
-  }catch(e){notice(e.message,"error")}finally{btn.disabled=false;btn.textContent="Create task"}
+ const btn=$("createTask"),title=$("taskTitle").value.trim(),assignedToId=$("taskAssignedTo").value;
+ if(!title){notice("Enter a task title.","error");$("taskTitle").focus();return;}
+ if(!assignedToId){notice("Choose a staff member to assign this task to.","error");$("taskAssignedTo").focus();return;}
+ if(btn.disabled)return;btn.disabled=true;btn.textContent="Creating…";
+ try{await api("/api/management/tasks",{method:"POST",body:JSON.stringify({title,description:$("taskDescription").value.trim(),assignedToId,priority:$("taskPriority").value,dueDate:$("taskDueDate").value})});
+  ["taskTitle","taskDescription","taskDueDate"].forEach(id=>$(id).value="");$("taskAssignedTo").value="";$("taskPriority").value="NORMAL";notice("Staff task created and logged.","success");await loadTasks();
+ }catch(e){notice(e.message,"error");}finally{btn.disabled=false;btn.textContent="Create task";}
 });
 document.addEventListener("change",async e=>{
   const status=e.target.closest("[data-task-status]");if(status){status.disabled=true;try{await api("/api/management/tasks/"+encodeURIComponent(status.dataset.taskStatus)+"/status",{method:"PATCH",body:JSON.stringify({status:status.value})});notice("Task status updated and logged.","success");await loadTasks();}catch(err){notice(err.message,"error");await loadTasks();}return;}
