@@ -130,6 +130,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const method=String(req.method||"").toUpperCase();
     if(!["POST","PUT","PATCH","DELETE"].includes(method))return next();
     const route=String(req.originalUrl||req.path||"").split("?")[0].slice(0,180);
+    // These workflows write detailed audit rows in their own database transactions; skip the generic request logger to avoid duplicate entries.
+    if(/\/(tasks|sessions|session-requests|punishments|promotions|leaves|evidence)(\/|$)/i.test(route)||/\/settings$/i.test(route)||/\/teams\/[^/]+\/members$/i.test(route))return next();
     const actorId=String(req.session?.user?.id||"");
     const actorName=String(req.session?.user?.name||"Portal staff").slice(0,80);
     const safeBits=["title","status","type","priority","scope","action","name","role","date","time"];
