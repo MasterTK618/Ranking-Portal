@@ -28,10 +28,19 @@ async function api(url,options={}) {
   const headers = {...(options.headers||{})};
   if (options.body) headers["Content-Type"]="application/json";
   if (options.method && options.method!=="GET" && sessionData?.csrfToken) headers["x-csrf-token"]=sessionData.csrfToken;
-  const response = await fetch(url,{...options,headers,credentials:"same-origin"});
-  const data = await response.json().catch(()=>({}));
-  if (!response.ok) { const error=new Error(data.error || "Request failed."); error.status=response.status; throw error; }
-  return data;
+  const {timeoutMs,...fetchOptions}=options;
+  const controller=timeoutMs?new AbortController():null;
+  let timeout=null;
+  if(controller)timeout=setTimeout(()=>controller.abort(),Number(timeoutMs));
+  try{
+    const response=await fetch(url,{...fetchOptions,headers,credentials:"same-origin",...(controller?{signal:controller.signal}:{})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok){const error=new Error(data.error||"Request failed.");error.status=response.status;throw error;}
+    return data;
+  }catch(error){
+    if(error.name==="AbortError"){const timeoutError=new Error("The server took too long to respond. Retrying automatically.");timeoutError.status=0;throw timeoutError;}
+    throw error;
+  }finally{if(timeout)clearTimeout(timeout);}
 }
 function showPage(page,view) {
   const selectedView=view||defaultViews[page]||"";
@@ -853,25 +862,7 @@ document.addEventListener("click",async e=>{
 
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
- if(!result.dataset.profileEventsBound){
-  result.dataset.profileEventsBound="1";
-  result.addEventListener("click",e=>{
-   const card=e.target.closest?.("[data-staff-id]");
-   if(!card||!result.contains(card))return;
-   e.preventDefault();
-   const id=String(card.dataset.staffId||"");
-   if(/^\d+$/.test(id))showStaffProfile(id);
-  });
-  result.addEventListener("keydown",e=>{
-   if(e.key!=="Enter"&&e.key!==" ")return;
-   const card=e.target.closest?.("[data-staff-id]");
-   if(!card||!result.contains(card))return;
-   e.preventDefault();
-   const id=String(card.dataset.staffId||"");
-   if(/^\d+$/.test(id))showStaffProfile(id);
-  });
- }
- result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
+ result.innerHTML=members.length?members.map(m=>'<button type="button" class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" aria-label="Open staff profile for '+escapeHtml(m.username||"staff member")+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></button>').join(""):'<div class="empty-state">No members found for this selection.</div>';
 }
 function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");
@@ -895,15 +886,19 @@ async function loadStaffDirectory(force=false){
    let data=null,lastError=null;
    // Render can briefly return a gateway/network error while the service is waking up.
    // Retry transient failures automatically so users do not have to press Try again.
-   const retryDelays=[1200,2200,3500,5000,7000,9000,10000];
-   for(let attempt=0;attempt<=retryDelays.length;attempt++){
-    try{data=await api("/api/staff"+(force?"?refresh=1":""));lastError=null;break;}
+   const retryDelays=[1500,3000,5000,8000,12000,15000,20000,30000];
+   let attempt=0;
+   while(true){
+    try{data=await api("/api/staff"+(force?"?refresh=1":""),{timeoutMs:30000});lastError=null;break;}
     catch(error){
      lastError=error;
      const transient=!error.status||error.status===408||error.status===425||error.status===429||error.status>=500;
-     if(!transient||attempt===retryDelays.length)throw error;
-     if(status)status.textContent="The server is starting or Roblox is responding slowly… retrying automatically ("+(attempt+1)+"/"+retryDelays.length+")";
-     await new Promise(resolve=>setTimeout(resolve,retryDelays[attempt]));
+     if(!transient)throw error;
+     if($("membersPage")?.classList.contains("hidden"))throw error;
+     const delay=retryDelays[Math.min(attempt,retryDelays.length-1)];
+     attempt++;
+     if(status)status.textContent="Staff directory is temporarily unavailable. Retrying automatically in "+Math.ceil(delay/1000)+" seconds… (attempt "+attempt+")";
+     await new Promise(resolve=>setTimeout(resolve,delay));
     }
    }
    if(lastError)throw lastError;
@@ -949,7 +944,22 @@ async function loadStaffDirectory(force=false){
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-// Profile click and keyboard handlers are bound directly to the directory container in renderDirectoryMembers().
+// Capture profile activation at document level so it survives directory re-renders and nested elements.
+document.addEventListener("click",e=>{
+ const card=e.target.closest?.("#directoryResult [data-staff-id]");
+ if(!card)return;
+ e.preventDefault();
+ const id=String(card.dataset.staffId||"");
+ if(/^\d+$/.test(id))showStaffProfile(id);
+},true);
+document.addEventListener("keydown",e=>{
+ if(e.key!=="Enter"&&e.key!==" ")return;
+ const card=e.target.closest?.("#directoryResult [data-staff-id]");
+ if(!card)return;
+ e.preventDefault();
+ const id=String(card.dataset.staffId||"");
+ if(/^\d+$/.test(id))showStaffProfile(id);
+},true);
 
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
