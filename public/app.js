@@ -1179,7 +1179,13 @@ async function loadSessions(){
   const historyFilter=$("sessionHistoryFilter")?.value||"all",historyQ=$("sessionHistorySearch")?.value||"";
   const history=all.filter(s=>{const ended=new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")<now||["COMPLETED","CANCELED","DELAYED"].includes(s.status);return ended&&(historyFilter==="all"||s.status===historyFilter);});
   renderSessionTable(history,$("sessionHistoryList"),historyQ);
- }catch(e){$("sessionList").innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+ }catch(e){
+  const message=escapeHtml(e.message||"The shift schedule could not be loaded.");
+  if($("sessionList"))$("sessionList").innerHTML='<div class="empty-state error-state">'+message+'</div>';
+  if($("sessionHistoryList"))$("sessionHistoryList").innerHTML='<div class="empty-state error-state">'+message+'</div>';
+  if($("sessionsCalendar"))$("sessionsCalendar").innerHTML='<div class="empty-state error-state">Calendar unavailable: '+message+'</div>';
+  if($("sessionSummary"))$("sessionSummary").innerHTML='<div class="empty-state error-state">Schedule data could not be loaded.</div>';
+ }
 }
 async function loadSessionRequests(){
  const el=$("sessionRequestTable");if(!el)return;el.textContent="Loading session requests…";
