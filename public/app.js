@@ -853,6 +853,24 @@ document.addEventListener("click",async e=>{
 
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
+ if(!result.dataset.profileEventsBound){
+  result.dataset.profileEventsBound="1";
+  result.addEventListener("click",e=>{
+   const card=e.target.closest?.("[data-staff-id]");
+   if(!card||!result.contains(card))return;
+   e.preventDefault();
+   const id=String(card.dataset.staffId||"");
+   if(/^\d+$/.test(id))showStaffProfile(id);
+  });
+  result.addEventListener("keydown",e=>{
+   if(e.key!=="Enter"&&e.key!==" ")return;
+   const card=e.target.closest?.("[data-staff-id]");
+   if(!card||!result.contains(card))return;
+   e.preventDefault();
+   const id=String(card.dataset.staffId||"");
+   if(/^\d+$/.test(id))showStaffProfile(id);
+  });
+ }
  result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
 }
 function renderStaffDirectory(){
@@ -877,14 +895,15 @@ async function loadStaffDirectory(force=false){
    let data=null,lastError=null;
    // Render can briefly return a gateway/network error while the service is waking up.
    // Retry transient failures automatically so users do not have to press Try again.
-   for(let attempt=0;attempt<3;attempt++){
+   const retryDelays=[1200,2200,3500,5000,7000,9000,10000];
+   for(let attempt=0;attempt<=retryDelays.length;attempt++){
     try{data=await api("/api/staff"+(force?"?refresh=1":""));lastError=null;break;}
     catch(error){
      lastError=error;
-     const transient=!error.status||error.status===408||error.status===429||error.status>=500;
-     if(!transient||attempt===2)throw error;
-     if(status)status.textContent="Waking up the staff directory… retrying ("+(attempt+1)+"/2)";
-     await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+     const transient=!error.status||error.status===408||error.status===425||error.status===429||error.status>=500;
+     if(!transient||attempt===retryDelays.length)throw error;
+     if(status)status.textContent="The server is starting or Roblox is responding slowly… retrying automatically ("+(attempt+1)+"/"+retryDelays.length+")";
+     await new Promise(resolve=>setTimeout(resolve,retryDelays[attempt]));
     }
    }
    if(lastError)throw lastError;
@@ -930,16 +949,7 @@ async function loadStaffDirectory(force=false){
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-// Delegate from document so profile opening keeps working if the directory contents are re-rendered.
-document.addEventListener("click",e=>{
- const card=e.target.closest?.("#directoryResult [data-staff-id]");
- if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\d+$/.test(id))showStaffProfile(id);}
-});
-document.addEventListener("keydown",e=>{
- if(e.key!=="Enter"&&e.key!==" ")return;
- const card=e.target.closest?.("#directoryResult [data-staff-id]");
- if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\d+$/.test(id))showStaffProfile(id);}
-});
+// Profile click and keyboard handlers are bound directly to the directory container in renderDirectoryMembers().
 
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
