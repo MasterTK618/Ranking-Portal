@@ -741,7 +741,7 @@ async function loadManagement(tab){
       const stats=new Map((d.members||[]).map(m=>[String(m.user_id),m]));
       let roster;
       if(d.canViewAll&&staffDirectory.length){
-        roster=staffDirectory.map(person=>{
+        roster=staffDirectory.filter(person=>Number(person.rank)>=230).map(person=>{
           const data=stats.get(String(person.id))||{};
           return {...person,user_id:String(person.id),username:person.username,seconds:Number(data.seconds||0),shifts_attended:Number(data.shifts_attended||0),last_seen:data.last_seen||null};
         });
