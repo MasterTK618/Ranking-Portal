@@ -931,12 +931,12 @@ document.addEventListener("click",async e=>{
 
 
 
-function setStaffAutocompleteValue(inputId,userId,hiddenId){
+function setStaffAutocompleteValue(inputId,userId,hiddenId,username){
  const input=$(inputId),hidden=$(hiddenId||inputId+"Id");
  if(!input||!hidden)return;
  const person=staffDirectory.find(m=>String(m.id)===String(userId));
- input.value=person?.username||"";
- hidden.value=person?.id||"";
+ input.value=person?.username||username||"";
+ hidden.value=userId?String(userId):"";
 }
 function attachStaffAutocomplete(inputId,options={}){
  const input=$(inputId),hidden=$(options.hiddenId||inputId+"Id"),results=document.querySelector('[data-staff-results="'+inputId+'"]');
@@ -1336,7 +1336,7 @@ function addSessionRoleSlot(containerId,label,selected={},senior=false){
  row.className="session-slot-row";
  row.innerHTML='<input class="session-slot-label" maxlength="40" aria-label="Role name" placeholder="Role name"><div class="session-slot-user-wrap"><input id="'+inputId+'" class="session-slot-user" autocomplete="off" aria-label="Staff username" placeholder="Type a Roblox username"><input id="'+inputId+'Id" type="hidden"><div class="staff-autocomplete-results" data-staff-results="'+inputId+'"></div></div><button type="button" class="danger-btn session-slot-remove" aria-label="Remove role">×</button>';
  row.querySelector(".session-slot-label").value=selected.label||label;
- c.appendChild(row);attachStaffAutocomplete(inputId,{senior,hiddenId:inputId+"Id"});
+ c.appendChild(row);attachStaffAutocomplete(inputId,{senior,hiddenId:inputId+"Id",allGroupMembers:true});
  if(selected.userId)setStaffAutocompleteValue(inputId,selected.userId);
  row.querySelector(".session-slot-remove").addEventListener("click",()=>row.remove());
 }
@@ -1344,7 +1344,17 @@ function collectSessionRoleSlots(containerId){return [...($(containerId)?.queryS
 function sessionRoleInputMissingSelection(containerId){return [...($(containerId)?.querySelectorAll(".session-slot-row")||[])].some(row=>{const input=row.querySelector(".session-slot-user"),hidden=input?.nextElementSibling;return !!input?.value.trim()&&!hidden?.value;});}
 function staffInputMissingSelection(inputId){return !!$(inputId)?.value.trim()&&!staffIdFor(inputId);}
 function populateCreateRoleSlots(){if(!$("createOverseeSlots"))return;if(!$("createOverseeSlots").dataset.ready){$("createOverseeSlots").dataset.ready="1";$("createAttendeeSlots").dataset.ready="1";addSessionRoleSlot("createOverseeSlots","Oversee 1",{},true);addSessionRoleSlot("createAttendeeSlots","Attendee 1");}}
-async function openSessionRoles(id){const s=(window.__lemonzSessions||[]).find(x=>String(x.id)===String(id));if(!s)return;if(!staffDirectory.length){notice("Loading the staff directory…");await loadStaffDirectory();if(!staffDirectory.length){notice("Staff directory is unavailable. Refresh it and try again.","error");return;}}const fill=(key,value)=>setStaffAutocompleteValue(key,value);$("editSessionId").value=s.id;$("editSessionTitle").value=s.title||"";$("editSessionType").value=s.session_type||"PROMOTIONAL";$("editSessionDate").value=String(s.session_date||"").slice(0,10);$("editSessionTime").value=String(s.session_time||"").slice(0,5);$("editSessionStatus").value=s.status||"PLANNED";$("editSessionStatusNote").value=s.status_note||"";fill("editSessionHost",s.host_id);fill("editSessionCoHost",s.cohost_id,true);fill("editSessionPromoter",s.promoter_id,true,true);$("editOverseeSlots").innerHTML="";$("editAttendeeSlots").innerHTML="";const ov=sessionRoleSlots(s,"oversee_slots","oversee_ids","oversee_names"),at=sessionRoleSlots(s,"attendee_slots","attendee_ids","attendee_names");(ov.length?ov:[{label:"Oversee 1"}]).forEach(x=>addSessionRoleSlot("editOverseeSlots",x.label,x,true));(at.length?at:[{label:"Attendee 1"}]).forEach(x=>addSessionRoleSlot("editAttendeeSlots",x.label,x));$("sessionRolesDialog").showModal();}
+async function openSessionRoles(id){
+ const s=(window.__lemonzSessions||[]).find(x=>String(x.id)===String(id));if(!s)return;
+ const fill=(key,value,username)=>setStaffAutocompleteValue(key,value,undefined,username);
+ $("editSessionId").value=s.id;$("editSessionTitle").value=s.title||"";$("editSessionType").value=s.session_type||"PROMOTIONAL";$("editSessionDate").value=String(s.session_date||"").slice(0,10);$("editSessionTime").value=String(s.session_time||"").slice(0,5);$("editSessionStatus").value=s.status||"PLANNED";$("editSessionStatusNote").value=s.status_note||"";
+ fill("editSessionHost",s.host_id,s.host_name);fill("editSessionCoHost",s.cohost_id,s.cohost_name);fill("editSessionPromoter",s.promoter_id,s.promoter_name);
+ $("editOverseeSlots").innerHTML="";$("editAttendeeSlots").innerHTML="";
+ const ov=sessionRoleSlots(s,"oversee_slots","oversee_ids","oversee_names"),at=sessionRoleSlots(s,"attendee_slots","attendee_ids","attendee_names");
+ (ov.length?ov:[{label:"Oversee 1"}]).forEach(x=>addSessionRoleSlot("editOverseeSlots",x.label,x,true));
+ (at.length?at:[{label:"Attendee 1"}]).forEach(x=>addSessionRoleSlot("editAttendeeSlots",x.label,x));
+ $("sessionRolesDialog").showModal();
+}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-edit-session-roles]");if(b){e.preventDefault();openSessionRoles(b.dataset.editSessionRoles).catch(err=>notice(err.message,"error"));}});
 // Status changes are handled once by the earlier prompt-and-save listener.
 ["closeSessionRoles","cancelSessionRoles"].forEach(id=>$(id)?.addEventListener("click",()=> $("sessionRolesDialog").close()));
@@ -1390,8 +1400,6 @@ $("createSession")?.addEventListener("click",async()=>{
   if(!body.title||!body.date||!body.time){notice("Enter a session name, date, and time.","error");return;}
   const assigned=[hostId,cohostId,promoterId,...body.overseeSlots.map(x=>x.userId),...body.attendeeSlots.map(x=>x.userId)].filter(Boolean);
   if(new Set(assigned).size!==assigned.length){notice("Each staff member can only have one role in a session.","error");return;}
-  if(body.overseeSlots.some(x=>x.userId&&!staffDirectory.some(m=>String(m.id)===String(x.userId)&&Number(m.rank)>=245))){notice("Every Oversee must be rank 245 or higher.","error");return;}
-  if(promoterId&&!staffDirectory.some(m=>String(m.id)===String(promoterId)&&Number(m.rank)>=245)){notice("Promoter must be rank 245 or higher.","error");return;}
   btn.disabled=true;btn.textContent="Scheduling…";
   try{
    const created=await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});
