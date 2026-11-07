@@ -699,17 +699,43 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),all=Number(who.rank)>=Number(s.promotion_approve_rank);
     const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' AND (actor_id=$1 OR target_id=$1) ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);res.json({items:r.rows});
   }catch(e){next(e);}});
+  let groupStaffSearchCache={at:0,members:[]},groupStaffSearchPromise=null;
+  async function getGroupStaffSearchRoster(){
+    if(groupStaffSearchCache.members.length&&Date.now()-groupStaffSearchCache.at<60000)return groupStaffSearchCache.members;
+    if(groupStaffSearchPromise)return groupStaffSearchPromise;
+    groupStaffSearchPromise=(async()=>{
+      const groupId=String(process.env.ROBLOX_GROUP_ID||"16597698");
+      const rolesResponse=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(groupId)+"/roles");
+      const rolesPayload=await rolesResponse.json().catch(()=>({}));
+      if(!rolesResponse.ok||!Array.isArray(rolesPayload.roles))throw new Error("Roblox could not load Lemonz group roles (HTTP "+rolesResponse.status+").");
+      const staffRoles=rolesPayload.roles.filter(role=>Number(role.rank)>=230&&role.id);
+      const pages=await Promise.all(staffRoles.map(async role=>{
+        const members=[];let cursor="",pageCount=0;
+        do{
+          const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(groupId)+"/roles/"+encodeURIComponent(role.id)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
+          const response=await fetch(url),payload=await response.json().catch(()=>({}));
+          if(!response.ok||!Array.isArray(payload.data))throw new Error("Roblox could not load members for "+String(role.name||"a staff role")+" (HTTP "+response.status+").");
+          for(const entry of payload.data){
+            const user=entry.user||entry,id=String(user.userId||user.id||entry.userId||entry.id||"");
+            if(/^\d+$/.test(id))members.push({id,username:String(user.username||entry.username||""),displayName:String(user.displayName||entry.displayName||user.username||""),rank:Number(role.rank),role:String(role.name||"Group member")});
+          }
+          cursor=payload.nextPageCursor||"";
+          if(++pageCount>50)throw new Error("The staff search exceeded 5,000 members in one role.");
+        }while(cursor);
+        return members;
+      }));
+      const byId=new Map();for(const member of pages.flat())byId.set(member.id,member);
+      const roster=[...byId.values()];
+      groupStaffSearchCache={at:Date.now(),members:roster};
+      return roster;
+    })();
+    try{return await groupStaffSearchPromise;}finally{groupStaffSearchPromise=null;}
+  }
   router.get("/group-members/search",async(req,res,next)=>{try{
-    const query=String(req.query.q||"").trim(),minimumRank=Math.max(1,Math.min(255,Number(req.query.minRank)||230));
+    const query=String(req.query.q||"").trim().toLowerCase(),minimumRank=Math.max(230,Math.min(255,Number(req.query.minRank)||230));
     if(query.length<2||query.length>40)return res.json({members:[]});
-    const groupId=String(process.env.ROBLOX_GROUP_ID||"16597698");
-    const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(groupId)+"/users?limit=100&sortOrder=Asc&keyword="+encodeURIComponent(query));
-    const payload=await response.json().catch(()=>({}));
-    if(!response.ok||!Array.isArray(payload.data))return res.status(502).json({error:"Roblox could not search Lemonz members right now. Please try again."});
-    const members=payload.data.map(row=>{
-      const user=row.user||{},role=row.role||{};
-      return {id:String(user.userId||""),username:String(user.username||""),displayName:String(user.displayName||user.username||""),rank:Number(role.rank||0),role:String(role.name||"Group member")};
-    }).filter(member=>/^\d+$/.test(member.id)&&member.username&&member.rank>=minimumRank).slice(0,12);
+    const roster=await getGroupStaffSearchRoster();
+    const members=roster.filter(member=>member.rank>=minimumRank&&(member.username.toLowerCase().includes(query)||member.displayName.toLowerCase().includes(query))).slice(0,12);
     res.set("Cache-Control","private, max-age=15");
     res.json({members});
   }catch(error){next(error);}});
@@ -981,6 +1007,12 @@ async function ensureManagementSchema(pool) {
   await pool.query("UPDATE management_teams SET group_role_ranks=ARRAY[group_role_rank] WHERE group_role_rank IS NOT NULL AND cardinality(group_role_ranks)=0");
   await pool.query("CREATE INDEX IF NOT EXISTS management_team_members_team_idx ON management_team_members(team_id)");
   await pool.query("INSERT INTO management_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING");
+  // Earlier builds persisted 243 as the session baseline. Bring those untouched defaults
+  // down to the intended Management threshold while preserving any custom values.
+  await pool.query("UPDATE management_settings SET calendar_view_rank=238 WHERE calendar_view_rank=243");
+  await pool.query("UPDATE management_settings SET session_create_rank=238 WHERE session_create_rank=243");
+  await pool.query("UPDATE management_settings SET session_status_rank=238 WHERE session_status_rank=243");
+  await pool.query("UPDATE management_settings SET session_delete_rank=238 WHERE session_delete_rank=243");
   await pool.query("CREATE TABLE IF NOT EXISTS staff_shifts (id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL DEFAULT 'Shift',session_date DATE,session_time TIME,host_id TEXT,host_name TEXT,cohost_id TEXT,cohost_name TEXT,oversee_id TEXT,oversee_name TEXT,oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],promoter_id TEXT,promoter_name TEXT,attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],created_by TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
   await pool.query("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS title TEXT DEFAULT 'Shift', ADD COLUMN IF NOT EXISTS session_date DATE, ADD COLUMN IF NOT EXISTS session_time TIME, ADD COLUMN IF NOT EXISTS host_id TEXT, ADD COLUMN IF NOT EXISTS host_name TEXT, ADD COLUMN IF NOT EXISTS cohost_id TEXT, ADD COLUMN IF NOT EXISTS cohost_name TEXT, ADD COLUMN IF NOT EXISTS oversee_id TEXT, ADD COLUMN IF NOT EXISTS oversee_name TEXT, ADD COLUMN IF NOT EXISTS oversee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS oversee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS promoter_id TEXT, ADD COLUMN IF NOT EXISTS promoter_name TEXT, ADD COLUMN IF NOT EXISTS attendee_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS attendee_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[], ADD COLUMN IF NOT EXISTS created_by TEXT, ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
   const legacyColumns=new Set((await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='portal_sessions'")).rows.map(r=>r.column_name));
