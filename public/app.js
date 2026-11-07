@@ -901,8 +901,9 @@ document.addEventListener("click",async e=>{
   const remove=e.target.closest("[data-delete]");if(!remove)return;
   const type=remove.dataset.delete,id=remove.dataset.id,route=type==="punishment"?"punishments":type==="promotion"?"promotions":type==="leave"?"leaves":"sessions";
   if(!confirm("PERMANENT DELETION\\n\\nYou are deleting this "+(type==="leave"?"time-off request":type==="session"?"session":type)+". This cannot be undone. Continue?"))return;
-  try{await api(`/api/management/${route}/${encodeURIComponent(id)}`,{method:"DELETE"});notice("Record deleted.","success");if(route==="sessions")loadSessions();else loadManagement(route);}
-  catch(err){notice(err.message,"error")}
+   if(remove.disabled)return;remove.disabled=true;remove.textContent="Deleting…";
+   try{await api(`/api/management/${route}/${encodeURIComponent(id)}`,{method:"DELETE"});notice(type==="leave"?"Leave request deleted.":"Record deleted.","success");if(route==="sessions")await loadSessions();else await loadManagement(route);}
+   catch(err){notice(err.message,"error");remove.disabled=false;remove.textContent="Delete";}
 });
 
 
