@@ -751,7 +751,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/leaves",async(req,res,next)=>{
     try{
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-      const s=await settings(),canViewAll=Number(who.rank)>=Number(s.leave_approve_rank);
+      const s=await settings(),canViewAll=Number(who.rank)>=238;
       const r=canViewAll?await pool.query("SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM leave_requests WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
       res.json({items:r.rows.map(x=>({...x,canDelete:(String(x.user_id)===String(req.session.user.id)&&x.status==="PENDING")||Number(who.rank)>=238})),rank:Number(who.rank),settings:s,canViewAll});
     }catch(e){next(e);}
