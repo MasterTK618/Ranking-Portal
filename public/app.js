@@ -836,12 +836,8 @@ function fillTeamFilter(id){
  return el.value||"ALL";
 }
 function populateTaskAssignees(){
- const select=$("taskAssignedTo");if(!select)return;
- const previous=select.value,teamFilter=$("taskTeamAssignFilter")?.value||"ALL",minRank=Number(taskSettingsCache.task_view_rank||230);
- const eligible=staffDirectory.filter(member=>{const teams=teamAssignments.get(String(member.id))||new Set();return Number(member.rank)>=minRank&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?teams.size===0:teams.has(String(teamFilter))));});
- select.innerHTML='<option value="">Choose a staff member…</option>'+eligible.map(member=>'<option value="'+escapeHtml(member.id)+'">'+escapeHtml(member.username)+' · '+escapeHtml(member.role)+'</option>').join("");
- if(previous&&eligible.some(member=>String(member.id)===previous))select.value=previous;
- if(!eligible.length)select.innerHTML='<option value="">'+(staffDirectory.length?"No eligible staff in this team":"Staff directory is still loading — refresh in a moment")+'</option>';
+ const input=$("taskAssignedTo");if(!input)return;
+ input.placeholder="Type a Roblox username (minimum rank "+Number(taskSettingsCache.task_view_rank||230)+")";
 }
 function renderTasks(){
  const table=$("taskTable");if(!table)return;
@@ -891,12 +887,12 @@ $("closeTaskDiagnostics")?.addEventListener("click",()=>$("taskStoragePanel")?.c
 $("taskSearch")?.addEventListener("input",renderTasks);
 $("taskStatusFilter")?.addEventListener("change",renderTasks);$("taskTeamFilter")?.addEventListener("change",renderTasks);$("taskTeamAssignFilter")?.addEventListener("change",populateTaskAssignees);
 $("createTask")?.addEventListener("click",async()=>{
- const btn=$("createTask"),title=$("taskTitle").value.trim(),assignedToId=$("taskAssignedTo").value;
+ const btn=$("createTask"),title=$("taskTitle").value.trim(),assignedToId=staffIdFor("taskAssignedTo","taskAssignedToId");
  if(!title){notice("Enter a task title.","error");$("taskTitle").focus();return;}
  if(!assignedToId){notice("Choose a staff member to assign this task to.","error");$("taskAssignedTo").focus();return;}
  if(btn.disabled)return;btn.disabled=true;btn.textContent="Creating…";
  try{await api("/api/management/tasks",{method:"POST",body:JSON.stringify({title,description:$("taskDescription").value.trim(),assignedToId,priority:$("taskPriority").value,dueDate:$("taskDueDate").value})});
-  ["taskTitle","taskDescription","taskDueDate"].forEach(id=>$(id).value="");$("taskAssignedTo").value="";$("taskPriority").value="NORMAL";notice("Staff task created and logged.","success");await loadTasks();
+  ["taskTitle","taskDescription","taskDueDate"].forEach(id=>$(id).value="");$("taskAssignedTo").value="";$("taskAssignedToId").value="";$("taskPriority").value="NORMAL";notice("Staff task created and logged.","success");await loadTasks();
  }catch(e){notice(e.message,"error");}finally{btn.disabled=false;btn.textContent="Create task";}
 });
 document.addEventListener("change",async e=>{
@@ -952,7 +948,7 @@ function attachStaffAutocomplete(inputId,options={}){
   let matches=[];
   if(options.allGroupMembers){
    results.innerHTML='<div class="staff-suggestion-empty">Searching group members…</div>';results.classList.add("is-open");
-   try{const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+(options.senior?245:230));if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
+   try{const minimumRank=Number(options.minRank||(options.senior?245:230));const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+minimumRank);if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
    catch(error){if(token!==requestToken)return;results.innerHTML='<div class="staff-suggestion-empty">'+escapeHtml(error.message||"Could not search group members.")+'</div>';results.classList.add("is-open");return;}
   }else matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
   if(token!==requestToken)return;
@@ -1004,6 +1000,7 @@ function setupStaffAutocompleteFields(){
   ["sessionRequestHost","sessionRequestHostId",false,true],
   ["sessionRequestCoHost","sessionRequestCoHostId",false,true],
   ["editSessionHost","editSessionHostId",false,true],
+  ["taskAssignedTo","taskAssignedToId",false,true],
   ["editSessionCoHost","editSessionCoHostId",false,true],
   ["editSessionPromoter","editSessionPromoterId",true,true],
   ["evidenceTargetUsername","evidenceTargetId",false]
