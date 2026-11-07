@@ -1098,3 +1098,8 @@ body.sidebar-collapsed .sidebar-toggle-icon{width:auto}
 #directoryResult .staff-card:hover{transform:translateY(-1px);border-color:var(--accent,#6b8f71);box-shadow:0 5px 16px rgba(0,0,0,.08);}
 #directoryResult .staff-card:focus-visible{outline:3px solid var(--accent,#6b8f71);outline-offset:3px;}
 #directoryResult .staff-card:active{transform:scale(.99);}
+
+#membersPage #directoryResult .staff-card.is-opening{border-color:var(--accent,#6b8f71);background:var(--accent-soft,rgba(107,143,113,.12));box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#6b8f71) 22%,transparent)}
+#membersPage #directoryResult .staff-card[aria-busy="true"]{opacity:.72;cursor:progress}
+.directory-stale-note{grid-column:1/-1;padding:9px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;color:var(--muted);font-size:11px;background:var(--panel2)}
+.profile-error p{margin:7px 0 12px;overflow-wrap:anywhere}
