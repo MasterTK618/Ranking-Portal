@@ -898,12 +898,12 @@ function attachStaffAutocomplete(inputId,options={}){
   const q=input.value.trim().toLowerCase();hidden.value="";
   if(!q){close();return;}
   const matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
-  results.innerHTML=matches.length?matches.map(m=>'<button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.role||"")+' · '+escapeHtml(m.role||"")+'</small></span><em>View profile ↗</em></button>').join(""):'<div class="staff-suggestion-empty">No matching staff usernames.</div>';
+  results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.role||"")+' · '+escapeHtml(m.role||"")+'</small></span></button><button type="button" class="staff-suggestion-profile" data-staff-profile="'+escapeHtml(m.id)+'">Profile ↗</button></div>').join(""):'<div class="staff-suggestion-empty">No matching staff usernames.</div>';
   results.classList.add("is-open");
  };
  input.addEventListener("input",render);input.addEventListener("focus",render);
  input.addEventListener("keydown",e=>{if(e.key==="Escape")close();if(e.key==="Enter"){e.preventDefault();const first=results.querySelector("[data-staff-suggestion]");if(first)first.click();}});
- results.addEventListener("click",e=>{const b=e.target.closest("[data-staff-suggestion]");if(!b)return;const m=eligible().find(x=>String(x.id)===String(b.dataset.staffSuggestion));if(!m)return;input.value=m.username;hidden.value=String(m.id);close();});
+ results.addEventListener("click",e=>{const profile=e.target.closest("[data-staff-profile]");if(profile){showStaffProfile(profile.dataset.staffProfile);return;}const b=e.target.closest("[data-staff-suggestion]");if(!b)return;const m=eligible().find(x=>String(x.id)===String(b.dataset.staffSuggestion));if(!m)return;input.value=m.username;hidden.value=String(m.id);close();});
  input.addEventListener("blur",()=>setTimeout(close,180));
 }
 function staffIdFor(inputId){return String($(inputId+"Id")?.value||"");}
