@@ -377,7 +377,7 @@ app.get("/api/group/role-members",requireLogin,async(req,res)=>{
 let staffDirectoryCache={at:0,data:null};
 let staffDirectoryRefresh=null;
 app.get("/api/staff",requireLogin,async(req,res)=>{
-  if(staffDirectoryCache.data&&Date.now()-staffDirectoryCache.at<120000){
+  if(req.query.refresh!=="1"&&staffDirectoryCache.data&&Date.now()-staffDirectoryCache.at<120000){
     res.set("Cache-Control","private, max-age=60");
     return res.json({...staffDirectoryCache.data,cached:true});
   }
