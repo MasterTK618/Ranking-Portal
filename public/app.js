@@ -481,6 +481,8 @@ async function refreshOverview(){
     document.querySelectorAll(".nav-item").forEach(b=>b.classList.remove("hidden"));
     $("settingsNav").classList.toggle("hidden",data.identity.rank<255);
     await applySectionVisibility();
+    // Warm the staff directory in the background after login so it is ready when opened.
+    if(Number(data.identity.rank)>=230)loadStaffDirectory();
     document.querySelectorAll(".nav-item[data-page='rank']").forEach(b=>b.classList.toggle("hidden",!data.identity.canRank));
     if(data.identity.rank<230)document.querySelectorAll(".nav-item[data-page='members']").forEach(b=>b.classList.add("hidden"));
     if(data.identity.rank<230)document.querySelectorAll(".nav-item[data-page='logs']").forEach(b=>b.classList.add("hidden"));
@@ -906,7 +908,7 @@ async function loadStaffDirectory(force=false){
      lastError=error;
      const transient=!error.status||error.status===408||error.status===425||error.status===429||error.status>=500;
      if(!transient)throw error;
-     if($("membersPage")?.classList.contains("hidden"))throw error;
+     // Keep the directory warm even if the user navigates elsewhere during the request.
      const delay=retryDelays[Math.min(attempt,retryDelays.length-1)];
      attempt++;
      if(status)status.textContent="Staff directory is temporarily unavailable. Retrying automatically in "+Math.ceil(delay/1000)+" seconds… (attempt "+attempt+")";
