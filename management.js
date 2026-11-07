@@ -616,7 +616,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if(!/^\d+$/.test(userId)||!username||!Number.isInteger(minutes)||minutes===0||Math.abs(minutes)>100000||!reason)
         return res.status(400).json({error:"Choose a staff member, enter a non-zero whole number of minutes, and provide a reason."});
       const target=await getIdentity(userId);
-      if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"The selected user is no longer a Lemonz staff member."});
+      if(!target?.inGroup)return res.status(404).json({error:"The selected user is no longer a Lemonz group member."});
       await pool.query("INSERT INTO activity_adjustments(user_id,username,minutes,reason,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6)",
         [userId,username,minutes,reason,req.session.user.id,req.session.user.name]);
       res.json({ok:true});
@@ -648,7 +648,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if(!/^\d+$/.test(userId)||!username||!["Strike","Demotion","Termination","Ban","Suspension","Other"].includes(type)||!reason)
         return res.status(400).json({error:"Complete the member, punishment type, and reason."});
        const target=await getIdentity(userId);
-       if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"The selected user is no longer a Lemonz staff member."});
+       if(!target?.inGroup)return res.status(404).json({error:"The selected user is no longer a Lemonz group member."});
       const cfg=await settings(),auto=requestAutoApproved(who,cfg);
       let targetUsername=username;
       try{const profileResponse=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(userId));const profileData=await profileResponse.json().catch(()=>({}));if(profileResponse.ok&&profileData.name)targetUsername=String(profileData.name).slice(0,40);}catch{}
@@ -699,6 +699,21 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const s=await settings(),all=Number(who.rank)>=Number(s.promotion_approve_rank);
     const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' AND (actor_id=$1 OR target_id=$1) ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);res.json({items:r.rows});
   }catch(e){next(e);}});
+  router.get("/group-members/search",async(req,res,next)=>{try{
+    const query=String(req.query.q||"").trim();
+    if(query.length<2||query.length>20)return res.json({members:[]});
+    const response=await fetch("https://users.roblox.com/v1/users/search?keyword="+encodeURIComponent(query)+"&limit=10");
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok||!Array.isArray(payload.data))return res.status(502).json({error:"Roblox group-member search is temporarily unavailable."});
+    const candidates=payload.data.slice(0,10);
+    const checked=await Promise.all(candidates.map(async user=>{try{
+      const member=await getIdentity(String(user.id));
+      if(!member?.inGroup)return null;
+      return {id:String(user.id),username:String(user.name||""),displayName:String(user.displayName||user.name||""),rank:Number(member.rank||0),role:String(member.role?.name||member.roleName||"Group member")};
+    }catch{return null;}}));
+    res.set("Cache-Control","private, max-age=15");
+    res.json({members:checked.filter(Boolean).slice(0,8)});
+  }catch(error){next(error);}});
   router.post("/promotions",csrf,async(req,res,next)=>{
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
       const b=req.body||{},userId=String(b.userId||""),username=String(b.username||"").trim(),role=String(b.suggestedRole||"").trim(),reason=String(b.reason||"").trim();
@@ -738,7 +753,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
       const s=await settings(),canViewAll=Number(who.rank)>=Number(s.leave_approve_rank);
       const r=canViewAll?await pool.query("SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM leave_requests WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
-      res.json({items:r.rows.map(x=>({...x,canDelete:(String(x.user_id)===String(req.session.user.id)&&x.status==="PENDING")||Number(who.rank)>=Number(s.leave_approve_rank)})),rank:Number(who.rank),settings:s,canViewAll});
+      res.json({items:r.rows.map(x=>({...x,canDelete:(String(x.user_id)===String(req.session.user.id)&&x.status==="PENDING")||Number(who.rank)>=238})),rank:Number(who.rank),settings:s,canViewAll});
     }catch(e){next(e);}
   });
   router.get("/leaves/audit",async(req,res,next)=>{
@@ -791,7 +806,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     router.delete("/"+path+"/:id",csrf,async(req,res,next)=>{let client;try{
       if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid record ID."});
       const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
-      const s=await settings(),canManage=who.rank>=Number(s[rankField]);client=await pool.connect();await client.query("BEGIN");
+      const s=await settings(),canManage=path==="leaves"?Number(who.rank)>=238:Number(who.rank)>=Number(s[rankField]);client=await pool.connect();await client.query("BEGIN");
        const pendingOnly=path==="leaves"?" AND ($3=TRUE OR status='PENDING')":"";
       const r=await client.query("DELETE FROM "+table+" WHERE id=$1 AND ("+ownerCol+"=$2 OR $3=TRUE)"+pendingOnly+" RETURNING *",[req.params.id,String(req.session.user.id),canManage]);
       if(!r.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Record not found, already deleted, or you do not have permission to remove it."});}
