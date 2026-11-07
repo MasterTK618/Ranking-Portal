@@ -1162,3 +1162,5 @@ button[type="button"],button[type="submit"]{touch-action:manipulation}
 .directory-filters{position:relative;}
 .directory-search-suggestions{position:absolute;z-index:80;left:0;right:0;top:calc(100% + 4px);max-height:320px;overflow:auto;}
 .directory-filters:has(.directory-search-suggestions.is-open){z-index:81;}
+
+.task-assignee-wrap{position:relative;min-width:0}.task-assignee-wrap .staff-autocomplete-results{z-index:90}
