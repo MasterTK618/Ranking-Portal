@@ -855,129 +855,44 @@ function renderDirectoryMembers(members){
  result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
 }
 function renderStaffDirectory(){
- activeDirectoryRank="STAFF";renderDirectoryRankSidebar();
- if($("directoryHeading"))$("directoryHeading").textContent="Staff members";
- if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" group members ranked "+staffMinRank+"+";
- if($("directoryStatus"))$("directoryStatus").textContent="Showing all Lemonz staff ranked 230 and above. Choose a rank on the left to browse other members.";
- renderDirectoryMembers(staffDirectory);
- if($("directoryStaffCount"))$("directoryStaffCount").textContent=staffDirectory.length.toLocaleString();
-}
-function renderDirectoryRankSidebar(){
- const box=$("directoryRankSidebar");if(!box)return;
- const sorted=directoryRoles.slice().sort((x,y)=>Number(y.rank)-Number(x.rank));
- box.innerHTML=sorted.map(role=>'<button type="button" class="directory-rank-option'+(String(activeDirectoryRank)===String(role.rank)?' active':'')+'" data-directory-rank="'+Number(role.rank)+'"><span><b>'+escapeHtml(role.name)+'</b><small>Rank '+Number(role.rank)+'</small></span><strong>'+Number(role.memberCount||0).toLocaleString()+'</strong></button>').join("");
- $("directoryStaffRankButton")?.classList.toggle("active",activeDirectoryRank==="STAFF");
-}
-async function loadDirectoryRank(rank){
- const token=++directoryRequestToken,rankValue=String(rank);
- activeDirectoryRank=rankValue;renderDirectoryRankSidebar();
- if(rankValue==="STAFF"){renderStaffDirectory();return;}
- const role=directoryRoles.find(x=>Number(x.rank)===Number(rankValue));
- if($("directoryHeading"))$("directoryHeading").textContent=role?.name||("Rank "+rankValue);
- if($("staffCount"))$("staffCount").textContent=(role?.memberCount??"")+" members in this rank";
- if($("directoryStatus"))$("directoryStatus").textContent="Loading "+(role?.name||("Rank "+rankValue))+" members…";
- if($("directoryResult"))$("directoryResult").innerHTML="";
- try{
-  const data=await api("/api/group/role-members?rank="+encodeURIComponent(rankValue));
-  if(token!==directoryRequestToken)return;
-  if($("staffCount"))$("staffCount").textContent=data.count+" members · "+(data.role||role?.name||("Rank "+rankValue));
-  if($("directoryStatus"))$("directoryStatus").textContent="Showing every current group member with this exact rank.";
-  renderDirectoryMembers(data.members||[]);
- }catch(error){if(token!==directoryRequestToken)return;if($("directoryStatus"))$("directoryStatus").textContent=error.message;$("directoryResult").innerHTML='<div class="directory-error">'+escapeHtml(error.message)+'</div>';}
-}
-async function searchGroupMembers(){
- const input=$("directorySearch"),result=$("directoryResult"),status=$("directoryStatus"),button=$("searchGroupMember");
- const keyword=String(input?.value||"").trim();
- if(keyword.length<3){status.textContent="Enter at least 3 characters to search Roblox usernames.";result.innerHTML="";return;}
- const token=++directoryRequestToken;
- if(button){button.disabled=true;button.textContent="Searching…";}
- if($("directoryHeading"))$("directoryHeading").textContent="Roblox search";
- status.textContent="Searching Roblox users…";result.innerHTML="";
- try{
-  const data=await api("/api/group/members/search?q="+encodeURIComponent(keyword));
-  if(token!==directoryRequestToken)return;
-  const members=Array.isArray(data.members)?data.members:[];
-  $("staffCount").textContent=members.length+" matching Roblox user"+(members.length===1?"":"s");
-  status.textContent=members.length?"Select a result to open their Profile.":"No Roblox users matched “"+keyword+"”. Try an exact username.";
-  renderDirectoryMembers(members);
- }catch(error){if(token!==directoryRequestToken)return;status.textContent=error.message||"Roblox search failed.";result.innerHTML='<div class="directory-error"><b>Search unavailable</b><p>'+escapeHtml(status.textContent)+'</p></div>';}
- finally{if(button){button.disabled=false;button.textContent="Search Roblox";}}
-}
-function setStaffAutocompleteValue(inputId,userId){
- const input=$(inputId),hidden=$(inputId+"Id");if(!input||!hidden)return;
- const person=staffDirectory.find(m=>String(m.id)===String(userId));
- input.value=person?.username||"";hidden.value=person?.id||"";
-}
-function attachStaffAutocomplete(inputId,options={}){
- const input=$(inputId),hidden=$(options.hiddenId||inputId+"Id"),results=document.querySelector('[data-staff-results="'+inputId+'"]');
- if(!input||!hidden||!results||input.dataset.autocompleteReady)return;
- input.dataset.autocompleteReady="1";
- const eligible=()=>staffDirectory.filter(m=>!options.senior||Number(m.rank)>=245);
- const close=()=>{results.classList.remove("is-open");results.innerHTML="";};
- const render=()=>{
-  const q=input.value.trim().toLowerCase();hidden.value="";
-  if(!q){close();return;}
-  const matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
-  results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.role||"")+' · '+escapeHtml(m.role||"")+'</small></span></button><button type="button" class="staff-suggestion-profile" data-staff-profile="'+escapeHtml(m.id)+'">Profile ↗</button></div>').join(""):'<div class="staff-suggestion-empty">No matching staff usernames.</div>';
-  results.classList.add("is-open");
- };
- input.addEventListener("input",render);input.addEventListener("focus",render);
- input.addEventListener("keydown",e=>{if(e.key==="Escape")close();if(e.key==="Enter"){e.preventDefault();const first=results.querySelector("[data-staff-suggestion]");if(first)first.click();}});
- results.addEventListener("click",e=>{const profile=e.target.closest("[data-staff-profile]");if(profile){showPage("members");showStaffProfile(profile.dataset.staffProfile);return;}const b=e.target.closest("[data-staff-suggestion]");if(!b)return;const m=eligible().find(x=>String(x.id)===String(b.dataset.staffSuggestion));if(!m)return;input.value=m.username;hidden.value=String(m.id);close();});
- input.addEventListener("blur",()=>setTimeout(close,180));
-}
-function staffIdFor(inputId){return String($(inputId+"Id")?.value||"");}
-function setupStaffAutocompleteFields(){
- [["punishUsername",false],["promotionUsername",false],["activityUsername",false],["sessionHost",false],["sessionCoHost",false],["sessionPromoter",true],["sessionRequestHost",false],["sessionRequestCoHost",false],["editSessionHost",false],["editSessionCoHost",false],["editSessionPromoter",true],["evidenceTargetUsername",false]].forEach(([id,senior])=>attachStaffAutocomplete(id,{senior,hiddenId:id==="evidenceTargetUsername"?"evidenceTargetId":id+"Id"}));
+ const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
+ const q=(search?.value||"").trim().toLowerCase();
+ const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
+ if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" staff members · Rank "+staffMinRank+"+";
+ if(status)status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search.";
+ result.innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("");
 }
 async function loadStaffDirectory(force=false){
- if(staffDirectoryPromise&&!force)return staffDirectoryPromise;
- staffDirectoryPromise=(async()=>{
- const result=$("directoryResult"),status=$("directoryStatus");
- if(result)result.innerHTML="";
- if(status)status.textContent="Loading staff ranked 230+…";
- if(staffDirectory.length&&!force){setupStaffAutocompleteFields();renderStaffDirectory();return;}
+ const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
+ if(status)status.textContent="Loading staff ranked "+staffMinRank+"+…";
+ if(staffDirectory.length&&!force){renderStaffDirectory();return;}
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
-  // Load the roster first; role counts and team synchronization are optional.
-  const d=await api("/api/staff"+(force?"?refresh=1":""),{signal:AbortSignal.timeout(45000)});
+  const d=await api("/api/staff");
   staffDirectory=Array.isArray(d.members)?d.members:[];
-  staffMinRank=230;staffDiagnostics=d.diagnostics||null;
+  staffMinRank=Number(d.minRank||d.diagnostics?.minRank||230);staffDiagnostics=d.diagnostics||null;
   renderStaffDirectory();
+  if(!staffDirectory.length){const z=d.diagnostics||{};if(status)status.textContent="No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+".";
+  }
   if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
-  setupStaffAutocompleteFields();
-  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");
-  dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");
-  document.body.appendChild(dl);
+  if(typeof setupStaffAutocompleteFields==="function")setupStaffAutocompleteFields();
+  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";
+  dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
   ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
-  if(!staffDirectory.length){const z=d.diagnostics||{};if(status)status.textContent="No staff at rank 230+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+".";
-  }else if(status)status.textContent="Showing all "+staffDirectory.length+" staff members ranked 230+.";
   api("/api/group/roles").then(roleData=>{
-   directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];groupRoleCache=directoryRoles;renderDirectoryRankSidebar();
-   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+directoryRoles.map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
-  }).catch(error=>console.warn("Group role counts unavailable:",error.message));
-  api("/api/management/teams").then(teams=>{
-   managementTeams=teams.teams||[];teamAssignments=new Map();
-   for(const x of(teams.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}
-   teamStaffCache=staffDirectory;
-   const filter=$("directoryTeamFilter");if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
-   syncTeamsByGroupRole().catch(error=>console.warn("Team role synchronization unavailable:",error.message));
-  }).catch(error=>console.warn("Team directory metadata unavailable:",error.message));
+   const roles=Array.isArray(roleData.roles)?roleData.roles:[];
+   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+roles.map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
+  }).catch(error=>console.warn("Group role metadata unavailable:",error.message));
  }catch(e){
   if(status)status.textContent="Could not load staff: "+e.message;
   if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(e.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
   $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
  }finally{if($("directoryButton"))$("directoryButton").disabled=false;}
- })();
- try{return await staffDirectoryPromise;}finally{staffDirectoryPromise=null;}
 }
-$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();loadStaffDirectory(true);});
-$("searchGroupMember")?.addEventListener("click",searchGroupMembers);
-$("directorySearch")?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();searchGroupMembers();}});
-$("directoryRankSidebar")?.addEventListener("click",event=>{const button=event.target.closest("[data-directory-rank]");if(button)loadDirectoryRank(button.dataset.directoryRank);});
-$("directoryStaffRankButton")?.addEventListener("click",()=>{activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();renderStaffDirectory();});
+$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
+$("directorySearch")?.addEventListener("input",renderStaffDirectory);
 $("directoryResult")?.addEventListener("click",e=>{const card=e.target.closest("[data-staff-id]");if(card)showStaffProfile(card.dataset.staffId);});
-$("directoryResult")?.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.closest("[data-staff-id]")){e.preventDefault();showStaffProfile(e.target.closest("[data-staff-id]").dataset.staffId);}});
+
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
 async function showStaffProfile(id,openTeams=false){
