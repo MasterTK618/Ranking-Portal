@@ -1252,8 +1252,8 @@ function addSessionRoleSlot(containerId,label,selected={},senior=false){
 }
 function collectSessionRoleSlots(containerId){return [...($(containerId)?.querySelectorAll(".session-slot-row")||[])].map(row=>({label:row.querySelector(".session-slot-label").value.trim()||"Role",userId:row.querySelector(".session-slot-user")?.nextElementSibling?.value||""}));}
 function populateCreateRoleSlots(){if(!$("createOverseeSlots"))return;if(!$("createOverseeSlots").dataset.ready){$("createOverseeSlots").dataset.ready="1";$("createAttendeeSlots").dataset.ready="1";addSessionRoleSlot("createOverseeSlots","Oversee 1",{},true);addSessionRoleSlot("createAttendeeSlots","Attendee 1");}}
-function openSessionRoles(id){const s=(window.__lemonzSessions||[]).find(x=>String(x.id)===String(id));if(!s)return;if(!staffDirectory.length){notice("Staff directory is still loading. Try again.","error");return;}const fill=(key,value)=>setStaffAutocompleteValue(key,value);$("editSessionId").value=s.id;$("editSessionTitle").value=s.title||"";$("editSessionType").value=s.session_type||"PROMOTIONAL";$("editSessionDate").value=String(s.session_date||"").slice(0,10);$("editSessionTime").value=String(s.session_time||"").slice(0,5);$("editSessionStatus").value=s.status||"PLANNED";$("editSessionStatusNote").value=s.status_note||"";fill("editSessionHost",s.host_id);fill("editSessionCoHost",s.cohost_id,true);fill("editSessionPromoter",s.promoter_id,true,true);$("editOverseeSlots").innerHTML="";$("editAttendeeSlots").innerHTML="";const ov=sessionRoleSlots(s,"oversee_slots","oversee_ids","oversee_names"),at=sessionRoleSlots(s,"attendee_slots","attendee_ids","attendee_names");(ov.length?ov:[{label:"Oversee 1"}]).forEach(x=>addSessionRoleSlot("editOverseeSlots",x.label,x,true));(at.length?at:[{label:"Attendee 1"}]).forEach(x=>addSessionRoleSlot("editAttendeeSlots",x.label,x));$("sessionRolesDialog").showModal();}
-document.addEventListener("click",e=>{const b=e.target.closest("[data-edit-session-roles]");if(b)openSessionRoles(b.dataset.editSessionRoles);});
+async function openSessionRoles(id){const s=(window.__lemonzSessions||[]).find(x=>String(x.id)===String(id));if(!s)return;if(!staffDirectory.length){notice("Loading the staff directory…");await loadStaffDirectory();if(!staffDirectory.length){notice("Staff directory is unavailable. Refresh it and try again.","error");return;}}const fill=(key,value)=>setStaffAutocompleteValue(key,value);$("editSessionId").value=s.id;$("editSessionTitle").value=s.title||"";$("editSessionType").value=s.session_type||"PROMOTIONAL";$("editSessionDate").value=String(s.session_date||"").slice(0,10);$("editSessionTime").value=String(s.session_time||"").slice(0,5);$("editSessionStatus").value=s.status||"PLANNED";$("editSessionStatusNote").value=s.status_note||"";fill("editSessionHost",s.host_id);fill("editSessionCoHost",s.cohost_id,true);fill("editSessionPromoter",s.promoter_id,true,true);$("editOverseeSlots").innerHTML="";$("editAttendeeSlots").innerHTML="";const ov=sessionRoleSlots(s,"oversee_slots","oversee_ids","oversee_names"),at=sessionRoleSlots(s,"attendee_slots","attendee_ids","attendee_names");(ov.length?ov:[{label:"Oversee 1"}]).forEach(x=>addSessionRoleSlot("editOverseeSlots",x.label,x,true));(at.length?at:[{label:"Attendee 1"}]).forEach(x=>addSessionRoleSlot("editAttendeeSlots",x.label,x));$("sessionRolesDialog").showModal();}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-edit-session-roles]");if(b){e.preventDefault();openSessionRoles(b.dataset.editSessionRoles).catch(err=>notice(err.message,"error"));}});
 // Status changes are handled once by the earlier prompt-and-save listener.
 ["closeSessionRoles","cancelSessionRoles"].forEach(id=>$(id)?.addEventListener("click",()=> $("sessionRolesDialog").close()));
 $("sessionRolesForm")?.addEventListener("submit",async e=>{e.preventDefault();const btn=$("saveSessionRoles");btn.disabled=true;const body={title:$("editSessionTitle").value.trim(),sessionType:$("editSessionType").value,date:$("editSessionDate").value,time:$("editSessionTime").value,status:$("editSessionStatus").value,statusNote:$("editSessionStatusNote").value,hostId:staffIdFor("editSessionHost"),cohostId:staffIdFor("editSessionCoHost"),promoterId:staffIdFor("editSessionPromoter"),overseeSlots:collectSessionRoleSlots("editOverseeSlots"),attendeeSlots:collectSessionRoleSlots("editAttendeeSlots")};try{await api("/api/management/sessions/"+encodeURIComponent($("editSessionId").value)+"/roles",{method:"PATCH",body:JSON.stringify(body)});notice("Session updated.","success");$("sessionRolesDialog").close();await loadSessions();}catch(err){notice(err.message,"error");}finally{btn.disabled=false;}});
@@ -1262,28 +1262,42 @@ $("calendarNext")?.addEventListener("click",()=>{calendarCursor=new Date(calenda
 $("refreshSessions")?.addEventListener("click",loadSessions);
 $("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);$("sessionTeamFilter")?.addEventListener("change",loadSessions);
 populateCreateRoleSlots();
-// Delegate role-slot controls so they remain active after the session workspace is shown.
-document.addEventListener("click",e=>{
- const button=e.target.closest("#addOverseeSlot,#addAttendeeSlot,#editAddOverseeSlot,#editAddAttendeeSlot");
- if(!button)return;
- e.preventDefault();
- const map={addOverseeSlot:["createOverseeSlots","Oversee ",true],addAttendeeSlot:["createAttendeeSlots","Attendee ",false],editAddOverseeSlot:["editOverseeSlots","Oversee ",true],editAddAttendeeSlot:["editAttendeeSlots","Attendee ",false]};
- const [containerId,label,senior]=map[button.id],container=$(containerId);
- if(!container)return;
- addSessionRoleSlot(containerId,label+(container.children.length+1),{},senior);
-},{capture:true});
+function bindSessionRoleButton(buttonId,containerId,label,isSenior){
+ const button=$(buttonId);if(!button)return;
+ button.type="button";
+ button.onclick=e=>{
+  e.preventDefault();
+  const container=$(containerId);if(!container)return;
+  try{addSessionRoleSlot(containerId,label+(container.querySelectorAll(".session-slot-row").length+1),{},isSenior);}
+  catch(error){console.error("Could not add session role:",error);notice("Could not add that role. Refresh the page and try again.","error");}
+ };
+}
+bindSessionRoleButton("addOverseeSlot","createOverseeSlots","Oversee ",true);
+bindSessionRoleButton("addAttendeeSlot","createAttendeeSlots","Attendee ",false);
+bindSessionRoleButton("editAddOverseeSlot","editOverseeSlots","Oversee ",true);
+bindSessionRoleButton("editAddAttendeeSlot","editAttendeeSlots","Attendee ",false);
 $("sessionRepeat")?.addEventListener("change",()=>{$("sessionRepeatUntilWrap").classList.toggle("hidden",$("sessionRepeat").value==="NONE");});
-$("createSession").addEventListener("click",async()=>{
- const hostId=staffIdFor("sessionHost"),cohostId=staffIdFor("sessionCoHost"),promoterId=staffIdFor("sessionPromoter");
- if(!hostId){notice("Choose a host from the username suggestions.","error");return;}
- const body={title:$("sessionTitle").value.trim(),sessionType:$("sessionType").value,date:$("sessionDate").value,time:$("sessionTime").value,hostId,cohostId,overseeSlots:collectSessionRoleSlots("createOverseeSlots"),attendeeSlots:collectSessionRoleSlots("createAttendeeSlots"),promoterId,recurrenceRule:$("sessionRepeat").value,recurrenceUntil:$("sessionRepeatUntil").value};
- if(!body.title||!body.date||!body.time){notice("Enter a shift name, date, and time.","error");return;}
- const btn=$("createSession");btn.disabled=true;
- try{const created=await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});notice(created.createdCount>1?created.createdCount+" recurring sessions created.":"Shift created.","success");$("sessionTitle").value="";loadSessions();}catch(e){notice(e.message,"error");}finally{btn.disabled=false;}
-});
-
-
-// Resolve typed Roblox usernames to exact staff IDs before saving a shift.
+$("createSession")?.addEventListener("click",async()=>{
+  const btn=$("createSession");if(btn.disabled)return;
+  const hostId=staffIdFor("sessionHost"),cohostId=staffIdFor("sessionCoHost"),promoterId=staffIdFor("sessionPromoter");
+  if(!hostId){notice("Choose a host from the username suggestions.","error");$("sessionHost").focus();return;}
+  const body={title:$("sessionTitle").value.trim(),sessionType:$("sessionType").value,date:$("sessionDate").value,time:$("sessionTime").value,hostId,cohostId,overseeSlots:collectSessionRoleSlots("createOverseeSlots"),attendeeSlots:collectSessionRoleSlots("createAttendeeSlots"),promoterId,recurrenceRule:$("sessionRepeat").value,recurrenceUntil:$("sessionRepeatUntil").value};
+  if(!body.title||!body.date||!body.time){notice("Enter a session name, date, and time.","error");return;}
+  const assigned=[hostId,cohostId,promoterId,...body.overseeSlots.map(x=>x.userId),...body.attendeeSlots.map(x=>x.userId)].filter(Boolean);
+  if(new Set(assigned).size!==assigned.length){notice("Each staff member can only have one role in a session.","error");return;}
+  if(body.overseeSlots.some(x=>x.userId&&!staffDirectory.some(m=>String(m.id)===String(x.userId)&&Number(m.rank)>=245))){notice("Every Oversee must be rank 245 or higher.","error");return;}
+  if(promoterId&&!staffDirectory.some(m=>String(m.id)===String(promoterId)&&Number(m.rank)>=245)){notice("Promoter must be rank 245 or higher.","error");return;}
+  btn.disabled=true;btn.textContent="Scheduling…";
+  try{
+   const created=await api("/api/management/sessions",{method:"POST",body:JSON.stringify(body)});
+   notice(created.createdCount>1?created.createdCount+" recurring sessions created.":"Session scheduled.","success");
+   $("sessionTitle").value="";$("sessionHost").value="";$("sessionHostId").value="";$("sessionCoHost").value="";$("sessionCoHostId").value="";$("sessionPromoter").value="";$("sessionPromoterId").value="";
+   await loadSessions();
+  }catch(e){notice(e.message,"error");}
+  finally{btn.disabled=false;btn.textContent="Schedule session";}
+ });
+ 
+ // Resolve typed Roblox usernames to exact staff IDs before saving a shift.
 function connectShiftSearch(inputId,selectId){
   const input=$(inputId),select=$(selectId);if(!input||!select)return;
   const resolve=()=>{const match=staffDirectory.find(m=>m.username.toLowerCase()===input.value.trim().toLowerCase());select.value=match?match.id:"";if(!match&&input.value.trim())notice("Choose an exact staff username from the suggestions.","error");};
