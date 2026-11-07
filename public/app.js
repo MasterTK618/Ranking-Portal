@@ -964,16 +964,18 @@ async function loadStaffDirectory(force=false){
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-// Delegate clicks from the directory itself. Native buttons already support Enter/Space,
- // so one click handler covers mouse, touch, and keyboard without duplicate activation.
-$("directoryResult")?.addEventListener("click",e=>{
- const card=e.target.closest?.("button.staff-card[data-staff-id]");
- if(!card||!$("directoryResult")?.contains(card))return;
+// Capture staff-card activation at document level. This runs before other page
+// handlers and continues to work when the directory replaces its card markup.
+document.addEventListener("click",event=>{
+ const target=event.target instanceof Element?event.target:event.target?.parentElement;
+ const card=target?.closest?.("#directoryResult button.staff-card[data-staff-id]");
+ if(!card)return;
  const id=String(card.dataset.staffId||"");
  if(!/^\d+$/.test(id))return;
- e.preventDefault();
+ event.preventDefault();
+ event.stopPropagation();
  showStaffProfile(id);
-});
+},true);
 
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
