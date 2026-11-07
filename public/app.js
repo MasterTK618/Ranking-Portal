@@ -862,6 +862,77 @@ document.addEventListener("click",async e=>{
 });
 
 
+
+function setStaffAutocompleteValue(inputId,userId,hiddenId){
+ const input=$(inputId),hidden=$(hiddenId||inputId+"Id");
+ if(!input||!hidden)return;
+ const person=staffDirectory.find(m=>String(m.id)===String(userId));
+ input.value=person?.username||"";
+ hidden.value=person?.id||"";
+}
+function attachStaffAutocomplete(inputId,options={}){
+ const input=$(inputId),hidden=$(options.hiddenId||inputId+"Id"),results=document.querySelector('[data-staff-results="'+inputId+'"]');
+ if(!input||!hidden||!results||input.dataset.autocompleteReady)return;
+ input.dataset.autocompleteReady="1";
+ const eligible=()=>staffDirectory.filter(m=>!options.senior||Number(m.rank)>=245);
+ const close=()=>{results.classList.remove("is-open");results.innerHTML="";};
+ const render=()=>{
+  const q=input.value.trim().toLowerCase();
+  hidden.value="";
+  if(!q){close();return;}
+  const matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
+  results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Staff")+' · Rank '+Number(m.rank||0)+'</small></span></button><button type="button" class="staff-suggestion-profile" data-staff-profile="'+escapeHtml(m.id)+'" aria-label="Open '+escapeHtml(m.username)+' profile">Profile ↗</button></div>').join(""):'<div class="staff-suggestion-empty">No matching staff usernames.</div>';
+  results.classList.add("is-open");
+ };
+ input.addEventListener("input",render);
+ input.addEventListener("focus",render);
+ input.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){close();return;}
+  if(e.key==="Enter"){
+   const first=results.querySelector("[data-staff-suggestion]");
+   if(first){e.preventDefault();first.click();}
+  }
+ });
+ results.addEventListener("click",e=>{
+  const target=e.target instanceof Element?e.target:e.target?.parentElement;
+  const profile=target?.closest?.("[data-staff-profile]");
+  if(profile){
+   close();
+   showPage("members");
+   showStaffProfile(profile.dataset.staffProfile);
+   return;
+  }
+  const button=target?.closest?.("[data-staff-suggestion]");
+  if(!button)return;
+  const member=eligible().find(m=>String(m.id)===String(button.dataset.staffSuggestion));
+  if(!member)return;
+  input.value=member.username;
+  hidden.value=String(member.id);
+  close();
+ });
+ input.addEventListener("blur",()=>setTimeout(close,180));
+}
+function staffIdFor(inputId,hiddenId){
+ return String($(hiddenId||inputId+"Id")?.value||"");
+}
+function setupStaffAutocompleteFields(){
+ const fields=[
+  ["punishUsername","punishUserId",false],
+  ["promotionUsername","promotionUserId",false],
+  ["activityUsername","activityUserId",false],
+  ["sessionHost","sessionHostId",false],
+  ["sessionCoHost","sessionCoHostId",false],
+  ["sessionPromoter","sessionPromoterId",true],
+  ["sessionRequestHost","sessionRequestHostId",false],
+  ["sessionRequestCoHost","sessionRequestCoHostId",false],
+  ["editSessionHost","editSessionHostId",false],
+  ["editSessionCoHost","editSessionCoHostId",false],
+  ["editSessionPromoter","editSessionPromoterId",true],
+  ["evidenceTargetUsername","evidenceTargetId",false]
+ ];
+ fields.forEach(([inputId,hiddenId,senior])=>attachStaffAutocomplete(inputId,{hiddenId,senior}));
+}
+
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
  result.innerHTML=members.length?members.map(m=>'<button type="button" class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" aria-label="Open staff profile for '+escapeHtml(m.username||"staff member")+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></button>').join(""):'<div class="empty-state">No members found for this selection.</div>';
@@ -888,6 +959,7 @@ async function loadStaffDirectory(force=false){
     const saved=JSON.parse(localStorage.getItem("lemonz-staff-directory-v1")||"null");
     if(saved&&Array.isArray(saved.members)&&saved.members.length&&Date.now()-Number(saved.savedAt||0)<86400000){
      staffDirectory=saved.members;staffMinRank=Number(saved.minRank||230);teamStaffCache=staffDirectory;
+     setupStaffAutocompleteFields();
      renderStaffDirectory();
      if(status)status.textContent="Showing recently saved staff · Checking for updates…";
     }
@@ -1151,7 +1223,7 @@ function collectSessionRoleSlots(containerId){return [...($(containerId)?.queryS
 function populateCreateRoleSlots(){if(!$("createOverseeSlots"))return;if(!$("createOverseeSlots").dataset.ready){$("createOverseeSlots").dataset.ready="1";$("createAttendeeSlots").dataset.ready="1";addSessionRoleSlot("createOverseeSlots","Oversee 1",{},true);addSessionRoleSlot("createAttendeeSlots","Attendee 1");}}
 function openSessionRoles(id){const s=(window.__lemonzSessions||[]).find(x=>String(x.id)===String(id));if(!s)return;if(!staffDirectory.length){notice("Staff directory is still loading. Try again.","error");return;}const fill=(key,value)=>setStaffAutocompleteValue(key,value);$("editSessionId").value=s.id;$("editSessionTitle").value=s.title||"";$("editSessionType").value=s.session_type||"PROMOTIONAL";$("editSessionDate").value=String(s.session_date||"").slice(0,10);$("editSessionTime").value=String(s.session_time||"").slice(0,5);$("editSessionStatus").value=s.status||"PLANNED";$("editSessionStatusNote").value=s.status_note||"";fill("editSessionHost",s.host_id);fill("editSessionCoHost",s.cohost_id,true);fill("editSessionPromoter",s.promoter_id,true,true);$("editOverseeSlots").innerHTML="";$("editAttendeeSlots").innerHTML="";const ov=sessionRoleSlots(s,"oversee_slots","oversee_ids","oversee_names"),at=sessionRoleSlots(s,"attendee_slots","attendee_ids","attendee_names");(ov.length?ov:[{label:"Oversee 1"}]).forEach(x=>addSessionRoleSlot("editOverseeSlots",x.label,x,true));(at.length?at:[{label:"Attendee 1"}]).forEach(x=>addSessionRoleSlot("editAttendeeSlots",x.label,x));$("sessionRolesDialog").showModal();}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-edit-session-roles]");if(b)openSessionRoles(b.dataset.editSessionRoles);});
-document.addEventListener("change",async e=>{const control=e.target.closest("[data-session-status]");if(!control)return;const prior=(window.__lemonzSessions||[]).find(s=>String(s.id)===String(control.dataset.sessionStatus));control.disabled=true;try{await api("/api/management/sessions/"+encodeURIComponent(control.dataset.sessionStatus)+"/status",{method:"PATCH",body:JSON.stringify({status:control.value,note:prior?.status_note||""})});notice("Session status updated.","success");await loadSessions();}catch(err){notice(err.message,"error");await loadSessions();}finally{control.disabled=false;}});
+// Status changes are handled once by the earlier prompt-and-save listener.
 ["closeSessionRoles","cancelSessionRoles"].forEach(id=>$(id)?.addEventListener("click",()=> $("sessionRolesDialog").close()));
 $("sessionRolesForm")?.addEventListener("submit",async e=>{e.preventDefault();const btn=$("saveSessionRoles");btn.disabled=true;const body={title:$("editSessionTitle").value.trim(),sessionType:$("editSessionType").value,date:$("editSessionDate").value,time:$("editSessionTime").value,status:$("editSessionStatus").value,statusNote:$("editSessionStatusNote").value,hostId:staffIdFor("editSessionHost"),cohostId:staffIdFor("editSessionCoHost"),promoterId:staffIdFor("editSessionPromoter"),overseeSlots:collectSessionRoleSlots("editOverseeSlots"),attendeeSlots:collectSessionRoleSlots("editAttendeeSlots")};try{await api("/api/management/sessions/"+encodeURIComponent($("editSessionId").value)+"/roles",{method:"PATCH",body:JSON.stringify(body)});notice("Session updated.","success");$("sessionRolesDialog").close();await loadSessions();}catch(err){notice(err.message,"error");}finally{btn.disabled=false;}});
 $("calendarPrev")?.addEventListener("click",()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()-1,1);loadSessions();});
