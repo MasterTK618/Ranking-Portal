@@ -943,14 +943,32 @@ function renderDirectoryMembers(members){
   if(/^\d+$/.test(id))showStaffProfile(id);
  }));
 }
+function renderDirectoryRankSidebar(members){
+ const root=$("directoryRankOptions");if(!root)return;
+ const eligibleRoles=(Array.isArray(directoryRoles)&&directoryRoles.length?directoryRoles:members.map(m=>({name:m.role,rank:m.rank})))
+  .filter(r=>Number(r.rank)>=staffMinRank)
+  .sort((a,b)=>Number(b.rank)-Number(a.rank));
+ const unique=[];const seen=new Set();
+ eligibleRoles.forEach(role=>{const rank=Number(role.rank);if(!Number.isFinite(rank)||seen.has(rank))return;seen.add(rank);unique.push({rank,name:String(role.name||members.find(m=>Number(m.rank)===rank)?.role||("Rank "+rank))});});
+ const counts=new Map();members.forEach(m=>counts.set(Number(m.rank),Number(counts.get(Number(m.rank))||0)+1));
+ const allActive=activeDirectoryRank==="STAFF";
+ root.innerHTML='<button type="button" class="directory-rank-option'+(allActive?' active':'')+'" data-directory-rank="STAFF"><span><b>All staff</b><small>Every rank '+staffMinRank+'+</small></span><strong>'+members.length+'</strong></button>'+
+  unique.map(role=>'<button type="button" class="directory-rank-option'+(activeDirectoryRank==="rank:"+role.rank?' active':'')+'" data-directory-rank="rank:'+role.rank+'"><span><b>'+escapeHtml(role.name)+'</b><small>Rank '+role.rank+'</small></span><strong>'+Number(counts.get(role.rank)||0)+'</strong></button>').join("");
+ root.querySelectorAll("[data-directory-rank]").forEach(button=>button.addEventListener("click",()=>{
+  activeDirectoryRank=button.dataset.directoryRank||"STAFF";
+  renderStaffDirectory();
+ }));
+}
 function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");
  if(!result)return;
  const q=String(search?.value||"").trim().toLowerCase();
  const members=Array.isArray(staffDirectory)?staffDirectory:[];
- const list=members.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.role||"").localeCompare(String(y.role||""))||String(x.username||"").localeCompare(String(y.username||"")));
+ renderDirectoryRankSidebar(members);
+ const selectedRank=activeDirectoryRank.startsWith("rank:")?Number(activeDirectoryRank.slice(5)):null;
+ const list=members.filter(m=>(selectedRank===null||Number(m.rank)===selectedRank)&&(!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)))).sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.role||"").localeCompare(String(y.role||""))||String(x.username||"").localeCompare(String(y.username||"")));
  if($("staffCount"))$("staffCount").textContent=members.length+" staff members · Rank "+staffMinRank+"+";
- if(status)status.textContent=list.length?"Showing "+list.length+" staff members"+(q?" matching your search":"")+".":(q?"No staff match that search.":"No staff members were returned.");
+ if(status)status.textContent=list.length?"Showing "+list.length+" staff members"+(selectedRank!==null?" in rank "+selectedRank:"")+(q?" matching your search":"")+".":(q?"No staff match that search.":selectedRank!==null?"No staff members currently hold this rank.":"No staff members were returned.");
  renderDirectoryMembers(list);
 }
 async function loadStaffDirectory(force=false){
@@ -1017,6 +1035,7 @@ async function loadStaffDirectory(force=false){
     if(requestId!==directoryRequestToken)return;
     const roles=Array.isArray(roleData.roles)?roleData.roles:[];
     directoryRoles=roles;groupRoleCache=roles;
+    renderStaffDirectory();
     const select=$("promotionRole");
     if(select)select.innerHTML='<option value="">Choose suggested role…</option>'+roles.map(role=>'<option value="'+escapeHtml(role.name)+'">'+escapeHtml(role.name)+' (Rank '+Number(role.rank)+')</option>').join("");
    }).catch(error=>console.warn("Group role metadata unavailable:",error.message));
@@ -1088,6 +1107,14 @@ async function showStaffProfile(id,openTeams=false){
     '<div id="memberNotesList" class="member-notes-list">'+((d.notes||[]).length?d.notes.map(n=>'<article class="member-note"><div><b>'+escapeHtml(n.created_by_name)+'</b><time>'+escapeHtml(formatDate(n.created_at))+'</time></div><p>'+escapeHtml(n.body)+'</p>'+((String(n.created_by)===String(sessionData?.user?.id)||d.canModerateNotes)?'<button type="button" class="danger-text-btn" data-note-delete="'+escapeHtml(n.id)+'">Delete note</button>':'')+'</article>').join(""):'<div class="empty-state">No management notes yet.</div>')+'</div></section>';
     panel.insertAdjacentHTML("beforeend",'<section class="profile-panel hidden" data-profile-panel="timeline"><h4>Complete management timeline</h4><p class="muted">Recorded actions involving this staff member, newest first.</p>'+(d.timeline?.length?'<ul class="history-list">'+d.timeline.map(x=>'<li><b>'+escapeHtml(x.category)+' · '+escapeHtml(x.action)+'</b><small>'+escapeHtml(x.details||"Management action")+' · '+escapeHtml(x.actor_name||"Management")+' · '+escapeHtml(formatDate(x.created_at))+'</small></li>').join("")+'</ul>':'<p class="muted">No management actions have been recorded for this staff member yet.</p>')+'</section>');
      panel.insertAdjacentHTML("beforeend",'<section class="profile-panel hidden" data-profile-panel="gameSessions"><div class="profile-notes-heading"><div><h4>Roblox game session history</h4><p class="muted">Every tracked join session for this staff member, newest first. Up to 250 recent sessions are shown.</p></div><span class="profile-note-count">'+(d.gameSessions||[]).length+' recorded</span></div>'+(d.gameSessions?.length?'<div class="table-wrap"><table class="data-table profile-game-session-table"><thead><tr><th>JOINED</th><th>LEFT</th><th>TIME IN-GAME</th><th>ACTIVE</th><th>AFK</th><th>MESSAGES</th></tr></thead><tbody>'+d.gameSessions.map(s=>'<tr><td>'+escapeHtml(formatDate(s.started_at))+'</td><td>'+(s.ended_at?escapeHtml(formatDate(s.ended_at)):'<span class="status-pill status-ongoing">In-game</span>')+'</td><td><b>'+formatDuration(s.seconds)+'</b></td><td>'+formatDuration(s.active_seconds)+'</td><td>'+formatDuration(s.afk_seconds)+'</td><td>'+Number(s.message_count||0).toLocaleString()+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty-state">No Roblox game sessions have been recorded for this staff member yet. Sessions begin appearing after the tracker is installed.</div>')+'</section>');
+    // Bind profile navigation directly to the rendered controls. This keeps tabs working
+    // even if another page-level listener stops bubbling click events.
+    panel.querySelectorAll("[data-profile-tab],[data-profile-tab-jump]").forEach(button=>button.addEventListener("click",event=>{
+      event.preventDefault();
+      const key=button.dataset.profileTab||button.dataset.profileTabJump;
+      panel.querySelectorAll("[data-profile-panel]").forEach(section=>section.classList.toggle("hidden",section.dataset.profilePanel!==key));
+      panel.querySelectorAll("[data-profile-tab]").forEach(tab=>tab.classList.toggle("active",tab.dataset.profileTab===key));
+    }));
     panel.dataset.memberId=String(m.id);
     panel.dataset.memberUsername=String(m.username||"");
     if(d.canRequestPromotion){
