@@ -1033,7 +1033,7 @@ document.addEventListener("submit",async e=>{
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
- const dateKey=value=>{if(!value)return "";const raw=String(value),match=raw.match(/^(\\d{4}-\\d{2}-\\d{2})/);if(match)return match[1];const d=new Date(value);return Number.isNaN(d.getTime())?"":d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+ const dateKey=value=>{if(!value)return "";const raw=String(value),match=raw.match(/^(\d{4}-\d{2}-\d{2})/);if(match)return match[1];const d=new Date(value);return Number.isNaN(d.getTime())?"":d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
  const grouped=new Map();for(const session of items){const key=dateKey(session.session_date);if(key){if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(session);}}
  for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
  const today=new Date(),todayKey=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
