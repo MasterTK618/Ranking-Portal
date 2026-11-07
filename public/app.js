@@ -1063,6 +1063,12 @@ async function showStaffProfile(id,openTeams=false){
     const d=await api("/api/management/members/"+encodeURIComponent(userId),{timeoutMs:45000});
     if(requestToken!==activeProfileRequest)return;
     if(!d||!d.member)throw new Error("The server returned an incomplete staff profile. Please retry.");
+    // Older saved deployments may omit newer optional profile sections; keep the core profile usable.
+    d.sessions=Array.isArray(d.sessions)?d.sessions:[];
+    d.punishments=Array.isArray(d.punishments)?d.punishments:[];
+    d.notes=Array.isArray(d.notes)?d.notes:[];
+    d.timeline=Array.isArray(d.timeline)?d.timeline:[];
+    d.gameSessions=Array.isArray(d.gameSessions)?d.gameSessions:[];
     const m=d.member;
     if(m.inGroup===false){
       panel.innerHTML='<div class="profile-head"><img class="profile-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="Roblox avatar"><div class="profile-identity"><div class="eyebrow">ROBLOX PROFILE</div><h3>'+escapeHtml(m.username)+'</h3><p>'+escapeHtml(m.displayName||"")+' · Not in Lemonz</p></div><a class="quiet-btn profile-roblox-link" href="https://www.roblox.com/users/'+encodeURIComponent(m.id)+'/profile" target="_blank" rel="noopener">Open Roblox profile ↗</a></div><p class="muted">This Roblox user is not currently a member of the Lemonz group, so staff history, requests, and internal management records are not available.</p>';
