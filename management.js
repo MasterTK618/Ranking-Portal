@@ -308,10 +308,10 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/tasks/diagnostics",async(req,res,next)=>{try{const who=await identity(req);if(!who||Number(who.rank)<255)return res.status(403).json({error:"Only the group owner can view task storage diagnostics."});const schema=await pool.query("SELECT data_type,udt_name,is_nullable FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1 AND column_name=$2",["management_tasks","id"]);const count=await pool.query("SELECT COUNT(*)::text AS total FROM management_tasks");const samples=await pool.query("SELECT id::text AS id,title,status,created_at FROM management_tasks ORDER BY created_at DESC LIMIT 10");res.json({ok:true,tableExists:schema.rowCount===1,idColumn:schema.rows[0]||null,totalTasks:count.rows[0]?.total||"0",recentTasks:samples.rows});}catch(e){next(e);}});
   router.get("/tasks/audit",async(req,res,next)=>{try{const who=await gate(req,res,"task_manage_rank");if(!who)return;const r=await pool.query("SELECT * FROM management_audit_logs WHERE category=$1 ORDER BY created_at DESC LIMIT 200",["TASK"]);res.json({items:r.rows});}catch(e){next(e);}});
   router.post("/tasks",csrf,async(req,res,next)=>{try{
-    const who=await gate(req,res,"task_view_rank");if(!who)return;const b=req.body||{},title=String(b.title||"").trim(),description=String(b.description||"").trim(),assignedToId=String(b.assignedToId||""),priority=String(b.priority||"NORMAL"),dueDate=String(b.dueDate||"");
+    const who=await gate(req,res,"task_manage_rank");if(!who)return;const b=req.body||{},title=String(b.title||"").trim(),description=String(b.description||"").trim(),assignedToId=String(b.assignedToId||""),priority=String(b.priority||"NORMAL"),dueDate=String(b.dueDate||"");
     if(!title||title.length>120||description.length>2000||!/^\d+$/.test(assignedToId)||!["LOW","NORMAL","HIGH","URGENT"].includes(priority))return res.status(400).json({error:"Enter a task title, assigned staff member, and valid priority."});
     const dueDateValue=dueDate?new Date(dueDate+"T00:00:00.000Z"):null;if(dueDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)||Number.isNaN(dueDateValue.getTime())||dueDateValue.toISOString().slice(0,10)!==dueDate))return res.status(400).json({error:"Choose a valid due date."});
-    const assigned=await getIdentity(assignedToId);if(!assigned?.inGroup||Number(assigned.rank)<Number((await settings()).task_view_rank))return res.status(400).json({error:"Assign the task to a staff member who can access the task board."});
+    const assigned=await getIdentity(assignedToId);if(!assigned?.inGroup)return res.status(400).json({error:"Assign the task to a current Lemonz group member."});
     const profile=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(assignedToId));const user=await profile.json().catch(()=>({}));const assignedName=user.name||assignedToId;
     const client=await pool.connect();let item;try{await client.query("BEGIN");
       const r=await client.query("INSERT INTO management_tasks(title,description,assigned_to_id,assigned_to_name,priority,due_date,created_by,created_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",[title,description,assignedToId,assignedName,priority,dueDate||null,String(req.session.user.id),req.session.user.name]);item=r.rows[0];item.id=String(item.id);
@@ -353,7 +353,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const parsedDate=new Date(date+"T00:00:00.000Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
     if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
     const staff=await Promise.all([hostId,...(cohostId?[cohostId]:[])].map(async id=>({id,who:await getIdentity(id)})));
-    if(staff.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"The host and co-host must be current Lemonz staff members."});
+    if(staff.some(x=>!x.who?.inGroup))return res.status(400).json({error:"The host and co-host must be current Lemonz staff members."});
     const userNames=await Promise.all(staff.map(async x=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,u.name||x.id];}));
     const names=Object.fromEntries(userNames);
     const cfg=await settings(),auto=requestAutoApproved(who,cfg);
@@ -401,7 +401,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(!title||title.length>100||! /^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||! /^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!hostId||!["PLANNED","ONGOING","DELAYED","CANCELED","COMPLETED"].includes(status)||!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(sessionType))return res.status(400).json({error:"Check the session name, date, time, type, status, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"Each staff member can only have one session role."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-    if(identities.some(x=>!x.who?.inGroup||Number(x.who.rank)<230))return res.status(400).json({error:"All assigned people must be current Lemonz staff."});
+    if(identities.some(x=>!x.who?.inGroup))return res.status(400).json({error:"All assigned people must be current Lemonz staff."});
     const ranks=new Map(identities.map(x=>[x.id,Number(x.who.rank)]));
     if([...overseeIds,...(promoterId?[promoterId]:[])].some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Oversee and Promoter must be rank 245 or higher."});
     const names=await Promise.all(ids.map(async id=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];})),map=Object.fromEntries(names);
@@ -429,7 +429,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const parsedSessionDate=new Date(date+"T00:00:00.000Z");if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedSessionDate.getTime())||parsedSessionDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a valid session name, date, time, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-    if(identities.some(x=>!x.who?.inGroup||Number(x.who.rank||0)<230))return res.status(400).json({error:"Every assigned person must be current Lemonz staff (rank 230 or higher)."});
+    if(identities.some(x=>!x.who?.inGroup))return res.status(400).json({error:"Every assigned person must be current Lemonz staff (rank 230 or higher)."});
     const ranks=new Map(identities.map(x=>[x.id,x.who.rank]));
     if(overseeIds.some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Every Oversee must be rank 245 or higher."});
     if(b.promoterId&&Number(ranks.get(String(b.promoterId))||0)<245)return res.status(400).json({error:"Promoter must be rank 245 or higher."});
@@ -543,6 +543,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const shiftSql="SELECT person_id,COUNT(*)::INTEGER AS shifts_attended FROM (SELECT id AS shift_id,host_id AS person_id FROM staff_shifts WHERE host_id IS NOT NULL UNION SELECT id,cohost_id FROM staff_shifts WHERE cohost_id IS NOT NULL UNION SELECT id,promoter_id FROM staff_shifts WHERE promoter_id IS NOT NULL UNION SELECT id,unnest(oversee_ids) FROM staff_shifts WHERE cardinality(oversee_ids)>0 UNION SELECT id,unnest(attendee_ids) FROM staff_shifts WHERE cardinality(attendee_ids)>0) AS assigned_people WHERE ($1::TEXT IS NULL OR person_id=$1) GROUP BY person_id";
     const shiftResult=await pool.query(shiftSql,[canViewAll?null:userId]);
     const shiftCounts=new Map(shiftResult.rows.map(row=>[String(row.person_id),Number(row.shifts_attended||0)]));
+    const candidateIds=[...new Set([...stats.keys(),...shiftCounts.keys()])];
+    const staffIdentityResults=await Promise.all(candidateIds.map(async id=>{try{return [id,await getIdentity(id)];}catch{return [id,null];}}));
+    const verifiedStaffIds=new Set(staffIdentityResults.filter(([,member])=>member?.inGroup&&Number(member.rank)>=230).map(([id])=>id));
+    for(const id of [...stats.keys()])if(!verifiedStaffIds.has(id))stats.delete(id);
+    for(const id of [...shiftCounts.keys()])if(!verifiedStaffIds.has(id))shiftCounts.delete(id);
     if(canViewAll)for(const [id,count] of shiftCounts){const existing=stats.get(id)||{user_id:id,username:id,seconds:0,last_seen:null,game_sessions:0};existing.shifts_attended=count;stats.set(id,existing);}
     if(!canViewAll&&!stats.has(userId))stats.set(userId,{user_id:userId,username:req.session.user.name||"You",seconds:0,last_seen:null,game_sessions:0});
     const members=[...stats.values()].map(row=>({...row,shifts_attended:shiftCounts.get(row.user_id)||0,rank:row.user_id===userId?Number(who.rank):null,role:row.user_id===userId?(who.roleName||"—"):"—"}));
@@ -554,7 +559,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     res.json({members,adjustments:adjustments.rows,canEdit:Number(who.rank)>=Number(s.activity_edit_rank),canViewAll,daily:dailyResult.rows.map(x=>({...x,seconds:Number(x.seconds||0),visits:Number(x.visits||0)})),recent:recentResult.rows.map(x=>({...x,seconds:Number(x.seconds||0)})),quotaHours:Number(s.quota_hours_week||2)});
   }catch(e){next(e);}});
 
-  router.get("/activity-alerts",async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.inactivity_alert_view_rank||243))return res.status(403).json({error:"Your rank cannot view inactivity alerts."});if(Number(cfg.activity_alerts_enabled)!==1)return res.json({enabled:false,items:[]});const days=Math.max(1,Math.min(90,Number(cfg.inactivity_days)||7));const q=await pool.query("SELECT user_id,MAX(username) AS username,MAX(COALESCE(ended_at,heartbeat_at,started_at)) AS last_seen,COUNT(*)::int AS sessions FROM activity_sessions GROUP BY user_id HAVING MAX(COALESCE(ended_at,heartbeat_at,started_at))<NOW()-($1::text||' days')::interval ORDER BY last_seen ASC LIMIT 200",[days]);res.json({enabled:true,days,items:q.rows});}catch(e){next(e);}});
+  router.get("/activity-alerts",async(req,res,next)=>{try{const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.inactivity_alert_view_rank||243))return res.status(403).json({error:"Your rank cannot view inactivity alerts."});if(Number(cfg.activity_alerts_enabled)!==1)return res.json({enabled:false,items:[]});const days=Math.max(1,Math.min(90,Number(cfg.inactivity_days)||7));const q=await pool.query("SELECT user_id,MAX(username) AS username,MAX(COALESCE(ended_at,heartbeat_at,started_at)) AS last_seen,COUNT(*)::int AS sessions FROM activity_sessions GROUP BY user_id HAVING MAX(COALESCE(ended_at,heartbeat_at,started_at))<NOW()-($1::text||' days')::interval ORDER BY last_seen ASC LIMIT 200",[days]);const verified=await Promise.all(q.rows.map(async row=>{try{const member=await getIdentity(String(row.user_id));return member?.inGroup&&Number(member.rank)>=230?row:null;}catch{return null;}}));res.json({enabled:true,days,items:verified.filter(Boolean)});}catch(e){next(e);}});
   router.get("/live-servers",async(req,res,next)=>{try{
     const who=await identity(req),cfg=await settings();if(!who||Number(who.rank)<Number(cfg.live_server_view_rank||238))return res.status(403).json({error:"Your rank cannot view live game servers."});
     await pool.query("DELETE FROM live_game_players WHERE heartbeat_at<NOW()-INTERVAL '90 seconds'");
@@ -621,7 +626,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       if(!/^\d+$/.test(userId)||!username||!Number.isInteger(minutes)||minutes===0||Math.abs(minutes)>100000||!reason)
         return res.status(400).json({error:"Choose a staff member, enter a non-zero whole number of minutes, and provide a reason."});
       const target=await getIdentity(userId);
-      if(!target?.inGroup)return res.status(404).json({error:"The selected user is no longer a Lemonz group member."});
+      if(!target?.inGroup||Number(target.rank)<230)return res.status(404).json({error:"Activity can only be adjusted for Lemonz staff rank 230 or higher."});
       await pool.query("INSERT INTO activity_adjustments(user_id,username,minutes,reason,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6)",
         [userId,username,minutes,reason,req.session.user.id,req.session.user.name]);
       res.json({ok:true});
@@ -930,16 +935,16 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       pool.query("SELECT id,username,type,status,created_at FROM management_punishments WHERE created_by=$1 OR (status='PENDING' AND $2 >= $3) ORDER BY created_at DESC LIMIT 30",[id,Number(who.rank),Number(cfg.punishment_approve_rank)]),
       pool.query("SELECT id,roblox_username,status,start_date,end_date,created_at FROM leave_requests WHERE user_id=$1 OR (status='PENDING' AND $2 >= $3) ORDER BY created_at DESC LIMIT 30",[id,Number(who.rank),Number(cfg.leave_approve_rank)])
     ]);
-    for(const x of tasks.rows)items.push({id:"task-"+x.id,title:"Task assigned: "+x.title,body:"Priority "+x.priority+(x.due_date?" · Due "+String(x.due_date).slice(0,10):""),kind:"TASK",href:"tasks",created_at:x.created_at});
-    for(const x of sessions.rows)items.push({id:"session-"+x.id,title:"Session update: "+x.title,body:"Status: "+x.status+" · "+String(x.session_date||"")+" "+String(x.session_time||""),kind:"SESSION",href:"sessions",created_at:x.updated_at});
-    for(const x of promotions.rows)items.push({id:"promotion-"+x.id,title:"Promotion "+x.status.toLowerCase(),body:x.username+" · "+x.suggested_role,kind:"APPROVAL",href:"promotions",created_at:x.created_at});
-    for(const x of punishments.rows)items.push({id:"punishment-"+x.id,title:"Discipline "+x.status.toLowerCase(),body:x.username+" · "+x.type,kind:"APPROVAL",href:"punishments",created_at:x.created_at});
-    for(const x of leaves.rows)items.push({id:"leave-"+x.id,title:"Leave "+x.status.toLowerCase(),body:x.roblox_username+" · "+String(x.start_date).slice(0,10)+" to "+String(x.end_date).slice(0,10),kind:"APPROVAL",href:"leaves",created_at:x.created_at});
+    for(const x of tasks.rows)items.push({id:"task-"+x.id,title:"Task assigned: "+x.title,body:"Priority "+x.priority+(x.due_date?" · Due "+String(x.due_date).slice(0,10):""),kind:"TASK",href:"tasks:"+x.id,created_at:x.created_at});
+    for(const x of sessions.rows)items.push({id:"session-"+x.id,title:"Session update: "+x.title,body:"Status: "+x.status+" · "+String(x.session_date||"")+" "+String(x.session_time||""),kind:"SESSION",href:"sessions:"+x.id,created_at:x.updated_at});
+    for(const x of promotions.rows)items.push({id:"promotion-"+x.id,title:"Promotion "+x.status.toLowerCase(),body:x.username+" · "+x.suggested_role,kind:"APPROVAL",href:"promotions:"+x.id,created_at:x.created_at});
+    for(const x of punishments.rows)items.push({id:"punishment-"+x.id,title:"Discipline "+x.status.toLowerCase(),body:x.username+" · "+x.type,kind:"APPROVAL",href:"punishments:"+x.id,created_at:x.created_at});
+    for(const x of leaves.rows)items.push({id:"leave-"+x.id,title:"Leave "+x.status.toLowerCase(),body:x.roblox_username+" · "+String(x.start_date).slice(0,10)+" to "+String(x.end_date).slice(0,10),kind:"APPROVAL",href:"leaves:"+x.id,created_at:x.created_at});
     if(Number(cfg.announcements_enabled??1)!==0&&Number(who.rank)>=Number(cfg.announcement_view_rank||243)){
       await pool.query("UPDATE management_announcements SET status='PUBLISHED',published_at=COALESCE(published_at,NOW()) WHERE status='SCHEDULED' AND publish_at<=NOW()");
       const memberships=await pool.query("SELECT team_id FROM management_team_members WHERE user_id=$1",[id]),teamIds=memberships.rows.map(x=>String(x.team_id));
       const announcements=await pool.query("SELECT id,title,body,audience,created_at,published_at FROM management_announcements WHERE status='PUBLISHED' AND (expires_at IS NULL OR expires_at>NOW()) ORDER BY published_at DESC LIMIT 100");
-      for(const x of announcements.rows){const a=x.audience||{};if(a.all===true||(a.teamIds||[]).some(t=>teamIds.includes(String(t)))||(a.ranks||[]).map(Number).includes(Number(who.rank)))items.push({id:"announcement-"+x.id,title:"New announcement: "+x.title,body:String(x.body||"").slice(0,180),kind:"ANNOUNCEMENT",href:"announcements",created_at:x.published_at||x.created_at});}
+      for(const x of announcements.rows){const a=x.audience||{};if(a.all===true||(a.teamIds||[]).some(t=>teamIds.includes(String(t)))||(a.ranks||[]).map(Number).includes(Number(who.rank)))items.push({id:"announcement-"+x.id,title:"New announcement: "+x.title,body:String(x.body||"").slice(0,180),kind:"ANNOUNCEMENT",href:"announcements:"+x.id,created_at:x.published_at||x.created_at});}
     }
     const reads=await pool.query("SELECT notification_key FROM management_notification_reads WHERE user_id=$1",[id]);const readSet=new Set(reads.rows.map(x=>x.notification_key));
     items.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));res.json({items:items.slice(0,100).map(x=>({...x,read:readSet.has(String(x.id))})),enabled:Number(cfg.notifications_enabled)!==0});
