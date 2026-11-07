@@ -833,7 +833,7 @@ document.addEventListener("click",async e=>{
 });
 
 
-let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0;
+let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
  result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
@@ -915,6 +915,8 @@ function setupStaffAutocompleteFields(){
  [["punishUsername",false],["promotionUsername",false],["activityUsername",false],["sessionHost",false],["sessionCoHost",false],["sessionPromoter",true],["sessionRequestHost",false],["sessionRequestCoHost",false],["editSessionHost",false],["editSessionCoHost",false],["editSessionPromoter",true],["evidenceTargetUsername",false]].forEach(([id,senior])=>attachStaffAutocomplete(id,{senior,hiddenId:id==="evidenceTargetUsername"?"evidenceTargetId":id+"Id"}));
 }
 async function loadStaffDirectory(force=false){
+ if(staffDirectoryPromise&&!force)return staffDirectoryPromise;
+ staffDirectoryPromise=(async()=>{
  const result=$("directoryResult"),status=$("directoryStatus");
  if(result)result.innerHTML="";
  if(status)status.textContent="Loading staff ranked 230+…";
@@ -950,6 +952,8 @@ async function loadStaffDirectory(force=false){
   if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(e.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
   $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
  }finally{if($("directoryButton"))$("directoryButton").disabled=false;}
+ })();
+ try{return await staffDirectoryPromise;}finally{staffDirectoryPromise=null;}
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");activeDirectoryRank="STAFF";directoryRequestToken++;renderDirectoryRankSidebar();renderStaffDirectory();});
 $("searchGroupMember")?.addEventListener("click",searchGroupMembers);
@@ -1229,5 +1233,6 @@ document.addEventListener("submit",async e=>{
  const button=$("sidebarToggle");if(!button)return;
  let collapsed=false;try{collapsed=localStorage.getItem("lemonz-sidebar-collapsed")==="1";}catch{}
  const apply=()=>{document.body.classList.toggle("sidebar-collapsed",collapsed);button.setAttribute("aria-expanded",String(!collapsed));button.setAttribute("aria-label",collapsed?"Expand sidebar":"Collapse sidebar");const label=button.querySelector(".sidebar-toggle-label"),icon=button.querySelector(".sidebar-toggle-icon");if(label)label.textContent=collapsed?"Expand sidebar":"Collapse sidebar";if(icon)icon.textContent=collapsed?"›":"‹";};
- button.addEventListener("click",()=>{collapsed=!collapsed;try{localStorage.setItem("lemonz-sidebar-collapsed",collapsed?"1":"0");}catch{}apply();});apply();
+ button.addEventListener("click",()=>{collapsed=!collapsed;apply();try{localStorage.setItem("lemonz-sidebar-collapsed",collapsed?"1":"0");}catch{}});
+ apply();
 })();
