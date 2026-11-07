@@ -33,7 +33,7 @@ function showPage(page,view) {
   if(page==="activity"){loadManagement("activity");loadActivityAlerts();}
   if(page==="ingame")loadInGame();
   if(page==="gameLinks")loadGameLinks();
-  if(page==="punishments"){loadManagement("punishments");if(selectedView==="evidence")loadEvidence();}
+  if(page==="punishments"){loadManagement("punishments");if(selectedView==="requests")loadEvidence();}
   if(page==="promotions")loadManagement("promotions");
   if(page==="leaves")loadManagement("leaves");
   if(page==="tasks")loadTasks();
