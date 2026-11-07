@@ -22,6 +22,7 @@ let sessionData = null, selectedMember = null, roles = [], activeProfileRequest 
 // Directory state is initialized before any navigation, diagnostics, or page loaders can reference it.
 let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],groupRoleLoadPromise=null,teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
+let taskItemsCache=[],taskSettingsCache={},taskRankCache=0;
 const pageNames = {myActivity:"My Activity",overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -64,13 +65,12 @@ function showPage(page,view) {
   if(page==="ingame")loadInGame();
   if(page==="gameLinks")loadGameLinks();
   if(page==="punishments"){loadManagement("punishments");if(selectedView==="requests")loadEvidence();}
-  if(page==="promotions")loadManagement("promotions");
+  if(page==="promotions"){loadPromotionRoleOptions();loadManagement("promotions");}
   if(page==="leaves")loadManagement("leaves");
   if(page==="tasks")loadTasks();
   if(page==="knowledge")loadKnowledge();if(page==="notifications")loadNotifications();if(page==="approvals")loadApprovals();if(page==="analytics")loadAnalytics();
 }
-document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page,b.dataset.view)));
-document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go,b.dataset.view)));
+document.addEventListener("click",event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const nav=target.closest(".nav-item[data-page]");if(nav){event.preventDefault();showPage(nav.dataset.page,nav.dataset.view);return;}const quick=target.closest("[data-go]");if(quick){event.preventDefault();showPage(quick.dataset.go,quick.dataset.view);}});
 $("topRefreshButton")?.addEventListener("click",()=>{const active=document.querySelector(".nav-item.active");if(active)showPage(active.dataset.page,active.dataset.view);});
 $("jumpScheduleBtn")?.addEventListener("click",()=>{$("sessionCreateCard")?.scrollIntoView({behavior:"smooth",block:"start"});});
 function setPortalTheme(mode,persist=true){
@@ -707,7 +707,8 @@ setInterval(()=>{if(!$("ingamePage")?.classList.contains("hidden"))loadInGame();
 setInterval(()=>{if($("ingamePage")&&!$("ingamePage").classList.contains("hidden"))document.querySelectorAll("[data-live-start]").forEach(el=>{const started=new Date(el.dataset.liveStart).getTime();if(Number.isFinite(started))el.textContent=formatDuration((Date.now()-started)/1000);});},1000);
 
 async function loadManagement(tab){
-  if(!staffDirectory.length){try{await loadStaffDirectory();}catch{}}
+  // Do not block management pages while the staff directory retries in the background.
+  if(!staffDirectory.length)loadStaffDirectory();
   if(tab==="activity"){
     $("activityTable").textContent="Loading staff activity…";
     try{
@@ -765,7 +766,7 @@ async function loadManagement(tab){
     }catch(e){$("leaveTable").textContent=e.message}
   }
 }
-$("refreshActivity").addEventListener("click",()=>loadManagement("activity"));
+$("refreshActivity")?.addEventListener("click",()=>loadManagement("activity"));
 $("refreshMyActivity")?.addEventListener("click",loadMyActivity);
 $("promotionSearch")?.addEventListener("input",()=>{const q=$("promotionSearch").value.toLowerCase();document.querySelectorAll("#promotionTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("punishmentSearch")?.addEventListener("input",()=>{const q=$("punishmentSearch").value.toLowerCase();document.querySelectorAll("#punishmentTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
@@ -1072,6 +1073,7 @@ async function loadStaffDirectory(force=false){
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";activeDirectoryRank="STAFF";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directoryClearRank")?.addEventListener("click",()=>{activeDirectoryRank="STAFF";renderStaffDirectory();});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
+$("directorySearch")?.addEventListener("keydown",event=>{if(event.key==="Escape"){$("directorySearch").value="";renderStaffDirectory();return;}if(event.key==="Enter"){event.preventDefault();$("directoryResult")?.querySelector(".staff-card")?.click();}});
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
 async function showStaffProfile(id,openTeams=false){
