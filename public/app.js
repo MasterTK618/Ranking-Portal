@@ -190,6 +190,14 @@ async function ensureGroupRoleCache(){
  }
  try{return await groupRoleLoadPromise;}finally{groupRoleLoadPromise=null;}
 }
+async function loadPromotionRoleOptions(){
+ const select=$("promotionRole");if(!select)return;
+ const previous=select.value,roles=await ensureGroupRoleCache();
+ const sorted=[...roles].sort((a,b)=>Number(a.rank)-Number(b.rank));
+ select.innerHTML='<option value="">Choose suggested role…</option>'+sorted.map(role=>'<option value="'+escapeHtml(role.name)+'">'+escapeHtml(role.name)+'</option>').join("");
+ if(sorted.some(role=>String(role.name)===previous))select.value=previous;
+ select.disabled=sorted.length===0;
+}
 async function populateGroupRoleDropdowns(){
  const ids=["teamViewRank","departmentViewRank","knowledgeViewRank","gameLinksViewRank","promotionViewRank","sessionRequestsViewRank","announcementViewRank","announcementPublishRank","liveServerViewRank","livePlayerModerateRank","liveAnnounceRank","liveServerAdminRank","activityViewRank","activityEditRank","punishmentViewRank","punishmentRequestRank","punishmentAddRank","punishmentApproveRank","promotionSuggestRank","promotionApproveRank","leaveApproveRank","sessionCreateRank","sessionApproveRank","sessionStatusRank","sessionDeleteRank","taskViewRank","taskManageRank","knowledgeManageRank","notificationViewRank","analyticsViewRank","auditViewRank","profileViewRank","profileNoteRank","calendarViewRank","quotaViewRank","quotaManageRank","inactivityAlertViewRank","evidenceViewRank","evidenceUploadRank","evidenceManageRank","autoApproveRequestsRank","knowledgeMinRank"];
  const selects=ids.map(id=>$(id)).filter(Boolean);if(!selects.length)return;
@@ -921,7 +929,8 @@ function attachStaffAutocomplete(inputId,options={}){
   hidden.value=String(member.id);
   close();
  });
- input.addEventListener("blur",()=>setTimeout(close,180));
+ results.addEventListener("pointerdown",event=>{if(event.target instanceof Element&&event.target.closest("button"))event.preventDefault();});
+  input.addEventListener("blur",()=>setTimeout(close,220));
 }
 function staffIdFor(inputId,hiddenId){
  return String($(hiddenId||inputId+"Id")?.value||"");
@@ -943,6 +952,7 @@ function setupStaffAutocompleteFields(){
  ];
  fields.forEach(([inputId,hiddenId,senior])=>attachStaffAutocomplete(inputId,{hiddenId,senior}));
 }
+setupStaffAutocompleteFields();
 
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
@@ -1007,22 +1017,20 @@ async function loadStaffDirectory(force=false){
    let data=null,lastError=null;
    // Render can briefly return a gateway/network error while the service is waking up.
    // Retry transient failures automatically so users do not have to press Try again.
-   const retryDelays=[1500,3000,5000,8000,12000,15000,20000,30000];
-   let attempt=0;
-   while(true){
-    try{data=await api("/api/staff"+(force?"?refresh=1":""),{timeoutMs:30000});lastError=null;break;}
-    catch(error){
-     lastError=error;
-     const transient=!error.status||error.status===408||error.status===425||error.status===429||error.status>=500;
-     if(!transient)throw error;
-     // Keep the directory warm even if the user navigates elsewhere during the request.
-     const delay=retryDelays[Math.min(attempt,retryDelays.length-1)];
-     attempt++;
-     if(status)status.textContent="Staff directory is temporarily unavailable. Retrying automatically in "+Math.ceil(delay/1000)+" seconds… (attempt "+attempt+")";
-     await new Promise(resolve=>setTimeout(resolve,delay));
+   const retryDelays=[1500,3000,5000,8000];
+    let attempt=0;
+    while(attempt<=retryDelays.length){
+     try{data=await api("/api/staff"+(force?"?refresh=1":""),{timeoutMs:20000});lastError=null;break;}
+     catch(error){
+      lastError=error;
+      const transient=!error.status||error.status===408||error.status===425||error.status===429||error.status>=500;
+      if(!transient||attempt>=retryDelays.length)throw error;
+      const delay=retryDelays[attempt++];
+      if(status)status.textContent="Staff directory is temporarily unavailable. Retrying in "+Math.ceil(delay/1000)+" seconds… (attempt "+attempt+" of "+retryDelays.length+")";
+      await new Promise(resolve=>setTimeout(resolve,delay));
+     }
     }
-   }
-   if(lastError)throw lastError;
+if(lastError)throw lastError;
    if(requestId!==directoryRequestToken)return data;
    const members=Array.isArray(data.members)?data.members:[];
    staffDirectory=members;
@@ -1037,20 +1045,9 @@ async function loadStaffDirectory(force=false){
    }
    if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
    if(typeof setupStaffAutocompleteFields==="function")setupStaffAutocompleteFields();
-   const list=document.getElementById("staffSuggestions")||document.createElement("datalist");
-   list.id="staffSuggestions";
-   list.innerHTML=members.map(m=>'<option value="'+escapeHtml(m.username||"")+'"></option>').join("");
-   document.body.appendChild(list);
-   ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const field=$(id);if(field)field.setAttribute("list","staffSuggestions");});
-   api("/api/group/roles").then(roleData=>{
-    if(requestId!==directoryRequestToken)return;
-    const roles=Array.isArray(roleData.roles)?roleData.roles:[];
-    directoryRoles=roles;groupRoleCache=roles;
-    renderStaffDirectory();
-    const select=$("promotionRole");
-    if(select)select.innerHTML='<option value="">Choose suggested role…</option>'+roles.map(role=>'<option value="'+escapeHtml(role.name)+'">'+escapeHtml(role.name)+' (Rank '+Number(role.rank)+')</option>').join("");
-   }).catch(error=>console.warn("Group role metadata unavailable:",error.message));
-   return data;
+   // Use the custom staff autocomplete only; a native datalist created a competing dropdown.
+    loadPromotionRoleOptions().catch(error=>console.warn("Promotion roles unavailable:",error.message));
+return data;
   }catch(error){
    if(requestId===directoryRequestToken){
     if(staffDirectory.length){
