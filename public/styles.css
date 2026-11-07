@@ -1127,3 +1127,17 @@ body.sidebar-collapsed .sidebar-toggle-icon{width:auto}
 #sessionsPage .calendar-weekdays,#sessionsPage .calendar-grid{min-width:700px}
 #sessionsPage .calendar-day{min-height:92px}
 @media(max-width:760px){#sessionsPage .calendar-day{min-height:72px;padding:5px}#sessionsPage .calendar-event b{font-size:9px}}
+
+/* Consistent, readable dropdown controls across every workspace. */
+select{appearance:none;-webkit-appearance:none;width:100%;min-width:0;min-height:44px;padding:11px 42px 11px 14px!important;border:1px solid var(--line)!important;border-radius:12px!important;color:var(--text)!important;background-color:var(--panel2)!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23999b91' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:15px!important;line-height:1.35;cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease}
+select:hover:not(:disabled){border-color:color-mix(in srgb,var(--yellow) 58%,var(--line))!important}
+select:focus,select:focus-visible{outline:none!important;border-color:var(--yellow)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--yellow) 20%,transparent)!important}
+select:disabled{opacity:.55;cursor:not-allowed;background-image:none!important;padding-right:14px!important}
+select option,select optgroup{background:var(--panel);color:var(--text)}
+select[multiple]{appearance:auto;-webkit-appearance:auto;background-image:none!important;padding:9px!important;min-height:130px}
+select[multiple] option{padding:8px 10px;border-radius:6px}
+.group-role-select{font-weight:650;letter-spacing:.005em}
+button:not(:disabled){-webkit-tap-highlight-color:transparent}
+button:disabled{cursor:not-allowed!important;opacity:.55}
+button[type="button"],button[type="submit"]{touch-action:manipulation}
+@media(max-width:650px){select{min-height:46px;font-size:14px;padding-left:12px!important}}
