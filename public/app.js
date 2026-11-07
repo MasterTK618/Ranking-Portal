@@ -17,6 +17,8 @@ const $ = (id) => document.getElementById(id);
  apply();
 })();
 let sessionData = null, selectedMember = null, roles = [];
+// Directory state is initialized before any navigation, diagnostics, or page loaders can reference it.
+let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
 const pageNames = {myActivity:"My Activity",overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
@@ -849,7 +851,6 @@ document.addEventListener("click",async e=>{
 });
 
 
-let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
  result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
