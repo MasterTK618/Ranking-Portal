@@ -60,6 +60,11 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const {event,userId,username,jobId}=req.body||{};
       if(!["join","leave","metrics","message"].includes(event)||!/^[0-9]+$/.test(String(userId||""))||!String(username||"").trim())return res.status(400).json({error:"Invalid activity event."});
       const key=String(jobId||"unknown")+":"+String(userId),name=String(username).slice(0,40);
+      const memberIdentity=await getIdentity(String(userId));
+      if(!memberIdentity?.inGroup||Number(memberIdentity.rank)<230){
+        await pool.query("DELETE FROM activity_sessions WHERE session_key=$1",[key]);
+        return res.json({ok:true,ignored:true,reason:"Activity tracking is limited to Lemonz staff rank 230 and above."});
+      }
       if(event==="join")await pool.query("INSERT INTO activity_sessions(session_key,user_id,username,started_at,heartbeat_at) VALUES($1,$2,$3,NOW(),NOW()) ON CONFLICT(session_key) DO UPDATE SET username=EXCLUDED.username,started_at=NOW(),heartbeat_at=NOW(),ended_at=NULL,seconds=0,active_seconds=0,afk_seconds=0,typing_seconds=0,message_count=0",[key,String(userId),name]);
       else if(event==="metrics"){const d=req.body?.metrics||{},safe=(n,max=30)=>Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=max?Number(n):0;await pool.query("UPDATE activity_sessions SET username=$2,heartbeat_at=NOW(),active_seconds=active_seconds+$3,afk_seconds=afk_seconds+$4,typing_seconds=typing_seconds+$5,message_count=message_count+$6 WHERE session_key=$1 AND ended_at IS NULL",[key,name,safe(d.activeSeconds),safe(d.afkSeconds),safe(d.typingSeconds),safe(d.messages,100)]);}
       else if(event==="message")await pool.query("UPDATE activity_sessions SET message_count=message_count+1,username=$2,heartbeat_at=NOW() WHERE session_key=$1 AND ended_at IS NULL",[key,name]);
@@ -708,7 +713,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
       const rolesResponse=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(groupId)+"/roles");
       const rolesPayload=await rolesResponse.json().catch(()=>({}));
       if(!rolesResponse.ok||!Array.isArray(rolesPayload.roles))throw new Error("Roblox could not load Lemonz group roles (HTTP "+rolesResponse.status+").");
-      const staffRoles=rolesPayload.roles.filter(role=>Number(role.rank)>=230&&role.id);
+      const staffRoles=rolesPayload.roles.filter(role=>role.id);
       const pages=await Promise.all(staffRoles.map(async role=>{
         const members=[];let cursor="",pageCount=0;
         do{
@@ -732,7 +737,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     try{return await groupStaffSearchPromise;}finally{groupStaffSearchPromise=null;}
   }
   router.get("/group-members/search",requireLogin,async(req,res,next)=>{try{
-    const query=String(req.query.q||"").trim().toLowerCase(),minimumRank=Math.max(230,Math.min(255,Number(req.query.minRank)||230));
+    const query=String(req.query.q||"").trim().toLowerCase(),minimumRank=Math.max(0,Math.min(255,Number.isFinite(Number(req.query.minRank))?Number(req.query.minRank):0));
     if(query.length<2||query.length>40)return res.json({members:[]});
     const roster=await getGroupStaffSearchRoster();
     const members=roster.filter(member=>member.rank>=minimumRank&&(member.username.toLowerCase().includes(query)||member.displayName.toLowerCase().includes(query))).slice(0,12);
