@@ -1,5 +1,21 @@
 document.body.classList.add("auth-locked");
 const $ = (id) => document.getElementById(id);
+// Initialize the sidebar immediately so navigation still works if a later page module fails.
+(function(){
+ const button=document.getElementById("sidebarToggle");if(!button)return;
+ let collapsed=false;try{collapsed=localStorage.getItem("lemonz-sidebar-collapsed")==="1";}catch{}
+ const apply=()=>{
+  document.body.classList.toggle("sidebar-collapsed",collapsed);
+  button.setAttribute("aria-expanded",String(!collapsed));
+  button.setAttribute("aria-label",collapsed?"Expand sidebar":"Collapse sidebar");
+  button.title=collapsed?"Expand sidebar":"Collapse sidebar";
+  const label=button.querySelector(".sidebar-toggle-label"),icon=button.querySelector(".sidebar-toggle-icon");
+  if(label)label.textContent=collapsed?"Expand sidebar":"Collapse sidebar";
+  if(icon)icon.textContent=collapsed?"›":"‹";
+ };
+ button.addEventListener("click",()=>{collapsed=!collapsed;apply();try{localStorage.setItem("lemonz-sidebar-collapsed",collapsed?"1":"0");}catch{}});
+ apply();
+})();
 let sessionData = null, selectedMember = null, roles = [];
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
 const pageNames = {myActivity:"My Activity",overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
@@ -1229,10 +1245,4 @@ document.addEventListener("submit",async e=>{
  }catch(err){notice(err.message||"Could not submit the request.","error");btn.disabled=false;btn.textContent=original;}
 });
 
-(function(){
- const button=$("sidebarToggle");if(!button)return;
- let collapsed=false;try{collapsed=localStorage.getItem("lemonz-sidebar-collapsed")==="1";}catch{}
- const apply=()=>{document.body.classList.toggle("sidebar-collapsed",collapsed);button.setAttribute("aria-expanded",String(!collapsed));button.setAttribute("aria-label",collapsed?"Expand sidebar":"Collapse sidebar");const label=button.querySelector(".sidebar-toggle-label"),icon=button.querySelector(".sidebar-toggle-icon");if(label)label.textContent=collapsed?"Expand sidebar":"Collapse sidebar";if(icon)icon.textContent=collapsed?"›":"‹";};
- button.addEventListener("click",()=>{collapsed=!collapsed;apply();try{localStorage.setItem("lemonz-sidebar-collapsed",collapsed?"1":"0");}catch{}});
- apply();
-})();
+
