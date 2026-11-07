@@ -1059,7 +1059,8 @@ async function loadStaffDirectory(force=false){
  staffDirectoryPromise=task;
  try{return await task;}finally{if(staffDirectoryPromise===task)staffDirectoryPromise=null;}
 }
-$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
+$("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";activeDirectoryRank="STAFF";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
+$("directoryClearRank")?.addEventListener("click",()=>{activeDirectoryRank="STAFF";renderStaffDirectory();});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
@@ -1162,8 +1163,6 @@ async function loadProfileTeamEditor(userId){
  }catch(err){choices.innerHTML='<div class="empty-state error-state">'+escapeHtml(err.message)+'</div>';status.textContent="Could not load team memberships.";save.disabled=true;}
 }
 document.addEventListener("click",async e=>{
-  const tab=e.target.closest("[data-profile-tab],[data-profile-tab-jump]");
-  if(tab){const key=tab.dataset.profileTab||tab.dataset.profileTabJump,panel=$("memberProfile");panel.querySelectorAll("[data-profile-panel]").forEach(x=>x.classList.toggle("hidden",x.dataset.profilePanel!==key));panel.querySelectorAll("[data-profile-tab]").forEach(x=>x.classList.toggle("active",x.dataset.profileTab===key));return;}
   const teamButton=e.target.closest("[data-member-teams]");if(teamButton){e.preventDefault();e.stopPropagation();await showStaffProfile(String(teamButton.dataset.memberTeams),true);return;}
   const del=e.target.closest("[data-note-delete]");if(del){if(!confirm("Delete this management note?"))return;del.disabled=true;try{await api("/api/management/members/"+encodeURIComponent($("memberProfile").dataset.memberId)+"/notes/"+encodeURIComponent(del.dataset.noteDelete),{method:"DELETE"});await showStaffProfile($("memberProfile").dataset.memberId);$("memberProfile").querySelector('[data-profile-tab="notes"]')?.click();}catch(err){notice(err.message,"error");del.disabled=false;}return;}
 });
