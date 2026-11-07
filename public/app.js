@@ -172,7 +172,7 @@ const PRESET_GROUP_ROLES=[
  {id:"preset-255",name:"Holder",rank:255}
 ];
 async function ensureGroupRoleCache(){
- if(groupRoleCache.length)return groupRoleCache;
+ if(groupRoleCache.length&&groupRoleCache!==PRESET_GROUP_ROLES)return groupRoleCache;
  if(!groupRoleLoadPromise){
   groupRoleLoadPromise=(async()=>{
    let lastError=null;
