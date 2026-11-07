@@ -948,7 +948,7 @@ function attachStaffAutocomplete(inputId,options={}){
   let matches=[];
   if(options.allGroupMembers){
    results.innerHTML='<div class="staff-suggestion-empty">Searching group members…</div>';results.classList.add("is-open");
-   try{const minimumRank=Number(options.minRank||(options.senior?245:230));const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+minimumRank);if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
+   try{const minimumRank=Number(options.minRank||(options.senior?245:(taskSettingsCache?.task_view_rank||230)));const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+minimumRank);if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
    catch(error){if(token!==requestToken)return;results.innerHTML='<div class="staff-suggestion-empty">'+escapeHtml(error.message||"Could not search group members.")+'</div>';results.classList.add("is-open");return;}
   }else matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
   if(token!==requestToken)return;
