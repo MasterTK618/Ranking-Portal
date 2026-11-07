@@ -1070,6 +1070,7 @@ if(lastError)throw lastError;
    }
    if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
    if(typeof setupStaffAutocompleteFields==="function")setupStaffAutocompleteFields();
+    if(typeof populateTaskAssignees==="function"&&!$("tasksPage")?.classList.contains("hidden"))populateTaskAssignees();
    // Use the custom staff autocomplete only; a native datalist created a competing dropdown.
     loadPromotionRoleOptions().catch(error=>console.warn("Promotion roles unavailable:",error.message));
 return data;
