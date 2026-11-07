@@ -175,9 +175,18 @@ function requireGameSecret(req,res,next) {
   }
   next();
 }
-function requireLogin(req,res,next) {
+function requireSessionLogin(req,res,next) {
   if (!req.session.user) return res.status(401).json({ error:"Sign in with Roblox first." });
   next();
+}
+async function requireLogin(req,res,next) {
+  if (!req.session.user) return res.status(401).json({ error:"Sign in with Roblox first." });
+  try {
+    const identity=await getIdentity(req.session.user.id);
+    if(!identity?.inGroup||Number(identity.rank)<230)return res.status(403).json({error:"The Lemonz portal is available to group staff rank 230 and above only."});
+    req.identity=identity;
+    next();
+  } catch(error) { next(error); }
 }
 function csrf(req,res,next) {
   if (!req.session.csrfToken || req.get("x-csrf-token") !== req.session.csrfToken) return res.status(403).json({ error:"Security token expired. Refresh and try again." });
@@ -235,6 +244,11 @@ app.post("/auth/verify", async (req,res,next) => {
       req.session.save(() => {});
       return res.status(400).json({error:"We couldn't find your emoji sequence in that Roblox profile description yet. Copy all five emojis, save your profile, and try again."});
     }
+    const verifiedIdentity=await getIdentity(pending.id);
+    if(!verifiedIdentity?.inGroup||Number(verifiedIdentity.rank)<230){
+      delete req.session.pendingVerification;
+      return res.status(403).json({error:"The Lemonz portal is for group staff rank 230 and above. You can still be listed as a group member, but you cannot sign in or access portal tools."});
+    }
     const verifiedUser = { id:pending.id, name:pending.name, picture:null };
     delete req.session.pendingVerification;
     await new Promise((resolve,reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
@@ -244,7 +258,7 @@ app.post("/auth/verify", async (req,res,next) => {
     res.json({ok:true,redirect:"/"});
   } catch(e) { next(e); }
 });
-app.post("/auth/logout", requireLogin, csrf, (req,res) => req.session.destroy(err => err ? res.status(500).json({error:"Could not sign out."}) : res.clearCookie("lemonz.sid").json({ok:true})));
+app.post("/auth/logout", requireSessionLogin, csrf, (req,res) => req.session.destroy(err => err ? res.status(500).json({error:"Could not sign out."}) : res.clearCookie("lemonz.sid").json({ok:true})));
 
 app.get("/api/me", requireLogin, async (req,res) => {
   try {
@@ -384,7 +398,7 @@ app.get("/api/group/role-members",requireLogin,async(req,res)=>{
 let staffDirectoryCache={at:0,data:null};
 let staffDirectoryRefresh=null;
 app.get("/api/staff",requireLogin,async(req,res)=>{
-  const staffMinRank = Number(process.env.STAFF_MIN_RANK || 230);
+  const staffMinRank = 0;
   // Reuse a successful directory snapshot for 2 minutes so returning to the page is immediate.
   // A manual Refresh uses ?refresh=1 and bypasses this cache.
   if(!req.query.refresh && staffDirectoryCache.data && Date.now()-staffDirectoryCache.at<120000){
@@ -406,7 +420,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
 
   try {
     let base = [], roles = [], publicError = null;
-    // Fast path: fetch only staff roles instead of paging through every group member.
+    // Fetch every group role so all members are visible in the directory.
     // Roblox exposes a paginated member list per role, so each staff role can load concurrently.
     try {
       const roleResponse=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles");
@@ -414,8 +428,8 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
       const roleData=await roleResponse.json().catch(()=>({}));
       if(!roleResponse.ok||!Array.isArray(roleData.roles))throw new Error("Roblox group roles endpoint failed (HTTP "+roleResponse.status+").");
       roles=roleData.roles.map(r=>({id:String(r.id||""),name:String(r.name||"Unnamed role"),rank:Number(r.rank||0)}));
-      const staffRoles=roles.filter(r=>r.rank>=staffMinRank&&/^\d+$/.test(r.id));
-      if(!staffRoles.length)throw new Error("No staff roles were returned by Roblox.");
+      const staffRoles=roles.filter(r=>/^\d+$/.test(r.id));
+      if(!staffRoles.length)throw new Error("No group roles were returned by Roblox.");
       const roleResults=await Promise.all(staffRoles.map(async role=>{
         const found=[];let cursor="",pages=0;
         do{
@@ -457,7 +471,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
             if(/^\d+$/.test(id)){
               diagnostics.fetchedMembers++;
               if(item.role?.id&&!roles.some(r=>String(r.id)===String(item.role.id)))roles.push({id:String(item.role.id),name:role,rank});
-              if(rank>=staffMinRank)base.push({id,rank,role,username:String(user.username||""),displayName:String(user.displayName||"")});
+              base.push({id,rank,role,username:String(user.username||""),displayName:String(user.displayName||"")});
             }
           }
           cursor=data.nextPageCursor||"";
@@ -491,7 +505,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
         }).filter(m => /^\d+$/.test(m.id));
         diagnostics.openCloudStatus = "success";
         diagnostics.fetchedMembers = Math.max(diagnostics.fetchedMembers, cloudMembers.length);
-        const eligible = cloudMembers.filter(m => m.rank >= staffMinRank);
+        const eligible = cloudMembers;
         if (eligible.length || publicError) {
           base = eligible;
           diagnostics.eligibleMembers = eligible.length;
@@ -545,7 +559,7 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
       roles:roles.sort((x,y) => y.rank-x.rank),
       count:members.length,
       source:diagnostics.source,
-      minRank:staffMinRank,
+      minRank:0,
       diagnostics
     };
     staffDirectoryCache={at:Date.now(),data:payload};
