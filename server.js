@@ -385,6 +385,12 @@ let staffDirectoryCache={at:0,data:null};
 let staffDirectoryRefresh=null;
 app.get("/api/staff",requireLogin,async(req,res)=>{
   const staffMinRank = Number(process.env.STAFF_MIN_RANK || 230);
+  // Reuse a successful directory snapshot for 2 minutes so returning to the page is immediate.
+  // A manual Refresh uses ?refresh=1 and bypasses this cache.
+  if(!req.query.refresh && staffDirectoryCache.data && Date.now()-staffDirectoryCache.at<120000){
+    res.set("Cache-Control","private, max-age=30");
+    return res.json({...staffDirectoryCache.data,cached:true});
+  }
   const diagnostics = {
     groupId: GROUP_ID,
     minRank: staffMinRank,
@@ -478,27 +484,29 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
       }
     }
 
+    // The public group endpoint already supplies usernames and display names.
+    // Only look up full user profiles for Open Cloud fallback entries that lack names.
     const profiles = [], thumbs = [];
-    for (let i=0; i<base.length; i+=100) {
-      const ids = base.slice(i,i+100).map(m => Number(m.id));
-      const pr = await fetch("https://users.roblox.com/v1/users", {
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({userIds:ids,excludeBannedUsers:false})
-      });
-      const pd = await pr.json().catch(() => ({}));
-      if (pr.ok && Array.isArray(pd.data)) profiles.push(...pd.data);
-      const tr = await fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" +
-        ids.join(",") + "&size=150x150&format=Png&isCircular=true");
-      const td = await tr.json().catch(() => ({}));
-      if (tr.ok && Array.isArray(td.data)) thumbs.push(...td.data);
-    }
-
+    const missingNameIds = base.filter(m=>!m.username).map(m=>Number(m.id));
+    const batches = [];
+    for(let i=0;i<base.length;i+=100)batches.push(base.slice(i,i+100).map(m=>Number(m.id)));
+    const enrichments = await Promise.allSettled(batches.map(async ids=>{
+      const requests=[fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true")];
+      if(ids.some(id=>missingNameIds.includes(id)))requests.push(fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false})}));
+      const responses=await Promise.all(requests);
+      const thumbData=await responses[0].json().catch(()=>({}));
+      if(responses[0].ok&&Array.isArray(thumbData.data))thumbs.push(...thumbData.data);
+      if(responses[1]){
+        const profileData=await responses[1].json().catch(()=>({}));
+        if(responses[1].ok&&Array.isArray(profileData.data))profiles.push(...profileData.data);
+      }
+    }));
     const byId = new Map(profiles.map(p => [String(p.id),p]));
     const avatars = new Map(thumbs.map(t => [String(t.targetId),t.imageUrl || ""]));
     const members = base.map(m => ({
       id:m.id,rank:m.rank,role:m.role,
-      username:byId.get(m.id)?.name || m.username || ("User " + m.id),
-      displayName:byId.get(m.id)?.displayName || m.displayName || "",
+      username:m.username || byId.get(m.id)?.name || ("User " + m.id),
+      displayName:m.displayName || byId.get(m.id)?.displayName || "",
       avatarUrl:avatars.get(m.id) || ""
     })).sort((x,y) =>
       y.rank-x.rank || x.role.localeCompare(y.role) || x.username.localeCompare(y.username)
@@ -507,15 +515,17 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     diagnostics.returnedMembers = members.length;
     diagnostics.profilesFound = profiles.length;
     diagnostics.avatarsFound = thumbs.length;
-    res.set("Cache-Control","private, max-age=60");
-    res.json({
+    const payload={
       members,
       roles:roles.sort((x,y) => y.rank-x.rank),
       count:members.length,
       source:diagnostics.source,
       minRank:staffMinRank,
       diagnostics
-    });
+    };
+    staffDirectoryCache={at:Date.now(),data:payload};
+    res.set("Cache-Control","private, max-age=30");
+    res.json(payload);
   } catch (err) {
     console.error("Lemonz staff directory failed:",err.message,err.roblox || "");
     res.status(502).json({error:"The staff directory could not finish loading: " + err.message,diagnostics});
