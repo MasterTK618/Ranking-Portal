@@ -486,6 +486,7 @@ $("refreshOverviewInsights")?.addEventListener("click",()=>loadOverviewInsights(
 async function refreshOverview(){
   const data=await api("/api/me");sessionData=data;document.body.classList.remove("auth-locked");
   $("welcomeName").textContent=data.user.name;
+  if($("leaveRoblox")&&!$("leaveRoblox").value.trim())$("leaveRoblox").value=data.user.name;
   $("myRole").textContent=data.identity.roleName;
   $("myRank").textContent=data.identity.apiUnavailable?"—":"Rank "+data.identity.rank;
   $("accessStatus").textContent=data.identity.apiUnavailable?"Group API unavailable":data.identity.rankingApiUnavailable?"Management only":(data.identity.canRank?"Enabled":"No ranking access");
@@ -938,47 +939,55 @@ function attachStaffAutocomplete(inputId,options={}){
  const input=$(inputId),hidden=$(options.hiddenId||inputId+"Id"),results=document.querySelector('[data-staff-results="'+inputId+'"]');
  if(!input||!hidden||!results||input.dataset.autocompleteReady)return;
  input.dataset.autocompleteReady="1";
- let requestToken=0,visibleMatches=[];
- const eligible=()=>staffDirectory.filter(m=>!options.senior||Number(m.rank)>=245);
+ let requestToken=0,visibleMatches=[],searchTimer=null;
  const close=()=>{results.classList.remove("is-open");results.innerHTML="";visibleMatches=[];};
  const render=async()=>{
   const q=input.value.trim().toLowerCase(),token=++requestToken;
-  hidden.value="";
-  if(!q){close();return;}
-  let matches=[];
-  if(options.allGroupMembers){
-   results.innerHTML='<div class="staff-suggestion-empty">Searching group members…</div>';results.classList.add("is-open");
-   try{const minimumRank=Number(options.minRank||(options.senior?245:(taskSettingsCache?.task_view_rank||230)));const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+minimumRank);if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
-   catch(error){if(token!==requestToken)return;results.innerHTML='<div class="staff-suggestion-empty">'+escapeHtml(error.message||"Could not search group members.")+'</div>';results.classList.add("is-open");return;}
-  }else matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
-  if(token!==requestToken)return;
-  visibleMatches=matches;
-  results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Group member")+' · Rank '+Number(m.rank||0)+'</small></span></button>'+(options.allGroupMembers?"":'<button type="button" class="staff-suggestion-profile" data-staff-profile="'+escapeHtml(m.id)+'" aria-label="Open '+escapeHtml(m.username)+' profile">Profile ↗</button>')+'</div>').join(""):'<div class="staff-suggestion-empty">No matching group members.</div>';
-  results.classList.add("is-open");
+  if(q.length<2){close();return;}
+  results.innerHTML='<div class="staff-suggestion-empty">Searching Lemonz staff…</div>';results.classList.add("is-open");
+  try{
+   const minimumRank=Number(options.minRank||(options.senior?245:230));
+   const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+minimumRank,{timeoutMs:15000});
+   if(token!==requestToken)return;
+   const matches=Array.isArray(data.members)?data.members:[];
+   visibleMatches=matches;
+   results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Group member")+' · Rank '+Number(m.rank||0)+'</small></span></button></div>').join(""):'<div class="staff-suggestion-empty">No matching Lemonz staff found.</div>';
+   results.classList.add("is-open");
+  }catch(error){
+   if(token!==requestToken)return;
+   visibleMatches=[];
+   results.innerHTML='<div class="staff-suggestion-empty">'+escapeHtml(error.message||"Staff search is temporarily unavailable.")+'</div>';
+   results.classList.add("is-open");
+  }
  };
- input.addEventListener("input",render);
- input.addEventListener("focus",render);
+ input.addEventListener("input",()=>{
+  // Only a real edit invalidates the selected ID. Focusing an already-selected field
+  // must never erase its hidden Roblox user ID.
+  hidden.value="";
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(render,180);
+ });
+ input.addEventListener("focus",()=>{
+  if(input.value.trim().length>=2&&!results.classList.contains("is-open"))render();
+ });
  input.addEventListener("keydown",e=>{
   if(e.key==="Escape"){close();return;}
   if(e.key==="Enter"){const first=results.querySelector("[data-staff-suggestion]");if(first){e.preventDefault();first.click();}}
  });
  results.addEventListener("click",e=>{
   const target=e.target instanceof Element?e.target:e.target?.parentElement;
-  const profile=target?.closest?.("[data-staff-profile]");
-  if(profile){close();showPage("members");showStaffProfile(profile.dataset.staffProfile);return;}
   const button=target?.closest?.("[data-staff-suggestion]");if(!button)return;
   const member=visibleMatches.find(m=>String(m.id)===String(button.dataset.staffSuggestion));if(!member)return;
   input.value=member.username;hidden.value=String(member.id);close();
  });
  results.addEventListener("pointerdown",event=>{if(event.target instanceof Element&&event.target.closest("button"))event.preventDefault();});
  const resolveExact=()=>{
-  const typed=input.value.trim().toLowerCase();if(!typed)return;
-  const source=options.allGroupMembers?visibleMatches:eligible();
-  const exact=source.find(m=>String(m.username||"").trim().toLowerCase()===typed);
+  const typed=input.value.trim().toLowerCase();if(!typed||hidden.value)return;
+  const exact=visibleMatches.find(m=>String(m.username||"").trim().toLowerCase()===typed);
   if(exact)hidden.value=String(exact.id);
  };
  input.addEventListener("change",resolveExact);
- input.addEventListener("blur",()=>{resolveExact();setTimeout(close,220);});
+ input.addEventListener("blur",()=>{resolveExact();setTimeout(close,260);});
 }
 function staffIdFor(inputId,hiddenId){
  const hidden=$(hiddenId||inputId+"Id"),existing=String(hidden?.value||"");
@@ -1003,7 +1012,7 @@ function setupStaffAutocompleteFields(){
   ["taskAssignedTo","taskAssignedToId",false,true],
   ["editSessionCoHost","editSessionCoHostId",false,true],
   ["editSessionPromoter","editSessionPromoterId",true,true],
-  ["evidenceTargetUsername","evidenceTargetId",false]
+  ["evidenceTargetUsername","evidenceTargetId",false,true]
  ];
  fields.forEach(([inputId,hiddenId,senior,allGroupMembers])=>attachStaffAutocomplete(inputId,{hiddenId,senior,allGroupMembers}));
 }
@@ -1058,7 +1067,7 @@ async function loadStaffDirectory(force=false){
    try{
     const saved=JSON.parse(localStorage.getItem("lemonz-staff-directory-v1")||"null");
     if(saved&&Array.isArray(saved.members)&&saved.members.length&&Date.now()-Number(saved.savedAt||0)<86400000){
-     staffDirectory=saved.members;staffMinRank=Number(saved.minRank||230);teamStaffCache=staffDirectory;
+     staffDirectory=saved.members;directoryRoles=Array.isArray(saved.roles)?saved.roles:[];staffMinRank=Number(saved.minRank||230);teamStaffCache=staffDirectory;
      setupStaffAutocompleteFields();
      renderStaffDirectory();
      if(status)status.textContent="Showing recently saved staff · Checking for updates…";
@@ -1089,10 +1098,11 @@ if(lastError)throw lastError;
    if(requestId!==directoryRequestToken)return data;
    const members=Array.isArray(data.members)?data.members:[];
    staffDirectory=members;
+   directoryRoles=Array.isArray(data.roles)?data.roles:[];
    staffMinRank=Number(data.minRank||data.diagnostics?.minRank||230);
    staffDiagnostics=data.diagnostics||null;
    teamStaffCache=members;
-   try{localStorage.setItem("lemonz-staff-directory-v1",JSON.stringify({savedAt:Date.now(),minRank:staffMinRank,members}));}catch{}
+   try{localStorage.setItem("lemonz-staff-directory-v1",JSON.stringify({savedAt:Date.now(),minRank:staffMinRank,members,roles:directoryRoles}));}catch{}
    renderStaffDirectory();
    if(!members.length){
     const info=data.diagnostics||{};
@@ -1334,7 +1344,7 @@ function addSessionRoleSlot(containerId,label,selected={},senior=false){
  row.innerHTML='<input class="session-slot-label" maxlength="40" aria-label="Role name" placeholder="Role name"><div class="session-slot-user-wrap"><input id="'+inputId+'" class="session-slot-user" autocomplete="off" aria-label="Staff username" placeholder="Type a Roblox username"><input id="'+inputId+'Id" type="hidden"><div class="staff-autocomplete-results" data-staff-results="'+inputId+'"></div></div><button type="button" class="danger-btn session-slot-remove" aria-label="Remove role">×</button>';
  row.querySelector(".session-slot-label").value=selected.label||label;
  c.appendChild(row);attachStaffAutocomplete(inputId,{senior,hiddenId:inputId+"Id",allGroupMembers:true});
- if(selected.userId)setStaffAutocompleteValue(inputId,selected.userId);
+ if(selected.userId)setStaffAutocompleteValue(inputId,selected.userId,undefined,selected.username||selected.name||"");
  row.querySelector(".session-slot-remove").addEventListener("click",()=>row.remove());
 }
 function collectSessionRoleSlots(containerId){return [...($(containerId)?.querySelectorAll(".session-slot-row")||[])].map(row=>({label:row.querySelector(".session-slot-label").value.trim()||"Role",userId:row.querySelector(".session-slot-user")?.nextElementSibling?.value||""}));}
@@ -1362,7 +1372,7 @@ $("sessionRolesForm")?.addEventListener("submit",async e=>{
  if(staffInputMissingSelection("editSessionCoHost")||staffInputMissingSelection("editSessionPromoter")||sessionRoleInputMissingSelection("editOverseeSlots")||sessionRoleInputMissingSelection("editAttendeeSlots")){notice("Choose every assigned staff member from the username suggestions, or clear any optional field you do not want to use.","error");return;}
  const assigned=[body.hostId,body.cohostId,body.promoterId,...body.overseeSlots.map(x=>x.userId),...body.attendeeSlots.map(x=>x.userId)].filter(Boolean);
  if(new Set(assigned).size!==assigned.length){notice("Each staff member can only have one role in a session.","error");return;}
- if(body.overseeSlots.some(x=>x.userId&&!staffDirectory.some(m=>String(m.id)===String(x.userId)&&Number(m.rank)>=245))||body.promoterId&&!staffDirectory.some(m=>String(m.id)===String(body.promoterId)&&Number(m.rank)>=245)){notice("Oversees and the promoter must be rank 245 or higher.","error");return;}
+ // The server validates rank 245+ for Oversees and Promoter; do not reject valid remote search results using a stale local directory.
  btn.disabled=true;btn.textContent="Saving…";
  try{await api("/api/management/sessions/"+encodeURIComponent($("editSessionId").value)+"/roles",{method:"PATCH",body:JSON.stringify(body)});notice("Session updated.","success");$("sessionRolesDialog").close();await loadSessions();}
  catch(err){notice(err.message,"error");}
@@ -1425,6 +1435,20 @@ document.addEventListener("change",e=>{
 
 
 async function loadNotifications(){const el=$("notificationList");if(!el)return;el.textContent="Loading notifications…";try{const d=await api("/api/management/notifications");el.innerHTML=d.enabled?(d.items.length?d.items.map(x=>'<article class="notification-row'+(x.read?" is-read":"")+'><span class="notification-icon">'+(x.kind==="APPROVAL"?"✓":x.kind==="TASK"?"▣":"◷")+'</span><div><b>'+escapeHtml(x.title)+'</b><p>'+escapeHtml(x.body)+'</p><small>'+escapeHtml(formatDate(x.created_at))+'</small></div><button class="quiet-btn" data-notification-open="'+escapeHtml(x.href)+'">Open</button><button class="quiet-btn" data-notification-read="'+escapeHtml(x.id)+'" '+(x.read?"disabled":"")+'>'+(x.read?"Read":"Mark read")+'</button></article>').join(""):'<div class="empty-state">You are all caught up.</div>'):'<div class="empty-state">Notifications are disabled in Settings.</div>';}catch(e){el.textContent=e.message;}}
+document.addEventListener("click",event=>{
+ const button=event.target.closest("[data-approval-open]");if(!button)return;
+ const routes={
+  PROMOTION:["promotions","requests"],
+  PUNISHMENT:["punishments","requests"],
+  LEAVE:["leaves","inbox"],
+  SESSION:["sessions","requests"]
+ };
+ const destination=routes[String(button.dataset.approvalOpen||"").toUpperCase()];
+ if(!destination){notice("This approval type does not have a review page yet.","error");return;}
+ showPage(destination[0],destination[1]);
+ const target=document.querySelector("#"+destination[0]+"Page [data-workspace-panel='"+destination[1]+"']");
+ target?.scrollIntoView({behavior:"smooth",block:"start"});
+});
 async function loadApprovals(){const el=$("approvalList");if(!el)return;el.textContent="Loading approvals…";try{const d=await api("/api/management/approvals");el.innerHTML=d.items.length?'<div class="table-wrap"><table class="data-table"><thead><tr><th>TYPE</th><th>REQUEST</th><th>DETAILS</th><th>SUBMITTED</th><th></th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(x.type)+'</td><td><b>'+escapeHtml(x.target)+'</b></td><td>'+escapeHtml(x.detail||"—")+'</td><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><button class="quiet-btn" data-approval-open="'+x.type+'">Review</button></td></tr>').join("")+'</tbody></table></div>':'<div class="empty-state">No pending requests available to your rank.</div>';}catch(e){el.textContent=e.message;}}
 async function loadMyActivity(){
  const statsEl=$("myActivityStats"),chartEl=$("myActivityChart"),heatEl=$("myActivityHeatmap"),recentEl=$("myRecentVisits");
