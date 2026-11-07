@@ -1,5 +1,7 @@
 document.body.classList.add("auth-locked");
 const $ = (id) => document.getElementById(id);
+// Safety net: dynamically-rendered buttons must never submit a form unless explicitly marked submit.
+document.addEventListener("click",event=>{const target=event.target;const button=target instanceof Element?target.closest("button"):null;if(button&&!button.hasAttribute("type"))button.type="button";},true);
 // Initialize the sidebar immediately so navigation still works if a later page module fails.
 (function(){
  const button=document.getElementById("sidebarToggle");if(!button)return;
@@ -19,7 +21,7 @@ const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [], activeProfileRequest = 0;
 // Directory state is initialized before any navigation, diagnostics, or page loaders can reference it.
 let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
-let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
+let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],groupRoleLoadPromise=null,teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
 const pageNames = {myActivity:"My Activity",overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
@@ -169,26 +171,34 @@ const PRESET_GROUP_ROLES=[
  {id:"preset-254",name:"President",rank:254},
  {id:"preset-255",name:"Holder",rank:255}
 ];
+async function ensureGroupRoleCache(){
+ if(groupRoleCache.length)return groupRoleCache;
+ if(!groupRoleLoadPromise){
+  groupRoleLoadPromise=(async()=>{
+   let lastError=null;
+   for(let attempt=0;attempt<3;attempt++){
+    try{
+     const data=await api("/api/group/roles",{timeoutMs:12000});
+     const roles=Array.isArray(data.roles)?data.roles.filter(role=>Number.isFinite(Number(role.rank))):[];
+     if(!roles.length)throw new Error("Roblox returned an empty group role list.");
+     groupRoleCache=roles;return roles;
+    }catch(error){lastError=error;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));}
+   }
+   console.warn("Roblox group roles unavailable; using the configured Lemonz role preset.",lastError);
+   groupRoleCache=PRESET_GROUP_ROLES;return groupRoleCache;
+  })();
+ }
+ try{return await groupRoleLoadPromise;}finally{groupRoleLoadPromise=null;}
+}
 async function populateGroupRoleDropdowns(){
  const ids=["teamViewRank","departmentViewRank","knowledgeViewRank","gameLinksViewRank","promotionViewRank","sessionRequestsViewRank","announcementViewRank","announcementPublishRank","liveServerViewRank","livePlayerModerateRank","liveAnnounceRank","liveServerAdminRank","activityViewRank","activityEditRank","punishmentViewRank","punishmentRequestRank","punishmentAddRank","punishmentApproveRank","promotionSuggestRank","promotionApproveRank","leaveApproveRank","sessionCreateRank","sessionApproveRank","sessionStatusRank","sessionDeleteRank","taskViewRank","taskManageRank","knowledgeManageRank","notificationViewRank","analyticsViewRank","auditViewRank","profileViewRank","profileNoteRank","calendarViewRank","quotaViewRank","quotaManageRank","inactivityAlertViewRank","evidenceViewRank","evidenceUploadRank","evidenceManageRank","autoApproveRequestsRank","knowledgeMinRank"];
- const selects=ids.map(id=>$(id)).filter(Boolean);
- if(!selects.length)return;
- if(!groupRoleCache.length){
-  let lastError=null;
-  for(let attempt=0;attempt<3&&!groupRoleCache.length;attempt++){
-   try{const d=await api("/api/group/roles");groupRoleCache=Array.isArray(d.roles)?d.roles:[];if(!groupRoleCache.length)throw new Error("Roblox returned an empty group role list.");}
-   catch(e){lastError=e;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));}
-  }
-  if(!groupRoleCache.length){
-   console.warn("Roblox group roles unavailable; using the configured Lemonz role preset.",lastError);
-   groupRoleCache=PRESET_GROUP_ROLES;
-  }
- }
- const list=[...groupRoleCache].sort((x,y)=>Number(x.rank)-Number(y.rank));
+ const selects=ids.map(id=>$(id)).filter(Boolean);if(!selects.length)return;
+ const list=[...await ensureGroupRoleCache()].sort((x,y)=>Number(x.rank)-Number(y.rank));
  for(const el of selects){
   const old=el.value;el.disabled=false;
-  el.innerHTML=list.map(r=>`<option value="${Number(r.rank)}">${escapeHtml(r.name||("Rank "+r.rank))} · Rank ${Number(r.rank)}</option>`).join("");
-  if(list.some(r=>String(r.rank)===old))el.value=old;
+  el.innerHTML=list.map(role=>'<option value="'+Number(role.rank)+'">'+escapeHtml(role.name||("Rank "+role.rank))+'</option>').join("");
+  if(list.some(role=>String(role.rank)===old))el.value=old;else if(old)el.selectedIndex=0;
+  if(!el.getAttribute("aria-label"))el.setAttribute("aria-label","Minimum required Roblox group role");
  }
 }
 async function loadQuotaRules(){
@@ -215,7 +225,7 @@ $("saveQuotaRule")?.addEventListener("click",async()=>{
 let announcementItems=[],announcementTeams=[],editingAnnouncementId=null;
 async function loadAnnouncements(){const el=$("announcementList");if(!el)return;await populateGroupRoleDropdowns();el.innerHTML='<div class="empty-state">Loading announcements…</div>';try{const d=await api("/api/management/announcements");announcementItems=d.items||[];announcementTeams=d.teams||[];fillAnnouncementAudience();$("announcementCreateCard").classList.toggle("hidden",!d.canPublish);renderAnnouncements();}catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}}
 function renderAnnouncements(){const el=$("announcementList"),f=$("announcementFilter")?.value||"ALL",q=($("announcementSearch")?.value||"").toLowerCase(),rows=announcementItems.filter(x=>(f==="ALL"||x.status===f)&&[x.title,x.body,x.created_by_name,x.status,x.priority].some(v=>String(v||"").toLowerCase().includes(q)));el.innerHTML=rows.length?rows.map(x=>{const a=x.audience||{},target=a.all?"Everyone":[...(a.teamIds||[]).map(id=>announcementTeams.find(t=>String(t.id)===String(id))?.name||"Team"),...(a.ranks||[]).map(r=>"Rank "+r)].join(", ");return '<article class="announcement-card">'+(x.image_url?'<img class="announcement-image" src="'+escapeHtml(x.image_url)+'" alt="Announcement image" loading="lazy">':'')+'<div class="announcement-card-top"><span class="announcement-priority priority-'+escapeHtml(x.priority.toLowerCase())+'">'+escapeHtml(x.priority)+'</span><span class="status-pill">'+escapeHtml(x.status)+'</span></div><h3>'+escapeHtml(x.title)+'</h3><p class="announcement-body">'+escapeHtml(x.body).replace(/\n/g,"<br>")+'</p>'+(x.link_url?'<p><a class="announcement-link" href="'+escapeHtml(x.link_url)+'" target="_blank" rel="noopener noreferrer">Open related link ↗</a></p>':'')+'<div class="announcement-meta"><span>Audience: '+escapeHtml(target)+'</span><span>By '+escapeHtml(x.created_by_name)+'</span><span>'+escapeHtml(formatDate(x.published_at||x.created_at))+'</span></div><div class="announcement-meta"><span>'+Number(x.read_count||0)+' read'+(x.has_read?' · You have read this':'')+(x.requires_ack?' · '+Number(x.ack_count||0)+' acknowledged'+(x.has_ack?' · You acknowledged':' · Acknowledgement required'):'')+'</span></div><div class="announcement-actions">'+(x.status==="PUBLISHED"&&x.requires_ack&&!x.has_ack?'<button class="primary-btn" data-announcement-ack="'+x.id+'">Acknowledge</button>':(x.status==="PUBLISHED"&&!x.has_read?'<button class="quiet-btn" data-announcement-read="'+x.id+'">Mark as read</button>':""))+(x.canEdit?'<button class="quiet-btn" data-announcement-edit="'+x.id+'">Edit</button><button class="quiet-btn" data-announcement-readers="'+x.id+'">Read receipts</button><button class="danger-btn" data-announcement-delete="'+x.id+'">Delete</button>':"")+'</div></article>';}).join(""):'<div class="empty-state">No announcements match this view.</div>';}
-function fillAnnouncementAudience(){ $("announcementAudienceTeams").innerHTML=announcementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");$("announcementAudienceRanks").innerHTML=[...groupRoleCache].sort((a,b)=>Number(a.rank)-Number(b.rank)).map(r=>'<option value="'+Number(r.rank)+'">'+escapeHtml(r.name||("Rank "+r.rank))+' · Rank '+Number(r.rank)+'</option>').join("");}
+function fillAnnouncementAudience(){ $("announcementAudienceTeams").innerHTML=announcementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");$("announcementAudienceRanks").innerHTML=[...groupRoleCache].sort((a,b)=>Number(a.rank)-Number(b.rank)).map(r=>'<option value="'+Number(r.rank)+'">'+escapeHtml(r.name||("Rank "+r.rank))+'</option>').join("");}
 function resetAnnouncementForm(){editingAnnouncementId=null;["announcementTitle","announcementBody","announcementImageUrl","announcementLinkUrl","announcementPublishAt","announcementExpiresAt"].forEach(id=>$(id).value="");$("announcementPriority").value="NORMAL";$("announcementAudienceAll").checked=true;$("announcementAudienceTeams").selectedIndex=-1;$("announcementAudienceRanks").selectedIndex=-1;$("announcementAudienceTeams").disabled=true;$("announcementAudienceRanks").disabled=true;$("announcementDraft").checked=false;$("announcementRequiresAck").checked=false;$("saveAnnouncement").textContent="Publish announcement";$("cancelAnnouncementEdit").classList.add("hidden");}
 async function saveAnnouncement(){const b=$("saveAnnouncement");b.disabled=true;try{const payload={title:$("announcementTitle").value,body:$("announcementBody").value,priority:$("announcementPriority").value,imageUrl:$("announcementImageUrl").value.trim(),linkUrl:$("announcementLinkUrl").value.trim(),audience:{all:$("announcementAudienceAll").checked,teamIds:[...$("announcementAudienceTeams").selectedOptions].map(o=>o.value),ranks:[...$("announcementAudienceRanks").selectedOptions].map(o=>Number(o.value))},publishAt:$("announcementPublishAt").value?new Date($("announcementPublishAt").value).toISOString():null,expiresAt:$("announcementExpiresAt").value?new Date($("announcementExpiresAt").value).toISOString():null,draft:$("announcementDraft").checked,requiresAck:$("announcementRequiresAck").checked},url=editingAnnouncementId?"/api/management/announcements/"+encodeURIComponent(editingAnnouncementId):"/api/management/announcements";await api(url,{method:editingAnnouncementId?"PUT":"POST",body:JSON.stringify(payload)});notice("Announcement saved.","success");resetAnnouncementForm();await loadAnnouncements();}catch(e){notice(e.message,"error");}finally{b.disabled=false;}}
 $("saveAnnouncement")?.addEventListener("click",saveAnnouncement);$("cancelAnnouncementEdit")?.addEventListener("click",resetAnnouncementForm);
@@ -1122,7 +1132,7 @@ async function showStaffProfile(id,openTeams=false){
       const roleSelect=$("memberSuggestedRole");
       try{
         if(!groupRoleCache.length){const roleData=await api("/api/group/roles");groupRoleCache=Array.isArray(roleData.roles)?roleData.roles:[];}
-        if(roleSelect)roleSelect.innerHTML='<option value="">Choose a Roblox group role…</option>'+groupRoleCache.slice().sort((x,y)=>Number(x.rank)-Number(y.rank)).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' · Rank '+Number(r.rank)+'</option>').join("");
+        if(roleSelect)roleSelect.innerHTML='<option value="">Choose a Roblox group role…</option>'+groupRoleCache.slice().sort((x,y)=>Number(x.rank)-Number(y.rank)).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+'</option>').join("");
         if(roleSelect&&groupRoleCache.length===0)roleSelect.innerHTML='<option value="">No group roles available</option>';
       }catch(roleError){if(roleSelect)roleSelect.innerHTML='<option value="">Could not load roles — reopen profile to retry</option>';console.warn("Profile promotion roles unavailable:",roleError);}
     }
