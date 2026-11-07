@@ -20,7 +20,7 @@ document.addEventListener("click",event=>{const target=event.target;const button
 })();
 let sessionData = null, selectedMember = null, roles = [], activeProfileRequest = 0;
 // Directory state is initialized before any navigation, diagnostics, or page loaders can reference it.
-let staffDirectory=[],calendarCursor=new Date(),staffMinRank=230,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
+let staffDirectory=[],calendarCursor=new Date(),staffMinRank=0,staffDiagnostics=null,directoryRoles=[],activeDirectoryRank="STAFF",directoryRequestToken=0,staffDirectoryPromise=null;
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],groupRoleLoadPromise=null,teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
 let taskItemsCache=[],taskSettingsCache={},taskRankCache=0;
 const pageNames = {myActivity:"My Activity",overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
@@ -954,14 +954,14 @@ function attachStaffAutocomplete(inputId,options={}){
  const render=async()=>{
   const q=input.value.trim().toLowerCase(),token=++requestToken;
   if(q.length<2){close();return;}
-  results.innerHTML='<div class="staff-suggestion-empty">Searching Lemonz staff…</div>';results.classList.add("is-open");
+  results.innerHTML='<div class="staff-suggestion-empty">Searching group members…</div>';results.classList.add("is-open");
   try{
-   const minimumRank=Number(options.minRank||(options.senior?245:230));
+   const minimumRank=Number(options.minRank??(options.senior?245:0));
    const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+minimumRank,{timeoutMs:15000});
    if(token!==requestToken)return;
    const matches=Array.isArray(data.members)?data.members:[];
    visibleMatches=matches;
-   results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Group member")+' · Rank '+Number(m.rank||0)+'</small></span></button></div>').join(""):'<div class="staff-suggestion-empty">No matching Lemonz staff found.</div>';
+   results.innerHTML=matches.length?matches.map(m=>'<div class="staff-suggestion-row"><button type="button" class="staff-suggestion" data-staff-suggestion="'+escapeHtml(m.id)+'"><img src="'+escapeHtml(m.avatarUrl||"")+'" alt=""><span><b>@'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.displayName||m.username)+' · '+escapeHtml(m.role||"Group member")+' · Rank '+Number(m.rank||0)+'</small></span></button></div>').join(""):'<div class="staff-suggestion-empty">No matching group members found.</div>';
    results.classList.add("is-open");
   }catch(error){
    if(token!==requestToken)return;
@@ -1012,7 +1012,7 @@ function setupStaffAutocompleteFields(){
  const fields=[
   ["punishUsername","punishUserId",false,true],
   ["promotionUsername","promotionUserId",false,true],
-  ["activityUsername","activityUserId",false,true],
+  ["activityUsername","activityUserId",false,true,230],
   ["sessionHost","sessionHostId",false,true],
   ["sessionCoHost","sessionCoHostId",false,true],
   ["sessionPromoter","sessionPromoterId",true,true],
@@ -1024,7 +1024,7 @@ function setupStaffAutocompleteFields(){
   ["editSessionPromoter","editSessionPromoterId",true,true],
   ["evidenceTargetUsername","evidenceTargetId",false,true]
  ];
- fields.forEach(([inputId,hiddenId,senior,allGroupMembers])=>attachStaffAutocomplete(inputId,{hiddenId,senior,allGroupMembers}));
+ fields.forEach(([inputId,hiddenId,senior,allGroupMembers,minRank])=>attachStaffAutocomplete(inputId,{hiddenId,senior,allGroupMembers,minRank}));
 }
 setupStaffAutocompleteFields();
 
@@ -1041,13 +1041,13 @@ function renderDirectoryMembers(members){
 function renderDirectoryRankSidebar(members){
  const root=$("directoryRankOptions");if(!root)return;
  const eligibleRoles=(Array.isArray(directoryRoles)&&directoryRoles.length?directoryRoles:members.map(m=>({name:m.role,rank:m.rank})))
-  .filter(r=>Number(r.rank)>=staffMinRank)
+  .filter(r=>Number(r.rank)>=0)
   .sort((a,b)=>Number(b.rank)-Number(a.rank));
  const unique=[];const seen=new Set();
  eligibleRoles.forEach(role=>{const rank=Number(role.rank);if(!Number.isFinite(rank)||seen.has(rank))return;seen.add(rank);unique.push({rank,name:String(role.name||members.find(m=>Number(m.rank)===rank)?.role||("Rank "+rank))});});
  const counts=new Map();members.forEach(m=>counts.set(Number(m.rank),Number(counts.get(Number(m.rank))||0)+1));
  const allActive=activeDirectoryRank==="STAFF";
- root.innerHTML='<button type="button" class="directory-rank-option'+(allActive?' active':'')+'" data-directory-rank="STAFF"><span><b>All staff</b><small>Every rank '+staffMinRank+'+</small></span><strong>'+members.length+'</strong></button>'+
+ root.innerHTML='<button type="button" class="directory-rank-option'+(allActive?' active':'')+'" data-directory-rank="STAFF"><span><b>All group members</b><small>Every rank</small></span><strong>'+members.length+'</strong></button>'+
   unique.map(role=>'<button type="button" class="directory-rank-option'+(activeDirectoryRank==="rank:"+role.rank?' active':'')+'" data-directory-rank="rank:'+role.rank+'"><span><b>'+escapeHtml(role.name)+'</b><small>Rank '+role.rank+'</small></span><strong>'+Number(counts.get(role.rank)||0)+'</strong></button>').join("");
  root.querySelectorAll("[data-directory-rank]").forEach(button=>button.addEventListener("click",()=>{
   activeDirectoryRank=button.dataset.directoryRank||"STAFF";
@@ -1062,8 +1062,8 @@ function renderStaffDirectory(){
  renderDirectoryRankSidebar(members);
  const selectedRank=activeDirectoryRank.startsWith("rank:")?Number(activeDirectoryRank.slice(5)):null;
  const list=members.filter(m=>(selectedRank===null||Number(m.rank)===selectedRank)&&(!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q)))).sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.role||"").localeCompare(String(y.role||""))||String(x.username||"").localeCompare(String(y.username||"")));
- if($("staffCount"))$("staffCount").textContent=members.length+" staff members · Rank "+staffMinRank+"+";
- if(status)status.textContent=list.length?"Showing "+list.length+" staff members"+(selectedRank!==null?" in rank "+selectedRank:"")+(q?" matching your search":"")+".":(q?"No staff match that search.":selectedRank!==null?"No staff members currently hold this rank.":"No staff members were returned.");
+ if($("staffCount"))$("staffCount").textContent=members.length+" group members · All ranks";
+ if(status)status.textContent=list.length?"Showing "+list.length+" group members"+(selectedRank!==null?" in rank "+selectedRank:"")+(q?" matching your search":"")+".":(q?"No group members match that search.":selectedRank!==null?"No staff members currently hold this rank.":"No staff members were returned.");
  renderDirectoryMembers(list);
 }
 async function loadStaffDirectory(force=false){
@@ -1077,14 +1077,14 @@ async function loadStaffDirectory(force=false){
    try{
     const saved=JSON.parse(localStorage.getItem("lemonz-staff-directory-v1")||"null");
     if(saved&&Array.isArray(saved.members)&&saved.members.length&&Date.now()-Number(saved.savedAt||0)<86400000){
-     staffDirectory=saved.members;directoryRoles=Array.isArray(saved.roles)?saved.roles:[];staffMinRank=Number(saved.minRank||230);teamStaffCache=staffDirectory;
+     staffDirectory=saved.members;directoryRoles=Array.isArray(saved.roles)?saved.roles:[];staffMinRank=Number(saved.minRank??0);teamStaffCache=staffDirectory;
      setupStaffAutocompleteFields();
      renderStaffDirectory();
      if(status)status.textContent="Showing recently saved staff · Checking for updates…";
     }
    }catch{}
   }
-  if(status&&!staffDirectory.length)status.textContent="Loading staff ranked "+staffMinRank+"+…";
+  if(status&&!staffDirectory.length)status.textContent="Loading all Lemonz group members…";
   if(result&&!staffDirectory.length)result.innerHTML='<div class="empty-state">Loading staff directory…</div>';
   if(button)button.disabled=true;
   try{
@@ -1109,7 +1109,7 @@ if(lastError)throw lastError;
    const members=Array.isArray(data.members)?data.members:[];
    staffDirectory=members;
    directoryRoles=Array.isArray(data.roles)?data.roles:[];
-   staffMinRank=Number(data.minRank||data.diagnostics?.minRank||230);
+   staffMinRank=Number(data.minRank??data.diagnostics?.minRank??0);
    staffDiagnostics=data.diagnostics||null;
    teamStaffCache=members;
    try{localStorage.setItem("lemonz-staff-directory-v1",JSON.stringify({savedAt:Date.now(),minRank:staffMinRank,members,roles:directoryRoles}));}catch{}
