@@ -1103,3 +1103,27 @@ body.sidebar-collapsed .sidebar-toggle-icon{width:auto}
 #membersPage #directoryResult .staff-card[aria-busy="true"]{opacity:.72;cursor:progress}
 .directory-stale-note{grid-column:1/-1;padding:9px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:9px;color:var(--muted);font-size:11px;background:var(--panel2)}
 .profile-error p{margin:7px 0 12px;overflow-wrap:anywhere}
+
+/* Session scheduling interaction fixes */
+#sessionsPage .content-card:has(.staff-autocomplete-results.is-open),
+#sessionsPage .form-grid>div:has(.staff-autocomplete-results.is-open),
+#sessionsPage .session-slot-row:has(.staff-autocomplete-results.is-open),
+#sessionsPage .session-slot-user-wrap:has(.staff-autocomplete-results.is-open){position:relative;z-index:500}
+#sessionsPage .session-slot-list,#sessionsPage .session-slot-row{overflow:visible}
+#sessionsPage .session-slot-user-wrap{z-index:1}
+#sessionsPage .session-slot-user-wrap:has(.staff-autocomplete-results.is-open){z-index:1000}
+#sessionsPage .staff-autocomplete-results.is-open{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:2000;max-height:min(320px,45vh);overflow-y:auto;background:var(--panel);color:var(--text);border-color:var(--line)}
+#sessionsPage .calendar-toolbar .quiet-btn{color:var(--text);background:var(--panel2);border-color:var(--line)}
+#sessionsPage .calendar-day{background:var(--panel2);border-color:var(--line);color:var(--text)}
+#sessionsPage .calendar-day.is-today{border-color:var(--yellow);background:color-mix(in srgb,var(--yellow) 10%,var(--panel))}
+#sessionsPage .calendar-day.is-today .calendar-day-number{background:var(--yellow);color:#29220b}
+#sessionsPage .calendar-event{background:color-mix(in srgb,var(--yellow) 12%,var(--panel));border-left:3px solid var(--yellow);color:var(--text)}
+#sessionsPage .calendar-event small{color:var(--muted)}
+#sessionsPage .calendar-completed{border-left-color:#42b883}
+#sessionsPage .calendar-canceled{border-left-color:#e36b6b}
+#sessionsPage .calendar-ongoing{border-left-color:#5da9ff}
+#sessionsPage .calendar-delayed{border-left-color:#d6a52b}
+#sessionsPage .sessions-calendar{overflow-x:auto}
+#sessionsPage .calendar-weekdays,#sessionsPage .calendar-grid{min-width:700px}
+#sessionsPage .calendar-day{min-height:92px}
+@media(max-width:760px){#sessionsPage .calendar-day{min-height:72px;padding:5px}#sessionsPage .calendar-event b{font-size:9px}}
