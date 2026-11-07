@@ -908,12 +908,12 @@ function attachStaffAutocomplete(inputId,options={}){
 }
 function staffIdFor(inputId){return String($(inputId+"Id")?.value||"");}
 function setupStaffAutocompleteFields(){
- [["sessionHost",false],["sessionCoHost",false],["sessionPromoter",true],["sessionRequestHost",false],["sessionRequestCoHost",false],["editSessionHost",false],["editSessionCoHost",false],["editSessionPromoter",true],["evidenceTargetUsername",false]].forEach(([id,senior])=>attachStaffAutocomplete(id,{senior,hiddenId:id==="evidenceTargetUsername"?"evidenceTargetId":id+"Id"}));
+ [["punishUsername",false],["promotionUsername",false],["activityUsername",false],["sessionHost",false],["sessionCoHost",false],["sessionPromoter",true],["sessionRequestHost",false],["sessionRequestCoHost",false],["editSessionHost",false],["editSessionCoHost",false],["editSessionPromoter",true],["evidenceTargetUsername",false]].forEach(([id,senior])=>attachStaffAutocomplete(id,{senior,hiddenId:id==="evidenceTargetUsername"?"evidenceTargetId":id+"Id"}));
 }
 async function loadStaffDirectory(force=false){
  const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
  if(status)status.textContent="Loading staff ranked 230+…";
- if(staffDirectory.length&&!force){renderStaffDirectory();return;}
+ if(staffDirectory.length&&!force){setupStaffAutocompleteFields();renderStaffDirectory();return;}
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
   const roleData=await api("/api/group/roles");directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];groupRoleCache=directoryRoles;renderDirectoryRankSidebar();
