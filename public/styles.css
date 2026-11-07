@@ -979,3 +979,60 @@ html:not(.dark) .nav-item:hover,html:not(.dark) .nav-item.active{background:#fff
 /* Searchable Roblox staff username suggestions */
 .staff-autocomplete-results{display:none;position:relative;z-index:30;width:100%;max-height:280px;overflow-y:auto;margin-top:5px;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:0 14px 34px rgba(0,0,0,.18)}
 .staff-autocomplete-results.is-open{display:block}.staff-suggestion-row{display:flex;align-items:center;gap:8px;padding:7px;border-bottom:1px solid var(--border)}.staff-suggestion-row:last-child{border-bottom:0}.staff-suggestion{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-align:left;border:0;background:transparent;color:inherit;padding:5px;border-radius:8px;cursor:pointer}.staff-suggestion:hover,.staff-suggestion-profile:hover{background:var(--surface-hover,rgba(128,128,128,.12))}.staff-suggestion img{width:36px;height:36px;flex:0 0 36px;object-fit:cover;border-radius:50%;background:var(--surface)}.staff-suggestion span{display:flex;flex-direction:column;min-width:0}.staff-suggestion b{font-size:13px}.staff-suggestion small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.staff-suggestion-profile{border:0;background:transparent;color:var(--accent,var(--yellow));font-size:11px;font-weight:700;padding:8px;border-radius:7px;cursor:pointer}.staff-suggestion-empty{padding:12px;color:var(--muted);font-size:12px}.session-slot-user-wrap{position:relative;min-width:0;flex:1}.session-slot-user-wrap .staff-autocomplete-results{position:absolute;left:0;right:0;top:100%}
+
+
+/* Workspace navigation refinement inspired by compact admin dashboards. */
+.sidebar{
+  overflow-y:auto;
+  overflow-x:hidden;
+  scrollbar-width:thin;
+  scrollbar-color:var(--line) transparent;
+  padding:20px 12px 14px;
+}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+.brand{margin:0 5px 28px;padding:3px 5px}
+.side-label{margin:5px 0 8px;padding:0 10px;font-size:9px;letter-spacing:1.3px}
+.nav-group{margin:5px 0 12px;padding:0 0 9px;border-bottom:1px solid var(--line)}
+.nav-group summary{
+  list-style:none;cursor:pointer;padding:9px 10px 7px;
+  color:var(--muted);font-size:9px;font-weight:800;letter-spacing:1.25px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.nav-group summary::-webkit-details-marker{display:none}
+.nav-group summary::after{content:"⌄";font-size:12px;opacity:.65;transition:transform .15s}
+.nav-group:not([open]) summary::after{transform:rotate(-90deg)}
+.nav-group .nav-item{width:100%;margin:2px 0;padding:10px 11px;border-radius:9px;font-size:12px;gap:11px}
+.nav-group .nav-item.active{box-shadow:none;background:var(--accent-soft);color:var(--text)}
+.sidebar-bottom{padding-top:12px;background:var(--panel)}
+.group-pill{padding:9px 10px;margin-bottom:9px}
+.main{padding:24px clamp(20px,3.2vw,52px) 30px;max-width:none}
+.topbar{min-height:58px;padding:5px 0 16px;gap:18px}
+.topbar .eyebrow{font-size:10px;letter-spacing:1px}
+.topbar h1{font-size:23px;letter-spacing:-.55px}
+.page{padding-top:22px}
+.page-intro{margin-bottom:17px}
+.page-intro h2{font-size:22px}
+#membersPage .directory-workspace{grid-template-columns:minmax(210px,250px) minmax(0,1fr);gap:14px}
+#membersPage .directory-rank-sidebar{border-radius:13px;box-shadow:none}
+#membersPage .directory-rank-sidebar .directory-rank-option{border-color:var(--line);border-radius:8px;padding:10px}
+#membersPage .directory-rank-sidebar .directory-rank-option.active{background:var(--accent-soft);border-color:var(--yellow)}
+#membersPage .directory-main-column .directory-shell{border-radius:13px;box-shadow:none}
+#membersPage .staff-card{border-radius:10px;box-shadow:none}
+:root.dark .sidebar,:root.dark .topbar{background:var(--bg)}
+:root.dark .nav-group{border-color:rgba(255,255,255,.07)}
+:root.dark .nav-group .nav-item{color:#a6a6ad}
+:root.dark .nav-group .nav-item:hover{background:#1b1b20;color:#f4f4f5}
+:root.dark .nav-group .nav-item.active{background:#202025;color:#fff}
+:root.dark #membersPage .directory-rank-sidebar .directory-rank-option.active{background:rgba(245,201,40,.10)}
+@media(max-width:850px){
+ .sidebar{width:218px}
+ .main{margin-left:218px;padding-left:18px;padding-right:18px}
+ #membersPage .directory-workspace{grid-template-columns:minmax(175px,205px) minmax(0,1fr)}
+}
+@media(max-width:700px){
+ .sidebar{width:100%;position:relative;inset:auto;max-height:none;overflow:visible}
+ .main{margin-left:0;padding:18px 12px}
+ .topbar{align-items:flex-start;flex-direction:column}
+ #membersPage .directory-workspace{grid-template-columns:1fr}
+}
