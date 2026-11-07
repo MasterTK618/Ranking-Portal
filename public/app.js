@@ -952,7 +952,7 @@ function attachStaffAutocomplete(inputId,options={}){
   let matches=[];
   if(options.allGroupMembers){
    results.innerHTML='<div class="staff-suggestion-empty">Searching group members…</div>';results.classList.add("is-open");
-   try{const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q));if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
+   try{const data=await api("/api/management/group-members/search?q="+encodeURIComponent(q)+"&minRank="+(options.senior?245:230));if(token!==requestToken)return;matches=Array.isArray(data.members)?data.members:[];}
    catch(error){if(token!==requestToken)return;results.innerHTML='<div class="staff-suggestion-empty">'+escapeHtml(error.message||"Could not search group members.")+'</div>';results.classList.add("is-open");return;}
   }else matches=eligible().filter(m=>(m.username||"").toLowerCase().includes(q)||(m.displayName||"").toLowerCase().includes(q)).slice(0,8);
   if(token!==requestToken)return;
@@ -997,15 +997,15 @@ function setupStaffAutocompleteFields(){
  const fields=[
   ["punishUsername","punishUserId",false,true],
   ["promotionUsername","promotionUserId",false,true],
-  ["activityUsername","activityUserId",false],
-  ["sessionHost","sessionHostId",false],
-  ["sessionCoHost","sessionCoHostId",false],
-  ["sessionPromoter","sessionPromoterId",true],
-  ["sessionRequestHost","sessionRequestHostId",false],
-  ["sessionRequestCoHost","sessionRequestCoHostId",false],
-  ["editSessionHost","editSessionHostId",false],
-  ["editSessionCoHost","editSessionCoHostId",false],
-  ["editSessionPromoter","editSessionPromoterId",true],
+  ["activityUsername","activityUserId",false,true],
+  ["sessionHost","sessionHostId",false,true],
+  ["sessionCoHost","sessionCoHostId",false,true],
+  ["sessionPromoter","sessionPromoterId",true,true],
+  ["sessionRequestHost","sessionRequestHostId",false,true],
+  ["sessionRequestCoHost","sessionRequestCoHostId",false,true],
+  ["editSessionHost","editSessionHostId",false,true],
+  ["editSessionCoHost","editSessionCoHostId",false,true],
+  ["editSessionPromoter","editSessionPromoterId",true,true],
   ["evidenceTargetUsername","evidenceTargetId",false]
  ];
  fields.forEach(([inputId,hiddenId,senior,allGroupMembers])=>attachStaffAutocomplete(inputId,{hiddenId,senior,allGroupMembers}));
