@@ -2,7 +2,7 @@ document.body.classList.add("auth-locked");
 const $ = (id) => document.getElementById(id);
 let sessionData = null, selectedMember = null, roles = [];
 let managementTeams=[],teamAssignments=new Map(),teamStaffCache=[],teamMemberDraft=new Set(),groupRoleCache=[],teamCanManage=false,managementDepartments=[],departmentCanManage=false,departmentAssignments=new Map(),departmentMemberDraft=new Set();
-const pageNames = {overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
+const pageNames = {myActivity:"My Activity",overview:"Overview",views:"Views & Insights",announcements:"Announcements",rank:"Group Ranking",members:"Member Directory",logs:"Audit Log",sessions:"Sessions & Events",activity:"Staff Activity",ingame:"Live Server Management",gameLinks:"Game Links",punishments:"Discipline Management",promotions:"Promotions",leaves:"Leave & Absence",tasks:"Staff Tasks",knowledge:"Knowledge Hub",settings:"Settings",notifications:"Notifications",approvals:"Approval Inbox",analytics:"Advanced Analytics"};
 const defaultViews={sessions:"schedule",promotions:"requests",punishments:"requests",leaves:"request"};
 function notice(message,type="") { const el=$("notice"); el.textContent=message; el.className="notice"+(type?" "+type:""); el.classList.remove("hidden"); window.scrollTo({top:0,behavior:"smooth"}); }
 function clearNotice(){ $("notice").classList.add("hidden"); }
@@ -23,6 +23,7 @@ function showPage(page,view) {
   if(pageEl?.querySelector("[data-workspace-panel]"))pageEl.querySelectorAll("[data-workspace-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.workspacePanel!==selectedView));
   $("pageTitle").textContent=pageNames[page]||"Workspace";$("crumb").textContent=(selectedView?selectedView+" / ":"")+page.toUpperCase();
   clearNotice();
+  if(page==="myActivity")loadMyActivity();
   if(page==="logs")loadManagementAudit();
   if(page==="announcements")loadAnnouncements();
   if(page==="rank")loadRoles();
@@ -41,6 +42,8 @@ function showPage(page,view) {
 }
 document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page,b.dataset.view)));
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.go,b.dataset.view)));
+$("topRefreshButton")?.addEventListener("click",()=>{const active=document.querySelector(".nav-item.active");if(active)showPage(active.dataset.page,active.dataset.view);});
+$("jumpScheduleBtn")?.addEventListener("click",()=>{$("sessionCreateCard")?.scrollIntoView({behavior:"smooth",block:"start"});});
 function setPortalTheme(mode,persist=true){
   const dark=mode==="dark";
   document.documentElement.classList.toggle("dark",dark);
@@ -724,6 +727,7 @@ async function loadManagement(tab){
   }
 }
 $("refreshActivity").addEventListener("click",()=>loadManagement("activity"));
+$("refreshMyActivity")?.addEventListener("click",loadMyActivity);
 $("promotionSearch")?.addEventListener("input",()=>{const q=$("promotionSearch").value.toLowerCase();document.querySelectorAll("#promotionTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("punishmentSearch")?.addEventListener("input",()=>{const q=$("punishmentSearch").value.toLowerCase();document.querySelectorAll("#punishmentTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("activitySearch")?.addEventListener("input",()=>{const q=$("activitySearch").value.toLowerCase();document.querySelectorAll("#activityTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
@@ -1034,10 +1038,12 @@ document.addEventListener("submit",async e=>{
 });
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
-  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=first.getDay(),days=new Date(y,m+1,0).getDate(),cells=[];
+  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
   for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside"></div>');
-  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day"><b>'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'"><b>'+escapeHtml(s.title)+'</b><small>'+sessionTypeLabel(s.session_type)+' · '+sessionStatusLabel(s.status||"PLANNED")+' · '+escapeHtml(String(s.session_time||"").slice(0,5))+'</small></div>').join("")+'</div>');}
-  $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
+  const today=new Date();const todayKey=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day'+(date===todayKey?' is-today':'')+'"><b class="calendar-day-number">'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'"><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+sessionTypeLabel(s.session_type)+'</small></div>').join("")+'</div>');}
+  while(cells.length%7)cells.push('<div class="calendar-day outside"></div>');
+  $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
 function sessionTypeLabel(v){return v==="RECRUITMENT"?"Recruitment":v==="MINI_GAMES"?"Mini-Games":"Promotional";}
 function sessionStatusLabel(v){return ({PLANNED:"Planned",ONGOING:"On-Going",DELAYED:"Delayed",CANCELED:"Canceled",COMPLETED:"Completed"})[v]||"Planned";}
@@ -1149,6 +1155,30 @@ document.addEventListener("change",e=>{
 
 async function loadNotifications(){const el=$("notificationList");if(!el)return;el.textContent="Loading notifications…";try{const d=await api("/api/management/notifications");el.innerHTML=d.enabled?(d.items.length?d.items.map(x=>'<article class="notification-row'+(x.read?" is-read":"")+'><span class="notification-icon">'+(x.kind==="APPROVAL"?"✓":x.kind==="TASK"?"▣":"◷")+'</span><div><b>'+escapeHtml(x.title)+'</b><p>'+escapeHtml(x.body)+'</p><small>'+escapeHtml(formatDate(x.created_at))+'</small></div><button class="quiet-btn" data-notification-open="'+escapeHtml(x.href)+'">Open</button><button class="quiet-btn" data-notification-read="'+escapeHtml(x.id)+'" '+(x.read?"disabled":"")+'>'+(x.read?"Read":"Mark read")+'</button></article>').join(""):'<div class="empty-state">You are all caught up.</div>'):'<div class="empty-state">Notifications are disabled in Settings.</div>';}catch(e){el.textContent=e.message;}}
 async function loadApprovals(){const el=$("approvalList");if(!el)return;el.textContent="Loading approvals…";try{const d=await api("/api/management/approvals");el.innerHTML=d.items.length?'<div class="table-wrap"><table class="data-table"><thead><tr><th>TYPE</th><th>REQUEST</th><th>DETAILS</th><th>SUBMITTED</th><th></th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(x.type)+'</td><td><b>'+escapeHtml(x.target)+'</b></td><td>'+escapeHtml(x.detail||"—")+'</td><td>'+escapeHtml(formatDate(x.created_at))+'</td><td><button class="quiet-btn" data-approval-open="'+x.type+'">Review</button></td></tr>').join("")+'</tbody></table></div>':'<div class="empty-state">No pending requests available to your rank.</div>';}catch(e){el.textContent=e.message;}}
+async function loadMyActivity(){
+ const statsEl=$("myActivityStats"),chartEl=$("myActivityChart"),heatEl=$("myActivityHeatmap"),recentEl=$("myRecentVisits");
+ if(!statsEl)return;
+ statsEl.innerHTML='<article><small>LAST 30 DAYS</small><b>Loading…</b></article><article><small>VISITS</small><b>—</b></article><article><small>AVERAGE VISIT</small><b>—</b></article><article><small>CURRENT STREAK</small><b>—</b></article>';
+ try{
+  const d=await api("/api/management/activity"),daily=Array.isArray(d.daily)?d.daily:[],recent=Array.isArray(d.recent)?d.recent:[];
+  const map=new Map(daily.map(x=>[String(x.day).slice(0,10),x]));
+  const dayKey=date=>date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0");
+  const now=new Date(),days=[];
+  for(let i=179;i>=0;i--){const date=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i),key=dayKey(date),row=map.get(key);days.push({date,key,seconds:Number(row?.seconds||0),visits:Number(row?.visits||0)});}
+  const last30=days.slice(-30),last14=days.slice(-14),seconds30=last30.reduce((n,x)=>n+x.seconds,0),visits30=last30.reduce((n,x)=>n+x.visits,0),avg=visits30?Math.round(seconds30/visits30):0;
+  let streak=0;for(let i=days.length-1;i>=0;i--){if(days[i].seconds>0)streak++;else if(i===days.length-1&&streak===0)continue;else break;}
+  statsEl.innerHTML='<article><small>LAST 30 DAYS</small><b>'+formatDuration(seconds30)+'</b></article><article><small>VISITS</small><b>'+visits30.toLocaleString()+'</b></article><article><small>AVERAGE VISIT</small><b>'+formatDuration(avg)+'</b></article><article><small>CURRENT STREAK</small><b>'+streak+' day'+(streak===1?'':'s')+'</b></article>';
+  const week=days.slice(-7),weekSeconds=week.reduce((n,x)=>n+x.seconds,0),target=Math.max(1,Number(d.quotaHours||2)*3600),pct=Math.min(100,Math.round(weekSeconds/target*100)),remaining=Math.max(0,target-weekSeconds);
+  $("myQuotaPercent").textContent=pct+"%";$("myQuotaTime").textContent=formatDuration(weekSeconds)+" this week";$("myQuotaTarget").textContent="Target: "+Number(d.quotaHours||2)+"h / week";$("myQuotaRemaining").textContent=remaining?formatDuration(remaining)+" left to reach your weekly activity target.":"Weekly activity target reached!";
+  $("myQuotaRing").style.setProperty("--quota-progress",pct+"%");
+  const max=Math.max(60,...last14.map(x=>x.seconds));
+  chartEl.innerHTML=last14.map(x=>'<div class="my-chart-day" title="'+x.key+': '+formatDuration(x.seconds)+'"><div class="my-chart-bar-wrap"><i style="height:'+Math.max(x.seconds?4:1,Math.round(x.seconds/max*100))+'%"></i></div><small>'+x.date.getDate()+'</small></div>').join("");
+  const startOffset=(days[0].date.getDay()+6)%7;
+  heatEl.innerHTML='<div class="heatmap-months"><span>'+days[0].date.toLocaleDateString(undefined,{month:"short"})+'</span><span>'+now.toLocaleDateString(undefined,{month:"short"})+'</span></div><div class="heatmap-grid">'+Array.from({length:startOffset},()=>'<i class="heatmap-empty"></i>').join("")+days.map(x=>'<i class="heatmap-day heat-'+(x.seconds===0?0:x.seconds<900?1:x.seconds<3600?2:x.seconds<7200?3:4)+'" title="'+x.key+' · '+formatDuration(x.seconds)+'"></i>').join("")+'</div>';
+  recentEl.innerHTML=recent.length?'<table class="data-table"><thead><tr><th>DATE</th><th>DURATION</th><th>ACTIVE TIME</th><th>MESSAGES</th><th>STATUS</th></tr></thead><tbody>'+recent.map(x=>'<tr><td>'+escapeHtml(formatDate(x.started_at))+'</td><td>'+formatDuration(Number(x.seconds||0))+'</td><td>'+formatDuration(Number(x.active_seconds||0))+'</td><td>'+Number(x.message_count||0)+'</td><td><span class="status-pill">'+(x.ended_at?'Completed':'In game')+'</span></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No visits have been recorded yet. Join the Roblox game with the activity tracker enabled and your visits will appear here.</div>';
+ }catch(e){statsEl.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';chartEl.textContent="Activity data is unavailable.";heatEl.textContent="Activity data is unavailable.";recentEl.textContent=e.message;}
+}
+function formatDuration(seconds){const total=Math.max(0,Math.floor(Number(seconds||0)/60)),hours=Math.floor(total/60),minutes=total%60;return hours?hours+"h "+minutes+"m":total+"m";}
 async function loadActivityAlerts(){const el=$("activityAlerts");if(!el)return;el.textContent="Loading inactivity alerts…";try{const d=await api("/api/management/activity-alerts");el.innerHTML=!d.enabled?'<div class="empty-state">Inactivity alerts are disabled in Settings.</div>':d.items.length?'<table class="data-table"><thead><tr><th>STAFF MEMBER</th><th>LAST RECORDED ACTIVITY</th><th>INACTIVE FOR</th><th></th></tr></thead><tbody>'+d.items.map(x=>{const days=Math.max(0,Math.floor((Date.now()-new Date(x.last_seen).getTime())/86400000));return '<tr><td>'+escapeHtml(x.username)+'</td><td>'+escapeHtml(formatDate(x.last_seen))+'</td><td>'+days+' days</td><td><button class="quiet-btn" data-open-inactive-profile="'+escapeHtml(x.user_id)+'">View profile</button></td></tr>';}).join("")+'</tbody></table>':'<div class="empty-state">No staff have crossed the current inactivity threshold ('+Number(d.days||7)+' days).</div>';}catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}}
 let managementAuditOffset=0;
 async function loadManagementAudit(reset=true){
