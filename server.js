@@ -415,20 +415,40 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
         const index=next++;
         if(index>=staffRoles.length)return;
         const role=staffRoles[index],members=[];
-        let cursor="",pages=0;
-        do{
-          const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles/"+encodeURIComponent(role.id)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
-          const response=await fetch(url,{signal:timeout(15000)});
-          const data=await response.json().catch(()=>({}));
-          if(!response.ok||!Array.isArray(data.data))throw new Error("Roblox could not load "+role.name+" members (HTTP "+response.status+"): "+(data.errors?.[0]?.message||data.message||"Unexpected response"));
-          for(const entry of data.data){
-            const user=entry.user||entry;
-            const id=String(user.userId||user.id||"");
-            if(/^\d+$/.test(id))members.push({id,rank:role.rank,role:role.name,username:String(user.username||user.name||""),displayName:String(user.displayName||"")});
-          }
-          cursor=data.nextPageCursor||"";
-          if(++pages>100)throw new Error(role.name+" exceeds 10,000 members.");
-        }while(cursor);
+        let cursor="",pages=0,publicError=null;
+        try{
+          do{
+            const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles/"+encodeURIComponent(role.id)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
+            const response=await fetch(url,{signal:timeout(12000)});
+            const data=await response.json().catch(()=>({}));
+            if(!response.ok||!Array.isArray(data.data))throw new Error("Public role members API HTTP "+response.status+": "+(data.errors?.[0]?.message||data.message||"Unexpected response"));
+            for(const entry of data.data){
+              const user=entry.user||entry;
+              const id=String(user.userId||user.id||"");
+              if(/^\d+$/.test(id))members.push({id,rank:role.rank,role:role.name,username:String(user.username||user.name||""),displayName:String(user.displayName||"")});
+            }
+            cursor=data.nextPageCursor||"";
+            if(++pages>100)throw new Error(role.name+" exceeds 10,000 members.");
+          }while(cursor);
+        }catch(error){publicError=error;members.length=0;}
+        if(publicError){
+          // Open Cloud supports filtering memberships by an exact role path.
+          // This fallback avoids paging through the entire group.
+          let pageToken="",cloudPages=0;
+          do{
+            const rolePath="groups/"+GROUP_ID+"/roles/"+role.id;
+            const query=new URLSearchParams({maxPageSize:"100",filter:"role == '"+rolePath+"'"});
+            if(pageToken)query.set("pageToken",pageToken);
+            const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+query.toString(),{signal:timeout(15000)});
+            for(const membership of(Array.isArray(page.groupMemberships)?page.groupMemberships:[])){
+              const id=String(membership.user||"").match(/^users\/(\d+)$/)?.[1];
+              if(id)members.push({id,rank:role.rank,role:role.name});
+            }
+            pageToken=page.nextPageToken||"";
+            if(++cloudPages>100)throw new Error(role.name+" exceeds 10,000 members.");
+          }while(pageToken);
+          if(!members.length&&role.memberCount>0)console.warn("Staff role returned no members via either API:",role.name,publicError.message);
+        }
         results[index]=members;
       }
     };
