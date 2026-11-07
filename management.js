@@ -700,19 +700,18 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const r=all?await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM management_audit_logs WHERE category='PROMOTION' AND (actor_id=$1 OR target_id=$1) ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);res.json({items:r.rows});
   }catch(e){next(e);}});
   router.get("/group-members/search",async(req,res,next)=>{try{
-    const query=String(req.query.q||"").trim();
-    if(query.length<2||query.length>20)return res.json({members:[]});
-    const response=await fetch("https://users.roblox.com/v1/users/search?keyword="+encodeURIComponent(query)+"&limit=10");
+    const query=String(req.query.q||"").trim(),minimumRank=Math.max(1,Math.min(255,Number(req.query.minRank)||230));
+    if(query.length<2||query.length>40)return res.json({members:[]});
+    const groupId=String(process.env.ROBLOX_GROUP_ID||"16597698");
+    const response=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(groupId)+"/users?limit=100&sortOrder=Asc&keyword="+encodeURIComponent(query));
     const payload=await response.json().catch(()=>({}));
-    if(!response.ok||!Array.isArray(payload.data))return res.status(502).json({error:"Roblox group-member search is temporarily unavailable."});
-    const candidates=payload.data.slice(0,10);
-    const checked=await Promise.all(candidates.map(async user=>{try{
-      const member=await getIdentity(String(user.id));
-      if(!member?.inGroup)return null;
-      return {id:String(user.id),username:String(user.name||""),displayName:String(user.displayName||user.name||""),rank:Number(member.rank||0),role:String(member.role?.name||member.roleName||"Group member")};
-    }catch{return null;}}));
+    if(!response.ok||!Array.isArray(payload.data))return res.status(502).json({error:"Roblox could not search Lemonz members right now. Please try again."});
+    const members=payload.data.map(row=>{
+      const user=row.user||{},role=row.role||{};
+      return {id:String(user.userId||""),username:String(user.username||""),displayName:String(user.displayName||user.username||""),rank:Number(role.rank||0),role:String(role.name||"Group member")};
+    }).filter(member=>/^\d+$/.test(member.id)&&member.username&&member.rank>=minimumRank).slice(0,12);
     res.set("Cache-Control","private, max-age=15");
-    res.json({members:checked.filter(Boolean).slice(0,8)});
+    res.json({members});
   }catch(error){next(error);}});
   router.post("/promotions",csrf,async(req,res,next)=>{
     try{const who=await gate(req,res,"promotion_suggest_rank");if(!who)return;
