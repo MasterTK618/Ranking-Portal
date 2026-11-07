@@ -933,12 +933,12 @@ $("directorySearch")?.addEventListener("input",renderStaffDirectory);
 // Delegate from document so profile opening keeps working if the directory contents are re-rendered.
 document.addEventListener("click",e=>{
  const card=e.target.closest?.("#directoryResult [data-staff-id]");
- if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\\d+$/.test(id))showStaffProfile(id);}
+ if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\d+$/.test(id))showStaffProfile(id);}
 });
 document.addEventListener("keydown",e=>{
  if(e.key!=="Enter"&&e.key!==" ")return;
  const card=e.target.closest?.("#directoryResult [data-staff-id]");
- if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\\d+$/.test(id))showStaffProfile(id);}
+ if(card){e.preventDefault();const id=String(card.dataset.staffId||"");if(/^\d+$/.test(id))showStaffProfile(id);}
 });
 
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
