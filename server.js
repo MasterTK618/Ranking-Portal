@@ -383,73 +383,88 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
   }
   if(staffDirectoryRefresh){
     try{return res.json({...await staffDirectoryRefresh,cached:true});}
-    catch(error){return res.status(502).json({error:"Staff directory refresh failed: "+error.message});}
+    catch(error){return res.status(error.status||502).json({error:"Staff directory refresh failed: "+error.message});}
   }
   staffDirectoryRefresh=(async()=>{
-    const diagnostics={groupId:GROUP_ID,minRank:230,source:"not-started",publicApiStatus:null,openCloudStatus:"not-used",fetchedMembers:0,eligibleMembers:0,returnedMembers:0,profilesFound:0,avatarsFound:0,rolesLoaded:0,roleRequests:0};
+    const diagnostics={groupId:GROUP_ID,minRank:230,source:"roblox-open-cloud",rolesLoaded:0,roleRequests:0,fetchedMembers:0,eligibleMembers:0,returnedMembers:0,profilesFound:0,avatarsFound:0};
     const viewer=await getIdentity(req.session.user.id);
     if(!viewer?.inGroup||Number(viewer.rank)<230){
       const error=new Error("Rank 230 or higher is required to view the staff directory.");
       error.status=403;throw error;
     }
-    const controllerTimeout=ms=>AbortSignal.timeout(ms);
-    const rolesResponse=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles",{signal:controllerTimeout(12000)});
-    const rolesData=await rolesResponse.json().catch(()=>({}));
-    diagnostics.publicApiStatus=rolesResponse.status;
-    if(!rolesResponse.ok||!Array.isArray(rolesData.roles))throw new Error("Roblox group roles could not be loaded (HTTP "+rolesResponse.status+"): "+(rolesData.errors?.[0]?.message||rolesData.message||"Unexpected response."));
-    const roles=rolesData.roles.map(r=>({id:String(r.id),name:String(r.name||"Unnamed role"),rank:Number(r.rank||0),memberCount:Number(r.memberCount||0)})).filter(r=>r.rank>=230);
+    if(!process.env.ROBLOX_API_KEY)throw new Error("ROBLOX_API_KEY is missing from the server environment.");
+    // Use the authenticated Open Cloud API. Roblox's old public group-member
+    // endpoints can reject unauthenticated server requests with HTTP 403.
+    const allRoles=await getRoles();
+    const roles=allRoles.filter(role=>Number(role.rank)>=230).sort((a,b)=>b.rank-a.rank);
     diagnostics.rolesLoaded=roles.length;
-    if(!roles.length){
-      const payload={members:[],roles:rolesData.roles.map(r=>({id:String(r.id),name:String(r.name||"Unnamed role"),rank:Number(r.rank||0),memberCount:Number(r.memberCount||0)})).sort((a,b)=>b.rank-a.rank),count:0,source:"roblox-role-members-api",minRank:230,diagnostics};
-      return payload;
-    }
-    // Ask Roblox for users in each eligible role directly. This avoids paging
-    // through every guest/customer/member in the group to find staff.
     const roleResults=new Array(roles.length);
     let nextIndex=0;
     const worker=async()=>{
       while(true){
         const index=nextIndex++;
         if(index>=roles.length)return;
-        const role=roles[index];let cursor="",pages=0,items=[];
+        const role=roles[index];
+        const rolePath=role.path||("groups/"+GROUP_ID+"/roles/"+role.id);
+        let pageToken="",pages=0,items=[];
         do{
-          const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles/"+encodeURIComponent(role.id)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
-          const response=await fetch(url,{signal:controllerTimeout(12000)});
-          const data=await response.json().catch(()=>({}));
-          if(!response.ok||!Array.isArray(data.data))throw new Error("Roblox could not load members for "+role.name+" (HTTP "+response.status+"): "+(data.errors?.[0]?.message||data.message||"Unexpected response."));
-          for(const item of data.data){
-            const id=String(item.user?.userId||item.user?.id||"");
-            if(/^\d+$/.test(id))items.push({id,rank:role.rank,role:role.name,username:String(item.user?.username||""),displayName:String(item.user?.displayName||"")});
+          const q=new URLSearchParams({maxPageSize:"100",filter:"role == '"+rolePath+"'"});
+          if(pageToken)q.set("pageToken",pageToken);
+          const data=await roblox("/groups/"+GROUP_ID+"/memberships?"+q.toString(),{signal:AbortSignal.timeout(15000)});
+          const memberships=Array.isArray(data.groupMemberships)?data.groupMemberships:[];
+          for(const membership of memberships){
+            const userPath=String(membership.user||"");
+            const id=userPath.match(/^users\/(\d+)$/)?.[1];
+            if(id)items.push({id,rank:Number(role.rank),role:role.name});
           }
-          cursor=data.nextPageCursor||"";
-          if(++pages>100)throw new Error("Role "+role.name+" exceeds 10,000 members.");
-        }while(cursor);
-        roleResults[index]=items;diagnostics.roleRequests++;
+          pageToken=data.nextPageToken||"";
+          if(++pages>200)throw new Error("Role "+role.name+" exceeded the safe pagination limit.");
+        }while(pageToken);
+        roleResults[index]=items;
+        diagnostics.roleRequests++;
       }
     };
     await Promise.all(Array.from({length:Math.min(4,roles.length)},()=>worker()));
     const base=roleResults.flat().filter(Boolean);
-    diagnostics.fetchedMembers=base.length;diagnostics.eligibleMembers=base.length;
-    diagnostics.source="roblox-role-members-api";
+    const unique=new Map();
+    for(const member of base){
+      const previous=unique.get(member.id);
+      if(!previous||member.rank>previous.rank)unique.set(member.id,member);
+    }
+    const roster=[...unique.values()];
+    diagnostics.fetchedMembers=roster.length;
+    diagnostics.eligibleMembers=roster.length;
+    // Resolve usernames and avatars in optional batches. These calls cannot
+    // prevent the membership list itself from being returned.
     const profiles=[],thumbs=[];
-    const batches=[];for(let i=0;i<base.length;i+=100)batches.push(base.slice(i,i+100));
-    // Profile/avatar enrichment is optional and bounded; roster results remain usable.
+    const batches=[];for(let i=0;i<roster.length;i+=100)batches.push(roster.slice(i,i+100));
     await Promise.all(batches.map(async batch=>{
       const ids=batch.map(m=>Number(m.id));
       const tasks=[
-        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false}),signal:controllerTimeout(8000)})
-          .then(async r=>{const d=await r.json().catch(()=>({}));if(r.ok&&Array.isArray(d.data))profiles.push(...d.data);}).catch(e=>console.warn("Staff profile enrichment skipped:",e.message)),
-        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true",{signal:controllerTimeout(8000)})
-          .then(async r=>{const d=await r.json().catch(()=>({}));if(r.ok&&Array.isArray(d.data))thumbs.push(...d.data);}).catch(e=>console.warn("Staff avatar enrichment skipped:",e.message))
+        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false}),signal:AbortSignal.timeout(10000)})
+          .then(async response=>{const data=await response.json().catch(()=>({}));if(response.ok&&Array.isArray(data.data))profiles.push(...data.data);})
+          .catch(error=>console.warn("Staff username enrichment skipped:",error.message)),
+        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true",{signal:AbortSignal.timeout(10000)})
+          .then(async response=>{const data=await response.json().catch(()=>({}));if(response.ok&&Array.isArray(data.data))thumbs.push(...data.data);})
+          .catch(error=>console.warn("Staff avatar enrichment skipped:",error.message))
       ];
       await Promise.all(tasks);
     }));
-    const byId=new Map(profiles.map(p=>[String(p.id),p]));
-    const avatarById=new Map(thumbs.map(t=>[String(t.targetId),t.imageUrl||""]));
-    const members=base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.username||"Unknown username",displayName:byId.get(m.id)?.displayName||m.displayName||"",avatarUrl:avatarById.get(m.id)||"",inGroup:true}))
-      .sort((a,b)=>b.rank-a.rank||a.role.localeCompare(b.role)||a.username.localeCompare(b.username));
-    diagnostics.returnedMembers=members.length;diagnostics.profilesFound=profiles.length;diagnostics.avatarsFound=thumbs.length;
-    return {members,roles:roles.sort((a,b)=>b.rank-a.rank),count:members.length,source:diagnostics.source,minRank:230,diagnostics};
+    const profileById=new Map(profiles.map(profile=>[String(profile.id),profile]));
+    const avatarById=new Map(thumbs.map(thumb=>[String(thumb.targetId),thumb.imageUrl||""]));
+    const members=roster.map(member=>({
+      id:member.id,rank:member.rank,role:member.role,
+      username:profileById.get(member.id)?.name||"Unknown username",
+      displayName:profileById.get(member.id)?.displayName||"",
+      avatarUrl:avatarById.get(member.id)||"",inGroup:true
+    })).sort((a,b)=>b.rank-a.rank||a.role.localeCompare(b.role)||a.username.localeCompare(b.username));
+    diagnostics.returnedMembers=members.length;
+    diagnostics.profilesFound=profiles.length;
+    diagnostics.avatarsFound=thumbs.length;
+    const roleCounts=new Map();
+    for(const member of members)roleCounts.set(member.rank,(roleCounts.get(member.rank)||0)+1);
+    const directoryRoles=roles.map(role=>({...role,memberCount:roleCounts.get(Number(role.rank))||0}));
+    return {members,roles:directoryRoles,count:members.length,source:diagnostics.source,minRank:230,diagnostics};
   })();
   try{
     const payload=await staffDirectoryRefresh;
@@ -457,8 +472,11 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     res.set("Cache-Control","private, max-age=60");
     res.json(payload);
   }catch(error){
-    console.error("Lemonz staff directory failed:",error.message);
-    res.status(error.status||502).json({error:"The staff directory could not finish loading: "+error.message,diagnostics:{groupId:GROUP_ID,minRank:230}});
+    console.error("Lemonz Open Cloud staff directory failed:",error.message,error.roblox||"");
+    res.status(error.status||502).json({
+      error:"Staff directory failed: "+error.message,
+      diagnostics:{groupId:GROUP_ID,minRank:230,source:"roblox-open-cloud"}
+    });
   }finally{staffDirectoryRefresh=null;}
 });
 app.get("/api/diagnostics/roblox",requireLogin,async(req,res)=>{
