@@ -830,20 +830,38 @@ function fillTeamFilter(id){
  if([...el.options].some(o=>o.value===previous))el.value=previous;
  return el.value||"ALL";
 }
-async function loadTasks(){
-  $("taskTable").textContent="Loading staff tasks…";
-  try{if(!staffDirectory.length)await loadStaffDirectory();
-    const d=await api("/api/management/tasks"),items=d.items||[],filter=$("taskStatusFilter").value,q=($("taskSearch").value||"").toLowerCase();const teamFilter=fillTeamFilter("taskTeamFilter");
-    const teamAssignFilter=fillTeamFilter("taskTeamAssignFilter"),select=$("taskAssignedTo"),previous=select.value;select.innerHTML='<option value="">Choose a staff member…</option>'+staffDirectory.filter(m=>Number(m.rank)>=Number(d.settings.task_view_rank)&&(teamAssignFilter==="ALL"||(teamAssignments.get(String(m.id))||new Set()).has(teamAssignFilter))).map(m=>'<option value="'+escapeHtml(m.id)+'">'+escapeHtml(m.username)+' · '+escapeHtml(m.role)+'</option>').join("");if(previous&&[...select.options].some(o=>o.value===previous))select.value=previous;
-    const rows=items.filter(x=>(filter==="ALL"||x.status===filter)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!((x.assigned_team_ids||[]).length):(x.assigned_team_ids||[]).map(String).includes(teamFilter)))&&[x.title,x.description,x.assigned_to_name,x.assigned_team_names,x.created_by_name,x.priority,x.status].some(v=>String(v||"").toLowerCase().includes(q)));
-    const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
-    $("taskSummary").innerHTML=counts.map(x=>`<article class="session-stat"><span>✓</span><small>${x[0]}</small><b>${x[1]}</b><em>${x[2]}</em></article>`).join("");
-    $("taskStorageDiagnostics")?.classList.toggle("hidden",Number(d.rank)<255);
-    // Task history is available in the unified Audit Log.
-    $("taskTable").innerHTML=rows.length?'<table class="data-table task-data-table"><thead><tr><th>TASK</th><th>ASSIGNED TO</th><th>TEAM</th><th>PRIORITY</th><th>DUE DATE</th><th>CREATED BY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><b>'+escapeHtml(x.title)+'</b><small class="task-id-label">TASK ID · #'+escapeHtml(String(x.id))+'</small><small class="table-subtext">'+escapeHtml(x.description||"No extra details") +'</small></td><td>'+escapeHtml(x.assigned_to_name)+'</td><td>'+escapeHtml(x.assigned_team_names||'Unassigned')+'</td><td><span class="priority-pill priority-'+escapeHtml(String(x.priority).toLowerCase())+'">'+escapeHtml(x.priority)+'</span></td><td>'+dateOnly(x.due_date)+'</td><td>'+escapeHtml(x.created_by_name)+'</td><td>'+(x.canUpdate?'<select class="task-status-select" data-task-status="'+escapeHtml(x.id)+'"><option value="OPEN"'+(x.status==="OPEN"?" selected":"")+ '>Open</option><option value="IN_PROGRESS"'+(x.status==="IN_PROGRESS"?" selected":"")+ '>In progress</option><option value="BLOCKED"'+(x.status==="BLOCKED"?" selected":"")+ '>Blocked</option><option value="COMPLETED"'+(x.status==="COMPLETED"?" selected":"")+ '>Completed</option></select>':'<span class="status-pill">'+escapeHtml(x.status)+'</span>')+'</td><td>'+(x.canDelete?'<button class="danger-btn" data-task-delete="'+escapeHtml(x.id)+'">Delete</button>':"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No tasks match this filter.</div>';
-    // Task actions are tracked in the unified Audit Log.
-  }catch(e){$("taskTable").textContent=e.message}
+function populateTaskAssignees(){
+ const select=$("taskAssignedTo");if(!select)return;
+ const previous=select.value,teamFilter=$("taskTeamAssignFilter")?.value||"ALL",minRank=Number(taskSettingsCache.task_view_rank||230);
+ const eligible=staffDirectory.filter(member=>Number(member.rank)>=minRank&&(teamFilter==="ALL"||(teamAssignments.get(String(member.id))||new Set()).has(String(teamFilter))));
+ select.innerHTML='<option value="">Choose a staff member…</option>'+eligible.map(member=>'<option value="'+escapeHtml(member.id)+'">'+escapeHtml(member.username)+' · '+escapeHtml(member.role)+'</option>').join("");
+ if(previous&&eligible.some(member=>String(member.id)===previous))select.value=previous;
+ if(!eligible.length)select.innerHTML='<option value="">'+(staffDirectory.length?"No eligible staff in this team":"Staff directory is still loading — refresh in a moment")+'</option>';
 }
+function renderTasks(){
+ const table=$("taskTable");if(!table)return;
+ const items=taskItemsCache,filter=$("taskStatusFilter")?.value||"ALL",q=($("taskSearch")?.value||"").trim().toLowerCase(),teamFilter=$("taskTeamFilter")?.value||"ALL";
+ const rows=items.filter(item=>(filter==="ALL"||item.status===filter)&&(teamFilter==="ALL"||(teamFilter==="UNASSIGNED"?!((item.assigned_team_ids||[]).length):(item.assigned_team_ids||[]).map(String).includes(teamFilter)))&&[item.title,item.description,item.assigned_to_name,item.assigned_team_names,item.created_by_name,item.priority,item.status].some(value=>String(value||"").toLowerCase().includes(q)));
+ const counts=[["OPEN",items.filter(x=>x.status==="OPEN").length,"Needs attention"],["IN PROGRESS",items.filter(x=>x.status==="IN_PROGRESS").length,"Currently being worked on"],["BLOCKED",items.filter(x=>x.status==="BLOCKED").length,"Needs help"],["COMPLETED",items.filter(x=>x.status==="COMPLETED").length,"Finished tasks"]];
+ $("taskSummary").innerHTML=counts.map(x=>'<article class="session-stat"><span>✓</span><small>'+x[0]+'</small><b>'+x[1]+'</b><em>'+x[2]+'</em></article>').join("");
+ table.innerHTML=rows.length?'<table class="data-table task-data-table"><thead><tr><th>TASK</th><th>ASSIGNED TO</th><th>TEAM</th><th>PRIORITY</th><th>DUE DATE</th><th>CREATED BY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><b>'+escapeHtml(x.title)+'</b><small class="task-id-label">TASK ID · #'+escapeHtml(String(x.id))+'</small><small class="table-subtext">'+escapeHtml(x.description||"No extra details")+'</small></td><td>'+escapeHtml(x.assigned_to_name)+'</td><td>'+escapeHtml(x.assigned_team_names||"Unassigned")+'</td><td><span class="priority-pill priority-'+escapeHtml(String(x.priority).toLowerCase())+'">'+escapeHtml(x.priority)+'</span></td><td>'+dateOnly(x.due_date)+'</td><td>'+escapeHtml(x.created_by_name)+'</td><td>'+(x.canUpdate?'<select class="task-status-select" data-task-status="'+escapeHtml(x.id)+'"><option value="OPEN"'+(x.status==="OPEN"?" selected":"") +'>Open</option><option value="IN_PROGRESS"'+(x.status==="IN_PROGRESS"?" selected":"") +'>In progress</option><option value="BLOCKED"'+(x.status==="BLOCKED"?" selected":"") +'>Blocked</option><option value="COMPLETED"'+(x.status==="COMPLETED"?" selected":"") +'>Completed</option></select>':'<span class="status-pill">'+escapeHtml(x.status)+'</span>')+'</td><td>'+(x.canDelete?'<button type="button" class="danger-btn" data-task-delete="'+escapeHtml(x.id)+'">Delete</button>':"—")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No tasks match this filter.</div>';
+}
+async function loadTasks(){
+ const table=$("taskTable");if(!table)return;table.textContent="Loading staff tasks…";
+ if(!staffDirectory.length)loadStaffDirectory();
+ try{
+  if(!managementTeams.length){
+   try{const teamData=await api("/api/management/teams");managementTeams=Array.isArray(teamData.teams)?teamData.teams:[];teamAssignments=new Map();for(const row of(teamData.members||[])){const id=String(row.user_id);if(!teamAssignments.has(id))teamAssignments.set(id,new Set());teamAssignments.get(id).add(String(row.team_id));}}
+   catch(teamError){console.warn("Task team filters could not load:",teamError.message);}
+  }
+  const d=await api("/api/management/tasks");taskItemsCache=Array.isArray(d.items)?d.items:[];taskSettingsCache=d.settings||{};taskRankCache=Number(d.rank||0);
+  fillTeamFilter("taskTeamFilter");fillTeamFilter("taskTeamAssignFilter");populateTaskAssignees();
+  $("taskStorageDiagnostics")?.classList.toggle("hidden",taskRankCache<255);
+  renderTasks();
+ }catch(e){table.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
+}
+
+
 setupLeaveDateLimits();
 $("refreshLeaves")?.addEventListener("click",()=>loadManagement("leaves"));
 
