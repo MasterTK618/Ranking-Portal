@@ -936,6 +936,12 @@ function setupStaffAutocompleteFields(){
 function renderDirectoryMembers(members){
  const result=$("directoryResult");if(!result)return;
  result.innerHTML=members.length?members.map(m=>'<button type="button" class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" aria-label="Open staff profile for '+escapeHtml(m.username||"staff member")+'"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></button>').join(""):'<div class="empty-state">No members found for this selection.</div>';
+ // Bind directly to each freshly-rendered card; this avoids relying on page-level delegation.
+ result.querySelectorAll("button.staff-card[data-staff-id]").forEach(card=>card.addEventListener("click",event=>{
+  event.preventDefault();
+  const id=String(card.dataset.staffId||"");
+  if(/^\d+$/.test(id))showStaffProfile(id);
+ }));
 }
 function renderStaffDirectory(){
  const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");
@@ -1036,19 +1042,6 @@ async function loadStaffDirectory(force=false){
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
-// Capture staff-card activation at document level. This runs before other page
-// handlers and continues to work when the directory replaces its card markup.
-document.addEventListener("click",event=>{
- const target=event.target instanceof Element?event.target:event.target?.parentElement;
- const card=target?.closest?.("#directoryResult button.staff-card[data-staff-id]");
- if(!card)return;
- const id=String(card.dataset.staffId||"");
- if(!/^\d+$/.test(id))return;
- event.preventDefault();
- event.stopPropagation();
- showStaffProfile(id);
-},true);
-
 // Team memberships are managed in the multi-team assignment panel; no legacy single-team picker handler.
 
 async function showStaffProfile(id,openTeams=false){
