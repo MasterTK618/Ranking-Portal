@@ -856,39 +856,64 @@ function renderDirectoryMembers(members){
  result.innerHTML=members.length?members.map(m=>'<article class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" role="button" tabindex="0"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.displayName||m.username)+'</b><small>@'+escapeHtml(m.username)+'</small><small class="staff-team-label">'+escapeHtml(m.role||"Not in group")+' · Rank '+Number(m.rank||0)+'</small></span><span class="staff-card-side"><span class="quiet-btn">Open Profile →</span></span></article>').join(""):'<div class="empty-state">No members found for this selection.</div>';
 }
 function renderStaffDirectory(){
- const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");if(!result)return;
- const q=(search?.value||"").trim().toLowerCase();
- const list=staffDirectory.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank)-Number(x.rank)||String(x.role).localeCompare(String(y.role))||String(x.username).localeCompare(String(y.username)));
- if($("staffCount"))$("staffCount").textContent=staffDirectory.length+" staff members · Rank "+staffMinRank+"+";
- if(status)status.textContent=list.length?"Showing "+list.length+" staff members":"No staff match that search.";
- result.innerHTML=list.map(m=>'<button class="staff-card" data-staff-id="'+escapeHtml(m.id)+'" type="button"><img class="staff-avatar" src="'+escapeHtml(m.avatarUrl||"")+'" alt="" loading="lazy"><span class="staff-card-copy"><b>'+escapeHtml(m.username)+'</b><small>'+escapeHtml(m.role)+'</small></span><span class="rank-pill">R'+m.rank+'</span></button>').join("");
+ const result=$("directoryResult"),status=$("directoryStatus"),search=$("directorySearch");
+ if(!result)return;
+ const q=String(search?.value||"").trim().toLowerCase();
+ const members=Array.isArray(staffDirectory)?staffDirectory:[];
+ const list=members.filter(m=>!q||[m.username,m.displayName,m.role].some(v=>String(v||"").toLowerCase().includes(q))).sort((x,y)=>Number(y.rank||0)-Number(x.rank||0)||String(x.role||"").localeCompare(String(y.role||""))||String(x.username||"").localeCompare(String(y.username||"")));
+ if($("staffCount"))$("staffCount").textContent=members.length+" staff members · Rank "+staffMinRank+"+";
+ if(status)status.textContent=list.length?"Showing "+list.length+" staff members"+(q?" matching your search":"")+".":(q?"No staff match that search.":"No staff members were returned.");
+ renderDirectoryMembers(list);
 }
 async function loadStaffDirectory(force=false){
- const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
- if(status)status.textContent="Loading staff ranked "+staffMinRank+"+…";
- if(staffDirectory.length&&!force){renderStaffDirectory();return;}
- if($("directoryButton"))$("directoryButton").disabled=true;
- try{
-  const d=await api("/api/staff");
-  staffDirectory=Array.isArray(d.members)?d.members:[];
-  staffMinRank=Number(d.minRank||d.diagnostics?.minRank||230);staffDiagnostics=d.diagnostics||null;
-  renderStaffDirectory();
-  if(!staffDirectory.length){const z=d.diagnostics||{};if(status)status.textContent="No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+".";
+ if(staffDirectoryPromise&&!force)return staffDirectoryPromise;
+ const requestId=++directoryRequestToken;
+ const task=(async()=>{
+  const result=$("directoryResult"),status=$("directoryStatus"),button=$("directoryButton");
+  if(status)status.textContent="Loading staff ranked "+staffMinRank+"+…";
+  if(result)result.innerHTML='<div class="empty-state">Loading staff directory…</div>';
+  if(button)button.disabled=true;
+  try{
+   const data=await api("/api/staff"+(force?"?refresh=1":""));
+   if(requestId!==directoryRequestToken)return data;
+   const members=Array.isArray(data.members)?data.members:[];
+   staffDirectory=members;
+   staffMinRank=Number(data.minRank||data.diagnostics?.minRank||230);
+   staffDiagnostics=data.diagnostics||null;
+   teamStaffCache=members;
+   renderStaffDirectory();
+   if(!members.length){
+    const info=data.diagnostics||{};
+    if(status)status.textContent="No staff at rank "+staffMinRank+"+ were returned. Source: "+(info.source||data.source||"unknown")+" · Members scanned: "+(info.fetchedMembers??"unknown")+".";
+   }
+   if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
+   if(typeof setupStaffAutocompleteFields==="function")setupStaffAutocompleteFields();
+   const list=document.getElementById("staffSuggestions")||document.createElement("datalist");
+   list.id="staffSuggestions";
+   list.innerHTML=members.map(m=>'<option value="'+escapeHtml(m.username||"")+'"></option>').join("");
+   document.body.appendChild(list);
+   ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const field=$(id);if(field)field.setAttribute("list","staffSuggestions");});
+   api("/api/group/roles").then(roleData=>{
+    if(requestId!==directoryRequestToken)return;
+    const roles=Array.isArray(roleData.roles)?roleData.roles:[];
+    directoryRoles=roles;groupRoleCache=roles;
+    const select=$("promotionRole");
+    if(select)select.innerHTML='<option value="">Choose suggested role…</option>'+roles.map(role=>'<option value="'+escapeHtml(role.name)+'">'+escapeHtml(role.name)+' (Rank '+Number(role.rank)+')</option>').join("");
+   }).catch(error=>console.warn("Group role metadata unavailable:",error.message));
+   return data;
+  }catch(error){
+   if(requestId===directoryRequestToken){
+    if(status)status.textContent="Could not load staff: "+error.message;
+    if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(error.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
+    $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
+   }
+   throw error;
+  }finally{
+   if(requestId===directoryRequestToken&&button)button.disabled=false;
   }
-  if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
-  if(typeof setupStaffAutocompleteFields==="function")setupStaffAutocompleteFields();
-  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";
-  dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
-  ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
-  api("/api/group/roles").then(roleData=>{
-   const roles=Array.isArray(roleData.roles)?roleData.roles:[];
-   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+roles.map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
-  }).catch(error=>console.warn("Group role metadata unavailable:",error.message));
- }catch(e){
-  if(status)status.textContent="Could not load staff: "+e.message;
-  if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(e.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
-  $("retryStaffLoad")?.addEventListener("click",()=>loadStaffDirectory(true));
- }finally{if($("directoryButton"))$("directoryButton").disabled=false;}
+ })();
+ staffDirectoryPromise=task;
+ try{return await task;}finally{if(staffDirectoryPromise===task)staffDirectoryPromise=null;}
 }
 $("directoryButton")?.addEventListener("click",()=>{if($("directorySearch"))$("directorySearch").value="";if($("memberProfile"))$("memberProfile").classList.add("hidden");loadStaffDirectory(true);});
 $("directorySearch")?.addEventListener("input",renderStaffDirectory);
