@@ -424,7 +424,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const parsedSessionDate=new Date(date+"T00:00:00.000Z");if(!title||title.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedSessionDate.getTime())||parsedSessionDate.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!b.hostId)return res.status(400).json({error:"Enter a valid session name, date, time, and host."});
     if(new Set(ids).size!==ids.length)return res.status(400).json({error:"A staff member can only be assigned one role per shift."});
     const identities=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
-    if(identities.some(x=>!x.who.inGroup))return res.status(400).json({error:"Every selected person must be a current Lemonz member."});
+    if(identities.some(x=>!x.who?.inGroup||Number(x.who.rank||0)<230))return res.status(400).json({error:"Every assigned person must be current Lemonz staff (rank 230 or higher)."});
     const ranks=new Map(identities.map(x=>[x.id,x.who.rank]));
     if(overseeIds.some(id=>Number(ranks.get(id)||0)<245))return res.status(400).json({error:"Every Oversee must be rank 245 or higher."});
     if(b.promoterId&&Number(ranks.get(String(b.promoterId))||0)<245)return res.status(400).json({error:"Promoter must be rank 245 or higher."});
