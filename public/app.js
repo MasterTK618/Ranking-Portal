@@ -915,42 +915,36 @@ function setupStaffAutocompleteFields(){
  [["punishUsername",false],["promotionUsername",false],["activityUsername",false],["sessionHost",false],["sessionCoHost",false],["sessionPromoter",true],["sessionRequestHost",false],["sessionRequestCoHost",false],["editSessionHost",false],["editSessionCoHost",false],["editSessionPromoter",true],["evidenceTargetUsername",false]].forEach(([id,senior])=>attachStaffAutocomplete(id,{senior,hiddenId:id==="evidenceTargetUsername"?"evidenceTargetId":id+"Id"}));
 }
 async function loadStaffDirectory(force=false){
- const result=$("directoryResult"),status=$("directoryStatus");if(result)result.innerHTML="";
+ const result=$("directoryResult"),status=$("directoryStatus");
+ if(result)result.innerHTML="";
  if(status)status.textContent="Loading staff ranked 230+…";
  if(staffDirectory.length&&!force){setupStaffAutocompleteFields();renderStaffDirectory();return;}
  if($("directoryButton"))$("directoryButton").disabled=true;
  try{
-  // Role metadata is helpful for the rank sidebar, but it must never block the
-  // actual staff roster. Roblox's role endpoint can fail independently.
-  let roleLoadWarning="";
-  try{
-   const roleData=await api("/api/group/roles");
-   directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];
-   groupRoleCache=directoryRoles;
-  }catch(roleError){
-   roleLoadWarning="Group role counts are temporarily unavailable. ";
-   console.warn("Directory role metadata unavailable; continuing with staff roster:",roleError.message);
-  }
-  renderDirectoryRankSidebar();
-  const d=await api("/api/staff");staffDirectory=Array.isArray(d.members)?d.members:[];staffMinRank=230;staffDiagnostics=d.diagnostics||null;
-  if(!directoryRoles.length&&Array.isArray(d.roles)){
-   directoryRoles=d.roles.map(r=>({...r,memberCount:Number(r.memberCount||0)}));
-   groupRoleCache=directoryRoles;
-   renderDirectoryRankSidebar();
-  }
+  // Load the roster first; role counts and team synchronization are optional.
+  const d=await api("/api/staff");
+  staffDirectory=Array.isArray(d.members)?d.members:[];
+  staffMinRank=230;staffDiagnostics=d.diagnostics||null;
+  renderStaffDirectory();
   if(typeof populateCreateRoleSlots==="function")populateCreateRoleSlots();
-  try{
-   const teams=await api("/api/management/teams");managementTeams=teams.teams||[];teamAssignments=new Map();for(const x of(teams.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}teamStaffCache=staffDirectory;await syncTeamsByGroupRole();
-   const filter=$("directoryTeamFilter");
-   if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
-  }catch{}
-
-  renderStaffDirectory();if(!staffDirectory.length){const z=d.diagnostics||{};status.textContent=roleLoadWarning+"No staff at rank "+staffMinRank+"+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+". Check the configured group ID and Roblox group API access.";}else if(roleLoadWarning&&status){status.textContent=roleLoadWarning+"Showing all "+staffDirectory.length+" staff members ranked 230+.";}
-  try{if(!groupRoleCache.length){const groupRoleData=await api("/api/group/roles");groupRoleCache=groupRoleData.roles||[];}}catch(roleError){console.warn("Complete group role list unavailable:",roleError);}
-  const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+(groupRoleCache.length?groupRoleCache:d.roles||[]).map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
-  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");document.body.appendChild(dl);
-  ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
   setupStaffAutocompleteFields();
+  const dl=document.getElementById("staffSuggestions")||document.createElement("datalist");
+  dl.id="staffSuggestions";dl.innerHTML=staffDirectory.map(m=>'<option value="'+escapeHtml(m.username)+'"></option>').join("");
+  document.body.appendChild(dl);
+  ["punishUsername","promotionUsername","activityUsername","sessionAttendeeSearch"].forEach(id=>{const el=$(id);if(el)el.setAttribute("list","staffSuggestions");});
+  if(!staffDirectory.length){const z=d.diagnostics||{};if(status)status.textContent="No staff at rank 230+ in group "+(z.groupId||"configured group")+". Source: "+(z.source||d.source||"unknown")+". Members scanned: "+(z.fetchedMembers??"unknown")+".";
+  }else if(status)status.textContent="Showing all "+staffDirectory.length+" staff members ranked 230+.";
+  api("/api/group/roles").then(roleData=>{
+   directoryRoles=Array.isArray(roleData.roles)?roleData.roles:[];groupRoleCache=directoryRoles;renderDirectoryRankSidebar();
+   const roleSelect=$("promotionRole");if(roleSelect)roleSelect.innerHTML='<option value="">Choose suggested role…</option>'+directoryRoles.map(r=>'<option value="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+' (Rank '+r.rank+')</option>').join("");
+  }).catch(error=>console.warn("Group role counts unavailable:",error.message));
+  api("/api/management/teams").then(teams=>{
+   managementTeams=teams.teams||[];teamAssignments=new Map();
+   for(const x of(teams.members||[])){const userId=String(x.user_id);if(!teamAssignments.has(userId))teamAssignments.set(userId,new Set());teamAssignments.get(userId).add(String(x.team_id));}
+   teamStaffCache=staffDirectory;
+   const filter=$("directoryTeamFilter");if(filter){const old=filter.value;filter.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");if([...filter.options].some(o=>o.value===old))filter.value=old;}
+   syncTeamsByGroupRole().catch(error=>console.warn("Team role synchronization unavailable:",error.message));
+  }).catch(error=>console.warn("Team directory metadata unavailable:",error.message));
  }catch(e){
   if(status)status.textContent="Could not load staff: "+e.message;
   if(result)result.innerHTML='<div class="directory-error"><b>Staff list unavailable</b><p>'+escapeHtml(e.message)+'</p><button type="button" class="quiet-btn" id="retryStaffLoad">Try again</button></div>';
@@ -1038,12 +1032,14 @@ document.addEventListener("submit",async e=>{
 });
 function calendarMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function drawSessionsCalendar(items){
-  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
-  for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside"></div>');
-  const today=new Date();const todayKey=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
-  for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");const events=items.filter(s=>String(s.session_date).slice(0,10)===date);cells.push('<div class="calendar-day'+(date===todayKey?' is-today':'')+'"><b class="calendar-day-number">'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'"><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+sessionTypeLabel(s.session_type)+'</small></div>').join("")+'</div>');}
-  while(cells.length%7)cells.push('<div class="calendar-day outside"></div>');
-  $("sessionsCalendar").innerHTML='<div class="calendar-weekdays">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
+ const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
+ const dateKey=value=>{if(!value)return "";const raw=String(value),match=raw.match(/^(\\d{4}-\\d{2}-\\d{2})/);if(match)return match[1];const d=new Date(value);return Number.isNaN(d.getTime())?"":d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+ const grouped=new Map();for(const session of items){const key=dateKey(session.session_date);if(key){if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(session);}}
+ for(let i=0;i<offset;i++)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
+ const today=new Date(),todayKey=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+ for(let day=1;day<=days;day++){const date=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0"),events=grouped.get(date)||[];cells.push('<div class="calendar-day'+(date===todayKey?' is-today':'')+'"><b class="calendar-day-number">'+day+'</b>'+events.map(s=>'<div class="calendar-event calendar-'+String(s.status||"PLANNED").toLowerCase()+'" title="'+escapeHtml(s.title)+'"><b>'+escapeHtml(s.title)+'</b><small>'+escapeHtml(String(s.session_time||"").slice(0,5))+' · '+sessionTypeLabel(s.session_type)+'</small></div>').join("")+'</div>');}
+ while(cells.length%7)cells.push('<div class="calendar-day outside" aria-hidden="true"></div>');
+ const calendar=$("sessionsCalendar");if(calendar)calendar.innerHTML='<div class="calendar-weekdays">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<b>'+d+'</b>').join("")+'</div><div class="calendar-grid">'+cells.join("")+'</div>';
 }
 function sessionTypeLabel(v){return v==="RECRUITMENT"?"Recruitment":v==="MINI_GAMES"?"Mini-Games":"Promotional";}
 function sessionStatusLabel(v){return ({PLANNED:"Planned",ONGOING:"On-Going",DELAYED:"Delayed",CANCELED:"Canceled",COMPLETED:"Completed"})[v]||"Planned";}
@@ -1056,7 +1052,6 @@ function renderSessionTable(items,el,searchText=""){
 }
 async function loadSessions(){
  try{
-  if(!staffDirectory.length)await loadStaffDirectory();
   const d=await api("/api/management/sessions"),all=d.sessions||[];window.__lemonzSessions=all;$("sessionCreateCard")?.classList.toggle("hidden",!d.canCreate);$("jumpScheduleBtn")?.classList.toggle("hidden",!d.canCreate);
   const now=new Date(),upcoming=all.filter(s=>s.status==="PLANNED"||s.status==="DELAYED").filter(s=>new Date(String(s.session_date).slice(0,10)+"T"+String(s.session_time||"00:00").slice(0,5)+":00")>=now).length;const teamFilter=fillTeamFilter("sessionTeamFilter");
   const counts=[["TOTAL SESSIONS",all.length,"All recorded events"],["UPCOMING",upcoming,"Planned or delayed"],["ON-GOING",all.filter(s=>s.status==="ONGOING").length,"Currently running"],["COMPLETED",all.filter(s=>s.status==="COMPLETED").length,"Successfully delivered"]];
@@ -1116,8 +1111,8 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-edit-sessi
 document.addEventListener("change",async e=>{const control=e.target.closest("[data-session-status]");if(!control)return;const prior=(window.__lemonzSessions||[]).find(s=>String(s.id)===String(control.dataset.sessionStatus));control.disabled=true;try{await api("/api/management/sessions/"+encodeURIComponent(control.dataset.sessionStatus)+"/status",{method:"PATCH",body:JSON.stringify({status:control.value,note:prior?.status_note||""})});notice("Session status updated.","success");await loadSessions();}catch(err){notice(err.message,"error");await loadSessions();}finally{control.disabled=false;}});
 ["closeSessionRoles","cancelSessionRoles"].forEach(id=>$(id)?.addEventListener("click",()=> $("sessionRolesDialog").close()));
 $("sessionRolesForm")?.addEventListener("submit",async e=>{e.preventDefault();const btn=$("saveSessionRoles");btn.disabled=true;const body={title:$("editSessionTitle").value.trim(),sessionType:$("editSessionType").value,date:$("editSessionDate").value,time:$("editSessionTime").value,status:$("editSessionStatus").value,statusNote:$("editSessionStatusNote").value,hostId:staffIdFor("editSessionHost"),cohostId:staffIdFor("editSessionCoHost"),promoterId:staffIdFor("editSessionPromoter"),overseeSlots:collectSessionRoleSlots("editOverseeSlots"),attendeeSlots:collectSessionRoleSlots("editAttendeeSlots")};try{await api("/api/management/sessions/"+encodeURIComponent($("editSessionId").value)+"/roles",{method:"PATCH",body:JSON.stringify(body)});notice("Session updated.","success");$("sessionRolesDialog").close();await loadSessions();}catch(err){notice(err.message,"error");}finally{btn.disabled=false;}});
-$("calendarPrev").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);loadSessions();});
-$("calendarNext").addEventListener("click",()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);loadSessions();});
+$("calendarPrev")?.addEventListener("click",()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()-1,1);loadSessions();});
+$("calendarNext")?.addEventListener("click",()=>{calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);loadSessions();});
 $("refreshSessions")?.addEventListener("click",loadSessions);
 $("sessionSearch")?.addEventListener("input",loadSessions);$("sessionFilter")?.addEventListener("change",loadSessions);$("sessionTeamFilter")?.addEventListener("change",loadSessions);
 populateCreateRoleSlots();
@@ -1229,3 +1224,10 @@ document.addEventListener("submit",async e=>{
   await showStaffProfile(id);$("memberProfile").querySelector('[data-profile-tab="requests"]')?.click();
  }catch(err){notice(err.message||"Could not submit the request.","error");btn.disabled=false;btn.textContent=original;}
 });
+
+(function(){
+ const button=$("sidebarToggle");if(!button)return;
+ let collapsed=false;try{collapsed=localStorage.getItem("lemonz-sidebar-collapsed")==="1";}catch{}
+ const apply=()=>{document.body.classList.toggle("sidebar-collapsed",collapsed);button.setAttribute("aria-expanded",String(!collapsed));button.setAttribute("aria-label",collapsed?"Expand sidebar":"Collapse sidebar");const label=button.querySelector(".sidebar-toggle-label"),icon=button.querySelector(".sidebar-toggle-icon");if(label)label.textContent=collapsed?"Expand sidebar":"Collapse sidebar";if(icon)icon.textContent=collapsed?"›":"‹";};
+ button.addEventListener("click",()=>{collapsed=!collapsed;try{localStorage.setItem("lemonz-sidebar-collapsed",collapsed?"1":"0");}catch{}apply();});apply();
+})();
