@@ -779,29 +779,51 @@ $("refreshMyActivity")?.addEventListener("click",loadMyActivity);
 $("promotionSearch")?.addEventListener("input",()=>{const q=$("promotionSearch").value.toLowerCase();document.querySelectorAll("#promotionTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("punishmentSearch")?.addEventListener("input",()=>{const q=$("punishmentSearch").value.toLowerCase();document.querySelectorAll("#punishmentTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
 $("activitySearch")?.addEventListener("input",()=>{const q=$("activitySearch").value.toLowerCase();document.querySelectorAll("#activityTable tbody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));});
-$("saveActivityAdjust").addEventListener("click",async()=>{
-  try{
-    await api("/api/management/activity/adjust",{method:"POST",body:JSON.stringify({userId:$("activityUserId").value.trim(),username:$("activityUsername").value.trim(),minutes:Number($("activityMinutes").value),reason:$("activityReason").value.trim()})});
-    notice("Activity adjustment saved.","success");["activityUserId","activityUsername","activityMinutes","activityReason"].forEach(id=>$(id).value="");loadManagement("activity");
-  }catch(e){notice(e.message,"error")}
+$("saveActivityAdjust")?.addEventListener("click",async()=>{
+ const btn=$("saveActivityAdjust"),userId=staffIdFor("activityUsername","activityUserId"),username=$("activityUsername").value.trim(),minutes=Number($("activityMinutes").value),reason=$("activityReason").value.trim();
+ if(!userId||!username){notice("Choose a staff member from the username suggestions.","error");$("activityUsername").focus();return;}
+ if(!Number.isInteger(minutes)||minutes===0){notice("Enter a non-zero whole number of minutes. Use a minus sign to remove time.","error");return;}
+ if(!reason){notice("Enter a reason for this activity adjustment.","error");$("activityReason").focus();return;}
+ if(btn.disabled)return;btn.disabled=true;btn.textContent="Saving…";
+ try{
+  await api("/api/management/activity/adjust",{method:"POST",body:JSON.stringify({userId,username,minutes,reason})});
+  notice("Activity adjustment saved.","success");["activityUserId","activityUsername","activityMinutes","activityReason"].forEach(id=>$(id).value="");await loadManagement("activity");
+ }catch(e){notice(e.message,"error");}
+ finally{btn.disabled=false;btn.textContent="Save adjustment";}
 });
 
 
 
 
-$("submitPunishment").addEventListener("click",async()=>{
-  try{
-    const d=await api("/api/management/punishments",{method:"POST",body:JSON.stringify({userId:$("punishUserId").value.trim(),username:$("punishUsername").value.trim(),type:$("punishType").value,duration:$("punishDuration").value.trim(),reason:$("punishReason").value.trim()})});
-    notice(d.item.status==="PENDING"?"Discipline request sent for approval.":"Discipline record issued and logged.","success");
-    ["punishUserId","punishUsername","punishDuration","punishReason"].forEach(id=>$(id).value="");loadManagement("punishments");
-  }catch(e){notice(e.message,"error")}
+
+
+
+$("submitPunishment")?.addEventListener("click",async()=>{
+ const btn=$("submitPunishment"),userId=staffIdFor("punishUsername","punishUserId"),username=$("punishUsername").value.trim(),type=$("punishType").value,reason=$("punishReason").value.trim(),duration=$("punishDuration").value.trim();
+ if(!userId||!username){notice("Choose a staff member from the username suggestions.","error");$("punishUsername").focus();return;}
+ if(!reason){notice("Enter the reason and supporting context for this discipline request.","error");$("punishReason").focus();return;}
+ if(btn.disabled)return;btn.disabled=true;btn.textContent="Submitting…";
+ try{
+  const d=await api("/api/management/punishments",{method:"POST",body:JSON.stringify({userId,username,type,duration,reason})});
+  notice(d.item?.status==="PENDING"?"Discipline request sent for approval.":"Discipline record issued and logged.","success");
+  ["punishUserId","punishUsername","punishDuration","punishReason"].forEach(id=>$(id).value="");await loadManagement("punishments");
+ }catch(e){notice(e.message,"error");}
+ finally{btn.disabled=false;btn.textContent="Submit discipline request";}
 });
-$("submitPromotion").addEventListener("click",async()=>{
-  try{
-    await api("/api/management/promotions",{method:"POST",body:JSON.stringify({userId:$("promotionUserId").value.trim(),username:$("promotionUsername").value.trim(),suggestedRole:$("promotionRole").value.trim(),reason:$("promotionReason").value.trim()})});
-    notice("Promotion request submitted and logged.","success");$("promotionUsername").value="";$("promotionUserId").value="";$("promotionReason").value="";loadManagement("promotions");
-  }catch(e){notice(e.message,"error")}
+$("submitPromotion")?.addEventListener("click",async()=>{
+ const btn=$("submitPromotion"),userId=staffIdFor("promotionUsername","promotionUserId"),username=$("promotionUsername").value.trim(),suggestedRole=$("promotionRole").value.trim(),reason=$("promotionReason").value.trim();
+ if(!userId||!username){notice("Choose a staff member from the username suggestions.","error");$("promotionUsername").focus();return;}
+ if(!suggestedRole){notice("Choose a suggested Roblox group role.","error");$("promotionRole").focus();return;}
+ if(!reason){notice("Explain why this staff member is ready for the suggested role.","error");$("promotionReason").focus();return;}
+ if(btn.disabled)return;btn.disabled=true;btn.textContent="Submitting…";
+ try{
+  await api("/api/management/promotions",{method:"POST",body:JSON.stringify({userId,username,suggestedRole,reason})});
+  notice("Promotion request submitted and logged.","success");$("promotionUsername").value="";$("promotionUserId").value="";$("promotionReason").value="";await loadManagement("promotions");
+ }catch(e){notice(e.message,"error");}
+ finally{btn.disabled=false;btn.textContent="Submit promotion request";}
 });
+
+
 function fillTeamFilter(id){
  const el=$(id);if(!el)return "ALL";const previous=el.value;
  el.innerHTML='<option value="ALL">All teams</option><option value="UNASSIGNED">Unassigned</option>'+managementTeams.map(t=>'<option value="'+escapeHtml(t.id)+'">'+escapeHtml(t.name)+'</option>').join("");
