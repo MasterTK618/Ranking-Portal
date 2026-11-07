@@ -393,104 +393,80 @@ app.get("/api/staff",requireLogin,async(req,res)=>{
     catch(error){return res.status(502).json({error:"Staff directory refresh failed: "+error.message});}
   }
   staffDirectoryRefresh=(async()=>{
-    const minRank=230;
-    const timeout=ms=>AbortSignal.timeout(ms);
-    // Minimal directory: fetch role metadata once, then fetch only members
-    // belonging to staff roles. Never paginate through the whole group.
-    let roleResponse=await fetch("https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles",{signal:timeout(12000)});
-    let roleData=await roleResponse.json().catch(()=>({}));
-    let roles=[];
-    if(roleResponse.ok&&Array.isArray(roleData.roles)){
-      roles=roleData.roles.map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank||0),memberCount:Number(role.memberCount||0)}));
-    }else{
-      console.warn("Public group roles unavailable; trying Open Cloud:",roleData.errors||roleData.message||roleResponse.status);
-      roles=(await getRoles()).map(role=>({id:String(role.id),name:String(role.name||"Unnamed role"),rank:Number(role.rank||0),memberCount:0}));
-    }
-    const staffRoles=roles.filter(role=>role.rank>=minRank).sort((a,b)=>b.rank-a.rank);
-    if(!staffRoles.length)return{members:[],roles:roles.sort((a,b)=>a.rank-b.rank),count:0,source:"roblox-role-members",minRank,diagnostics:{groupId:GROUP_ID,minRank,rolesLoaded:roles.length,rolesQueried:0}};
-    const results=new Array(staffRoles.length);
-    let next=0;
-    const worker=async()=>{
-      while(true){
-        const index=next++;
-        if(index>=staffRoles.length)return;
-        const role=staffRoles[index],members=[];
-        let cursor="",pages=0,publicError=null;
-        try{
-          do{
-            const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/roles/"+encodeURIComponent(role.id)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
-            const response=await fetch(url,{signal:timeout(12000)});
-            const data=await response.json().catch(()=>({}));
-            if(!response.ok||!Array.isArray(data.data))throw new Error("Public role members API HTTP "+response.status+": "+(data.errors?.[0]?.message||data.message||"Unexpected response"));
-            for(const entry of data.data){
-              const user=entry.user||entry;
-              const id=String(user.userId||user.id||"");
-              if(/^\d+$/.test(id))members.push({id,rank:role.rank,role:role.name,username:String(user.username||user.name||""),displayName:String(user.displayName||"")});
-            }
-            cursor=data.nextPageCursor||"";
-            if(++pages>100)throw new Error(role.name+" exceeds 10,000 members.");
-          }while(cursor);
-        }catch(error){publicError=error;members.length=0;}
-        if(publicError){
-          // Open Cloud supports filtering memberships by an exact role path.
-          // This fallback avoids paging through the entire group.
-          let pageToken="",cloudPages=0;
-          do{
-            const rolePath="groups/"+GROUP_ID+"/roles/"+role.id;
-            const query=new URLSearchParams({maxPageSize:"100",filter:"role == '"+rolePath+"'"});
-            if(pageToken)query.set("pageToken",pageToken);
-            const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+query.toString(),{signal:timeout(15000)});
-            for(const membership of(Array.isArray(page.groupMemberships)?page.groupMemberships:[])){
-              const id=String(membership.user||"").match(/^users\/(\d+)$/)?.[1];
-              if(id)members.push({id,rank:role.rank,role:role.name});
-            }
-            pageToken=page.nextPageToken||"";
-            if(++cloudPages>100)throw new Error(role.name+" exceeds 10,000 members.");
-          }while(pageToken);
-          if(!members.length&&role.memberCount>0)console.warn("Staff role returned no members via either API:",role.name,publicError.message);
+    const staffMinRank=Number(process.env.STAFF_MIN_RANK||230);
+    const diagnostics={groupId:GROUP_ID,minRank:staffMinRank,source:"not-started",publicApiStatus:null,openCloudStatus:"not-used",fetchedMembers:0,eligibleMembers:0,returnedMembers:0,profilesFound:0,avatarsFound:0};
+    let base=[],roles=[],publicError=null;
+    try{
+      let cursor="",pages=0;
+      do{
+        const url="https://groups.roblox.com/v1/groups/"+encodeURIComponent(GROUP_ID)+"/users?limit=100&sortOrder=Asc"+(cursor?"&cursor="+encodeURIComponent(cursor):"");
+        const response=await fetch(url,{signal:AbortSignal.timeout(12000)});
+        diagnostics.publicApiStatus=response.status;
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error("Roblox public Groups API returned HTTP "+response.status+": "+(data.errors?.[0]?.message||data.message||"request failed"));
+        if(!Array.isArray(data.data))throw new Error("Roblox public Groups API returned an unexpected response.");
+        diagnostics.source="roblox-group-api";
+        for(const item of data.data){
+          const id=String(item.user?.userId||item.user?.id||"");
+          const rank=Number(item.role?.rank||0),role=String(item.role?.name||"Member");
+          if(/^\d+$/.test(id)){
+            diagnostics.fetchedMembers++;
+            if(item.role?.id&&!roles.some(r=>String(r.id)===String(item.role.id)))roles.push({id:String(item.role.id),name:role,rank});
+            if(rank>=staffMinRank)base.push({id,rank,role,username:String(item.user?.username||""),displayName:String(item.user?.displayName||"")});
+          }
         }
-        results[index]=members;
+        cursor=data.nextPageCursor||"";
+        if(++pages>200)throw new Error("Group directory exceeded 20,000 members.");
+      }while(cursor);
+      diagnostics.eligibleMembers=base.length;
+    }catch(error){publicError=error;}
+    if(publicError||base.length===0){
+      try{
+        const roleList=await getRoles();roles=roleList;
+        let token="",pages=0;const memberships=[];
+        do{
+          const q=new URLSearchParams({maxPageSize:"100"});if(token)q.set("pageToken",token);
+          const page=await roblox("/groups/"+GROUP_ID+"/memberships?"+q.toString(),{signal:AbortSignal.timeout(15000)});
+          memberships.push(...(page.groupMemberships||[]));token=page.nextPageToken||"";
+          if(++pages>200)throw new Error("Open Cloud group directory exceeded 20,000 members.");
+        }while(token);
+        const cloudMembers=memberships.map(m=>{
+          const id=String(m.user||"").split("/").pop();
+          const paths=m.roles?.length?m.roles:(m.role?[m.role]:[]);
+          const role=paths.map(p=>roles.find(r=>r.path===p||r.id===String(p).split("/").pop())).filter(Boolean).sort((x,y)=>y.rank-x.rank)[0];
+          return{id,rank:Number(role?.rank||0),role:role?.name||"Member"};
+        }).filter(m=>/^\d+$/.test(m.id));
+        diagnostics.openCloudStatus="success";diagnostics.fetchedMembers=Math.max(diagnostics.fetchedMembers,cloudMembers.length);
+        const eligible=cloudMembers.filter(m=>m.rank>=staffMinRank);
+        if(eligible.length||publicError){base=eligible;diagnostics.eligibleMembers=eligible.length;diagnostics.source="open-cloud-fallback";}
+      }catch(cloudError){
+        diagnostics.openCloudStatus="failed";
+        if(!base.length)throw new Error((publicError?"Public Roblox Groups API failed ("+publicError.message+") and Open Cloud fallback failed (":"No staff were found by the public API, and Open Cloud fallback failed (")+cloudError.message+"). Check the group ID and Roblox API key's Groups read permission.");
       }
-    };
-    await Promise.all(Array.from({length:Math.min(4,staffRoles.length)},()=>worker()));
-    const unique=new Map();
-    for(const member of results.flat().filter(Boolean)){
-      const previous=unique.get(member.id);
-      if(!previous||member.rank>previous.rank)unique.set(member.id,member);
     }
-    const base=[...unique.values()];
-    // Enrichment is deliberately optional; the member list renders even if
-    // Roblox's user or thumbnail services are unavailable.
-    const profiles=[],avatars=[];
+    const profiles=[],thumbs=[];
     const batches=[];for(let i=0;i<base.length;i+=100)batches.push(base.slice(i,i+100));
     await Promise.all(batches.map(async batch=>{
-      const ids=batch.map(member=>Number(member.id));
-      const [profileResponse,avatarResponse]=await Promise.all([
-        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false}),signal:timeout(8000)}).catch(()=>null),
-        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true",{signal:timeout(8000)}).catch(()=>null)
+      const ids=batch.map(m=>Number(m.id));
+      const [pr,tr]=await Promise.all([
+        fetch("https://users.roblox.com/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:ids,excludeBannedUsers:false}),signal:AbortSignal.timeout(10000)}).catch(()=>null),
+        fetch("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="+ids.join(",")+"&size=150x150&format=Png&isCircular=true",{signal:AbortSignal.timeout(10000)}).catch(()=>null)
       ]);
-      if(profileResponse?.ok){const data=await profileResponse.json().catch(()=>({}));if(Array.isArray(data.data))profiles.push(...data.data);}
-      if(avatarResponse?.ok){const data=await avatarResponse.json().catch(()=>({}));if(Array.isArray(data.data))avatars.push(...data.data);}
+      if(pr){const pd=await pr.json().catch(()=>({}));if(pr.ok&&Array.isArray(pd.data))profiles.push(...pd.data);}
+      if(tr){const td=await tr.json().catch(()=>({}));if(tr.ok&&Array.isArray(td.data))thumbs.push(...td.data);}
     }));
-    const profileMap=new Map(profiles.map(user=>[String(user.id),user]));
-    const avatarMap=new Map(avatars.map(item=>[String(item.targetId),item.imageUrl||""]));
-    const members=base.map(member=>{
-      const profile=profileMap.get(member.id);
-      return{id:member.id,rank:member.rank,role:member.role,username:profile?.name||member.username||("User "+member.id),displayName:profile?.displayName||member.displayName||"",avatarUrl:avatarMap.get(member.id)||"",inGroup:true};
-    }).sort((a,b)=>b.rank-a.rank||a.role.localeCompare(b.role)||a.username.localeCompare(b.username));
-    const counts=new Map();
-    for(const member of members)counts.set(member.rank,(counts.get(member.rank)||0)+1);
-    const countedRoles=roles.map(role=>({...role,memberCount:counts.get(role.rank)||role.memberCount||0}));
-    return{members,roles:countedRoles.sort((a,b)=>a.rank-b.rank),count:members.length,source:"roblox-role-members",minRank,diagnostics:{groupId:GROUP_ID,minRank,rolesLoaded:roles.length,rolesQueried:staffRoles.length,returnedMembers:members.length}};
+    const byId=new Map(profiles.map(p=>[String(p.id),p])),avatars=new Map(thumbs.map(t=>[String(t.targetId),t.imageUrl||""]));
+    const members=base.map(m=>({id:m.id,rank:m.rank,role:m.role,username:byId.get(m.id)?.name||m.username||("User "+m.id),displayName:byId.get(m.id)?.displayName||m.displayName||"",avatarUrl:avatars.get(m.id)||"",inGroup:true}))
+      .sort((x,y)=>y.rank-x.rank||x.role.localeCompare(y.role)||x.username.localeCompare(y.username));
+    diagnostics.returnedMembers=members.length;diagnostics.profilesFound=profiles.length;diagnostics.avatarsFound=thumbs.length;
+    return{members,roles:roles.sort((x,y)=>y.rank-x.rank),count:members.length,source:diagnostics.source,minRank:staffMinRank,diagnostics};
   })();
   try{
-    const payload=await staffDirectoryRefresh;
-    staffDirectoryCache={at:Date.now(),data:payload};
-    res.set("Cache-Control","private, max-age=60");
-    res.json(payload);
+    const payload=await staffDirectoryRefresh;staffDirectoryCache={at:Date.now(),data:payload};
+    res.set("Cache-Control","private, max-age=60");res.json(payload);
   }catch(error){
-    console.error("Minimal staff directory failed:",error.message,error.roblox||"");
-    res.status(502).json({error:"Could not load staff directory: "+error.message,diagnostics:{groupId:GROUP_ID,minRank:230}});
+    console.error("Lemonz staff directory failed:",error.message,error.roblox||"");
+    res.status(502).json({error:"The staff directory could not finish loading: "+error.message,diagnostics:{groupId:GROUP_ID,minRank:Number(process.env.STAFF_MIN_RANK||230)}});
   }finally{staffDirectoryRefresh=null;}
 });
 app.get("/api/diagnostics/roblox",requireLogin,async(req,res)=>{
