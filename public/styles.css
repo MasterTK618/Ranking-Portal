@@ -1075,3 +1075,19 @@ body.sidebar-collapsed .sidebar-toggle{justify-content:center;padding:9px 4px}
 body.sidebar-collapsed .sidebar-toggle-icon{font-size:20px}
 @media(max-width:900px){.sidebar{width:250px}.main{margin-left:250px}body.sidebar-collapsed .sidebar{width:70px}body.sidebar-collapsed .main{margin-left:70px}}
 @media(max-width:700px){.sidebar{width:100%;position:relative;inset:auto;max-height:none;overflow:visible}.main{margin-left:0;padding:0 12px 24px}body.sidebar-collapsed .sidebar{width:100%;position:relative}body.sidebar-collapsed .main{margin-left:0}body.sidebar-collapsed .sidebar .brand>span:last-child,body.sidebar-collapsed .sidebar .side-label,body.sidebar-collapsed .sidebar>.nav-item span,body.sidebar-collapsed .sidebar-bottom{display:none}}
+
+/* Sidebar final layout override: prevent icon/label overlap and make collapse deterministic. */
+.sidebar{width:280px!important;min-width:280px;display:flex;flex-direction:column;align-items:stretch;gap:0;overflow-y:auto;overflow-x:hidden}
+.main{margin-left:280px!important;min-width:0;width:calc(100% - 280px);transition:margin-left .2s ease,width .2s ease}
+.sidebar>.nav-item{width:100%;min-width:0;display:flex;flex:0 0 auto;align-items:center;gap:12px;white-space:nowrap;overflow:hidden;padding:10px 12px}
+.sidebar>.nav-item span{display:block!important;flex:1 1 auto;width:auto!important;min-width:0;text-align:left!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px!important;line-height:1.25}
+.sidebar .side-label{flex:0 0 auto;white-space:nowrap;line-height:1.4}
+.sidebar-toggle{display:flex!important;flex:0 0 auto;align-items:center;justify-content:flex-start;min-height:38px;white-space:nowrap;cursor:pointer}
+body.sidebar-collapsed .sidebar{width:76px!important;min-width:76px}
+body.sidebar-collapsed .main{margin-left:76px!important;width:calc(100% - 76px)}
+body.sidebar-collapsed .sidebar>.nav-item{justify-content:center;gap:0;padding:11px 4px}
+body.sidebar-collapsed .sidebar>.nav-item span,body.sidebar-collapsed .sidebar .side-label,body.sidebar-collapsed .brand>span:last-child,body.sidebar-collapsed .sidebar-bottom .group-pill span:not(.status-dot),body.sidebar-collapsed .sidebar-bottom .theme-toggle span:not(:first-child),body.sidebar-collapsed .sidebar-toggle-label{display:none!important}
+body.sidebar-collapsed .sidebar-toggle{justify-content:center;padding:8px 3px}
+body.sidebar-collapsed .sidebar-toggle-icon{width:auto}
+@media(max-width:900px) and (min-width:701px){.sidebar{width:250px!important;min-width:250px}.main{margin-left:250px!important;width:calc(100% - 250px)}body.sidebar-collapsed .sidebar{width:72px!important;min-width:72px}body.sidebar-collapsed .main{margin-left:72px!important;width:calc(100% - 72px)}}
+@media(max-width:700px){.sidebar{position:fixed!important;left:0;top:0;bottom:0;width:280px!important;min-width:280px;max-width:85vw;z-index:60;padding:14px 12px!important;box-shadow:12px 0 35px rgba(0,0,0,.25)}.main{margin-left:0!important;width:100%;padding-left:14px;padding-right:14px}body.sidebar-collapsed .sidebar{width:64px!important;min-width:64px;max-width:64px}body.sidebar-collapsed .main{margin-left:64px!important;width:calc(100% - 64px)}}
