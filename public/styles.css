@@ -1141,3 +1141,19 @@ button:not(:disabled){-webkit-tap-highlight-color:transparent}
 button:disabled{cursor:not-allowed!important;opacity:.55}
 button[type="button"],button[type="submit"]{touch-action:manipulation}
 @media(max-width:650px){select{min-height:46px;font-size:14px;padding-left:12px!important}}
+
+/* Keep staff suggestions above nearby cards, tables, and form controls on every page. */
+.content-card:has(.staff-autocomplete-results.is-open),
+.form-grid>div:has(.staff-autocomplete-results.is-open){position:relative;z-index:800;overflow:visible}
+.form-grid>div:has(>.staff-autocomplete-results.is-open){z-index:1000}
+.form-grid .staff-autocomplete-results.is-open{
+ position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:2000;
+ max-height:min(320px,45vh);overflow-y:auto;margin-top:0;
+ border:1px solid var(--line);border-radius:12px;
+ background:var(--panel);color:var(--text);
+ box-shadow:0 14px 34px rgba(0,0,0,.2)
+}
+.form-grid .staff-suggestion-row{background:var(--panel)}
+.form-grid .staff-suggestion{min-height:46px}
+.form-grid .staff-suggestion:focus-visible,
+.form-grid .staff-suggestion-profile:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
