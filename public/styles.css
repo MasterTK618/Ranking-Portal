@@ -1164,3 +1164,12 @@ button[type="button"],button[type="submit"]{touch-action:manipulation}
 .directory-filters:has(.directory-search-suggestions.is-open){z-index:81;}
 
 .task-assignee-wrap{position:relative;min-width:0}.task-assignee-wrap .staff-autocomplete-results{z-index:90}
+
+/* Compact session scheduling form and clear workspace switching */
+.session-create-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
+.session-create-grid>.full-width{grid-column:1/-1}
+.workspace-switcher{display:flex;gap:8px;flex-wrap:wrap;margin:-8px 0 18px}
+.workspace-switcher .active{background:var(--accent-soft,#fff3bf);border-color:var(--yellow);color:var(--text);font-weight:800}
+.session-request-card footer{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+@media(max-width:900px){.session-create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.session-create-grid{grid-template-columns:1fr}.session-create-grid>.full-width{grid-column:auto}.workspace-switcher>*{flex:1 1 100%}}
