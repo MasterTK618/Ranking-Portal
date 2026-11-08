@@ -389,7 +389,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   // Request deletion is handled once by the complete route below.
   router.patch("/session-requests/:id",csrf,async(req,res,next)=>{try{
-    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session request ID."});
+    if(!/^\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session request ID."});
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
     const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank||243);
     const found=await pool.query("SELECT * FROM session_requests WHERE id=$1",[req.params.id]);
@@ -400,8 +400,8 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||""),hostId=String(b.hostId||""),cohostId=String(b.cohostId||"");
     const parsed=new Date(date+"T00:00:00.000Z");
     if(!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(type)||title.length<3||title.length>100||details.length<10||details.length>2000)return res.status(400).json({error:"Choose a session type, enter a clear title, and provide at least 10 characters of details."});
-    if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
-    if(!/^\\d+$/.test(hostId)||cohostId&&!/^\\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
+    if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
     const ids=[hostId,...(cohostId?[cohostId]:[])],people=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
     if(people.some(x=>!x.who?.inGroup))return res.status(400).json({error:"The host and co-host must be current Lemonz group members."});
     const names=Object.fromEntries(await Promise.all(ids.map(async id=>{try{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];}catch{return [id,id];}})));
