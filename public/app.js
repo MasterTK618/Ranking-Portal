@@ -1029,7 +1029,9 @@ function setupStaffAutocompleteFields(){
   ["taskAssignedTo","taskAssignedToId",false,true],
   ["editSessionCoHost","editSessionCoHostId",false,true],
   ["editSessionPromoter","editSessionPromoterId",true,true],
-  ["evidenceTargetUsername","evidenceTargetId",false,true]
+  ["evidenceTargetUsername","evidenceTargetId",false,true],
+  ["editSessionRequestHost","editSessionRequestHostId",false,true],
+  ["editSessionRequestCoHost","editSessionRequestCoHostId",false,true]
  ];
  fields.forEach(([inputId,hiddenId,senior,allGroupMembers,minRank])=>attachStaffAutocomplete(inputId,{hiddenId,senior,allGroupMembers,minRank}));
 }
@@ -1322,9 +1324,9 @@ async function loadSessions(){
 }
 async function loadSessionRequests(){
  const el=$("sessionRequestTable");if(!el)return;el.textContent="Loading session requests…";
- try{const d=await api("/api/management/session-requests"),items=d.items||[];
+ try{const d=await api("/api/management/session-requests"),items=d.items||[];window.__lemonzSessionRequests=items;
   const pending=items.filter(x=>x.status==="PENDING").length,approved=items.filter(x=>x.status==="APPROVED").length;
-  el.innerHTML='<div class="request-summary"><span>'+items.length+' total requests</span><span>'+pending+' pending</span><span>'+approved+' approved</span></div>'+(items.length?'<div class="session-request-list">'+items.map(x=>'<article class="session-request-card" data-record-id="'+escapeHtml(x.id)+'"><div class="session-request-card-main"><div><span class="session-type-pill">'+sessionTypeLabel(x.session_type)+'</span><h3>'+escapeHtml(x.title)+'</h3><p>'+escapeHtml(x.details||"No additional details provided.")+'</p></div><span class="status-pill status-'+String(x.status).toLowerCase()+'">'+escapeHtml(x.status)+'</span></div><div class="session-request-meta"><span><small>PROPOSED DATE</small><b>'+dateOnly(x.preferred_date)+' · '+escapeHtml(String(x.preferred_time||"").slice(0,5))+'</b></span><span><small>HOST</small><b>'+escapeHtml(x.host_name||"—")+(x.cohost_name?" · "+escapeHtml(x.cohost_name):"") +'</b></span><span><small>REQUESTED BY</small><b>'+escapeHtml(x.requested_by_name)+'</b></span></div>'+(x.review_note?'<div class="session-request-review"><small>REVIEW NOTE</small><p>'+escapeHtml(x.review_note)+'</p></div>':"") +'<footer>'+(d.canReview&&x.status==="PENDING"?'<button class="primary-btn" data-session-request-decision="'+x.id+'" data-status="APPROVED">Approve request</button> <button class="quiet-btn" data-session-request-decision="'+x.id+'" data-status="REJECTED">Decline</button>':"")+(x.canCancel?' <button class="danger-btn" data-session-request-cancel="'+x.id+'">Cancel</button>':"") +'</footer></article>').join("")+'</div>':'<div class="empty-state">No session requests have been submitted yet.</div>');
+  el.innerHTML='<div class="request-summary"><span>'+items.length+' total requests</span><span>'+pending+' pending</span><span>'+approved+' approved</span></div>'+(items.length?'<div class="session-request-list">'+items.map(x=>'<article class="session-request-card" data-record-id="'+escapeHtml(x.id)+'"><div class="session-request-card-main"><div><span class="session-type-pill">'+sessionTypeLabel(x.session_type)+'</span><h3>'+escapeHtml(x.title)+'</h3><p>'+escapeHtml(x.details||"No additional details provided.")+'</p></div><span class="status-pill status-'+String(x.status).toLowerCase()+'">'+escapeHtml(x.status)+'</span></div><div class="session-request-meta"><span><small>PROPOSED DATE</small><b>'+dateOnly(x.preferred_date)+' · '+escapeHtml(String(x.preferred_time||"").slice(0,5))+'</b></span><span><small>HOST</small><b>'+escapeHtml(x.host_name||"—")+(x.cohost_name?" · "+escapeHtml(x.cohost_name):"") +'</b></span><span><small>REQUESTED BY</small><b>'+escapeHtml(x.requested_by_name)+'</b></span></div>'+(x.review_note?'<div class="session-request-review"><small>REVIEW NOTE</small><p>'+escapeHtml(x.review_note)+'</p></div>':"") +'<footer>'+(x.canEdit?'<button type="button" class="quiet-btn" data-session-request-edit="'+x.id+'">Edit request</button>':"")+(d.canReview&&x.status==="PENDING"?'<button type="button" class="primary-btn" data-session-request-decision="'+x.id+'" data-status="APPROVED">Approve &amp; schedule</button> <button type="button" class="quiet-btn" data-session-request-decision="'+x.id+'" data-status="REJECTED">Decline</button>':"")+(x.canCancel?' <button type="button" class="danger-btn" data-session-request-cancel="'+x.id+'">Cancel</button>':"")+(x.canDelete?' <button type="button" class="danger-btn" data-session-request-delete="'+x.id+'">Delete</button>':"") +'</footer></article>').join("")+'</div>':'<div class="empty-state">No session requests have been submitted yet.</div>');
   // Session request actions are tracked in the unified Audit Log.
  }catch(e){el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}
 }
@@ -1341,6 +1343,28 @@ $("submitSessionRequest")?.addEventListener("click",async()=>{
 });
 $("refreshSessionRequests")?.addEventListener("click",loadSessionRequests);
 
+function openSessionRequestEditor(id){
+ const item=(window.__lemonzSessionRequests||[]).find(x=>String(x.id)===String(id));if(!item)return;
+ $("editSessionRequestId").value=item.id;$("editSessionRequestType").value=item.session_type||"PROMOTIONAL";
+ $("editSessionRequestTitle").value=item.title||"";$("editSessionRequestDetails").value=item.details||"";
+ $("editSessionRequestDate").value=String(item.preferred_date||"").slice(0,10);$("editSessionRequestTime").value=String(item.preferred_time||"").slice(0,5);
+ setStaffAutocompleteValue("editSessionRequestHost",item.host_id,undefined,item.host_name);
+ setStaffAutocompleteValue("editSessionRequestCoHost",item.cohost_id,undefined,item.cohost_name);
+ $("sessionRequestEditDialog").showModal();
+}
+$("closeSessionRequestEdit")?.addEventListener("click",()=>$("sessionRequestEditDialog").close());
+$("cancelSessionRequestEdit")?.addEventListener("click",()=>$("sessionRequestEditDialog").close());
+$("sessionRequestEditForm")?.addEventListener("submit",async e=>{
+ e.preventDefault();const b=$("saveSessionRequestEdit");if(b.disabled)return;
+ const hostId=staffIdFor("editSessionRequestHost","editSessionRequestHostId"),cohostId=staffIdFor("editSessionRequestCoHost","editSessionRequestCoHostId");
+ if(!hostId||staffInputMissingSelection("editSessionRequestCoHost")){notice("Choose the host and any co-host from the username suggestions.","error");return;}
+ const body={sessionType:$("editSessionRequestType").value,title:$("editSessionRequestTitle").value.trim(),details:$("editSessionRequestDetails").value.trim(),preferredDate:$("editSessionRequestDate").value,preferredTime:$("editSessionRequestTime").value,hostId,cohostId};
+ b.disabled=true;b.textContent="Saving…";
+ try{await api("/api/management/session-requests/"+encodeURIComponent($("editSessionRequestId").value),{method:"PATCH",body:JSON.stringify(body)});$("sessionRequestEditDialog").close();notice("Session request updated.","success");await loadSessionRequests();}
+ catch(err){notice(err.message,"error");}finally{b.disabled=false;b.textContent="Save request changes";}
+});
+
+
 $("sessionHistorySearch")?.addEventListener("input",loadSessions);$("sessionHistoryFilter")?.addEventListener("change",loadSessions);
 document.addEventListener("change",async e=>{
  const select=e.target.closest("[data-session-status]");if(!select)return;
@@ -1349,6 +1373,8 @@ document.addEventListener("change",async e=>{
  select.disabled=true;try{await api("/api/management/sessions/"+encodeURIComponent(select.dataset.sessionStatus)+"/status",{method:"PATCH",body:JSON.stringify({status,note})});notice("Session status updated and logged.","success");await loadSessions();}catch(err){notice(err.message,"error");await loadSessions();}
 });
 document.addEventListener("click",async e=>{
+ const edit=e.target.closest("[data-session-request-edit]");if(edit){openSessionRequestEditor(edit.dataset.sessionRequestEdit);return;}
+ const delRequest=e.target.closest("[data-session-request-delete]");if(delRequest){if(!confirm("Delete this session request permanently?"))return;delRequest.disabled=true;try{await api("/api/management/session-requests/"+encodeURIComponent(delRequest.dataset.sessionRequestDelete),{method:"DELETE"});notice("Session request deleted.","success");await loadSessionRequests();}catch(err){notice(err.message,"error");delRequest.disabled=false;}return;}
  const cancel=e.target.closest("[data-session-request-cancel]");if(cancel){if(!confirm("Cancel this pending session request?"))return;cancel.disabled=true;try{await api("/api/management/session-requests/"+encodeURIComponent(cancel.dataset.sessionRequestCancel),{method:"DELETE"});notice("Session request canceled.","success");await loadSessionRequests();}catch(err){notice(err.message,"error");}return;}
  const b=e.target.closest("[data-session-request-decision]");if(!b)return;const status=b.dataset.status,note=prompt(status==="REJECTED"?"Why are you declining this session request?":"Optional review note:")||"";
  if(status==="REJECTED"&&!note.trim()){notice("A reason is required when declining a request.","error");return;}
@@ -1500,6 +1526,7 @@ async function renderQuotaProgress(el){
 }
 async function loadAnalytics(){const el=$("analyticsContent");if(!el)return;el.textContent="Loading analytics…";try{const d=await api("/api/management/analytics"),max=Math.max(1,...d.weekly.map(x=>Number(x.hours))),tm=Math.max(1,...d.teams.map(x=>Number(x.seconds)));el.innerHTML='<h3>Weekly activity · 12 weeks</h3>'+d.weekly.map(x=>'<div class="analytics-bar-row"><span>'+escapeHtml(String(x.week).slice(0,10))+'</span><div><i style="width:'+Math.min(100,Number(x.hours)/max*100)+'%"></i></div><b>'+Number(x.hours).toFixed(1)+'h</b></div>').join("")+'<h3>Team comparison</h3>'+d.teams.map(x=>'<div class="analytics-bar-row"><span>'+escapeHtml(x.name)+'</span><div><i style="width:'+Math.min(100,Number(x.seconds)/tm*100)+'%"></i></div><b>'+(Number(x.seconds)/3600).toFixed(1)+'h</b></div>').join("")+'<h3>Most active this week</h3>'+d.top.map((x,i)=>'<button type="button" class="analytics-top-row" data-open-analytics-profile="'+escapeHtml(x.user_id)+'"><b>#'+(i+1)+' '+escapeHtml(x.username)+'</b><span>'+(Number(x.seconds)/3600).toFixed(1)+' hours · View profile ↗</span></button>').join("");}catch(e){el.textContent=e.message;return;}try{await renderQuotaProgress(el);}catch(e){el.insertAdjacentHTML("beforeend",'<p class="muted">Quota progress is unavailable: '+escapeHtml(e.message)+'</p>');}}
 async function openWorkflowTarget(type,id){
+ type=String(type||"").toUpperCase().replace("DISCIPLINE","PUNISHMENT").replace("PUNISHMENT_REQUEST","PUNISHMENT").replace("SESSION_REQUEST","SESSION");
  const map={PROMOTION:{page:"promotions",view:"reviews",loader:()=>loadManagement("promotions")},PUNISHMENT:{page:"punishments",view:"reviews",loader:()=>loadManagement("punishments")},LEAVE:{page:"leaves",view:"inbox",loader:()=>loadManagement("leaves")},SESSION:{page:"sessions",view:"requests",loader:()=>loadSessionRequests()},SHIFT:{page:"sessions",view:"schedule",loader:()=>loadSessions()},TASK:{page:"tasks",view:"",loader:()=>loadTasks()},ANNOUNCEMENT:{page:"announcements",view:"",loader:()=>loadAnnouncements()}};
  const route=map[String(type||"").toUpperCase()];if(!route){notice("This notification does not have a destination yet.","error");return;}
  showPage(route.page,route.view);await route.loader();
@@ -1512,6 +1539,7 @@ document.addEventListener("click",async e=>{
  if(open){const [type,id]=String(open.dataset.notificationOpen||"").split(":");await openWorkflowTarget(type,id);return;}
  const review=e.target.closest("[data-approval-open]");
  if(review){await openWorkflowTarget(review.dataset.approvalOpen,review.dataset.approvalId);return;}
+ const workspace=e.target.closest("[data-workspace-switch]");if(workspace){showPage(workspace.dataset.workspaceSwitch,workspace.dataset.workspaceView);return;}
 });
 async function loadEvidence(){const el=$("evidenceList");if(!el)return;el.textContent="Loading evidence records…";try{const target=String($("evidenceTargetId")?.value||"").trim(),d=await api("/api/management/evidence"+(target?"?targetUserId="+encodeURIComponent(target):""));const card=el.closest(".evidence-center-card");card?.querySelector(".form-grid")?.classList.toggle("hidden",!d.canUpload);const footer=el.parentElement?.querySelector(".form-footer");footer?.classList.toggle("hidden",!d.canUpload);el.innerHTML=d.items.length?'<table class="data-table"><thead><tr><th>UPLOADED</th><th>STAFF MEMBER</th><th>CATEGORY</th><th>TITLE</th><th>FILE</th><th>BY</th><th></th></tr></thead><tbody>'+d.items.map(x=>'<tr><td>'+escapeHtml(formatDate(x.created_at))+'</td><td>'+escapeHtml(x.target_username)+'</td><td>'+escapeHtml(x.category)+'</td><td>'+escapeHtml(x.title)+'</td><td>'+escapeHtml(x.file_name)+'</td><td>'+escapeHtml(x.uploaded_by_name)+'</td><td><a class="quiet-btn" href="/api/management/evidence/'+encodeURIComponent(x.id)+'/download">Download</a>'+(d.canManage?' <button class="danger-btn" data-evidence-delete="'+escapeHtml(x.id)+'">Delete</button>':'')+'</td></tr>').join("")+'</tbody></table>':'<div class="empty-state">No evidence files have been uploaded.</div>';}catch(e){const card=el.closest(".evidence-center-card");card?.querySelector(".form-grid")?.classList.add("hidden");card?.querySelector(".form-footer")?.classList.add("hidden");el.innerHTML='<div class="empty-state error-state">'+escapeHtml(e.message)+'</div>';}}
 $("uploadEvidence")?.addEventListener("click",async()=>{const b=$("uploadEvidence"),file=$("evidenceFile")?.files?.[0];if(!file){notice("Choose a file to upload.","error");return;}if(file.size>4*1024*1024){notice("Evidence files must be 4 MB or smaller.","error");return;}const reader=new FileReader();b.disabled=true;b.textContent="Uploading…";reader.onload=async()=>{try{await api("/api/management/evidence",{method:"POST",body:JSON.stringify({targetUserId:$("evidenceTargetId").value.trim(),targetUsername:$("evidenceTargetUsername").value.trim(),category:$("evidenceCategory").value,title:$("evidenceTitle").value.trim(),description:$("evidenceDescription").value.trim(),fileName:file.name,mimeType:file.type||"application/octet-stream",fileData:reader.result})});notice("Evidence uploaded and added to staff history.","success");$("evidenceTitle").value="";$("evidenceDescription").value="";$("evidenceFile").value="";await loadEvidence();}catch(e){notice(e.message,"error");}finally{b.disabled=false;b.textContent="Upload evidence";}};reader.onerror=()=>{notice("Could not read the selected file.","error");b.disabled=false;b.textContent="Upload evidence";};reader.readAsDataURL(file);});
