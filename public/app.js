@@ -874,6 +874,13 @@ async function loadTasks(){
 }
 
 
+function setupLeaveDateLimits(){
+  const start=$("leaveStart"),end=$("leaveEnd");if(!start||!end)return;
+  const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10);};
+  start.min=today();end.min=start.value||today();
+  start.addEventListener("change",()=>{end.min=start.value||today();if(end.value&&end.value<end.min)end.value=end.min;});
+}
+
 setupLeaveDateLimits();
 $("refreshLeaves")?.addEventListener("click",()=>loadManagement("leaves"));
 
