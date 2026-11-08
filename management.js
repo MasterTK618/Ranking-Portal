@@ -355,7 +355,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     if(!/^\d+$/.test(hostId)||cohostId&&!/^\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
     const staff=await Promise.all([hostId,...(cohostId?[cohostId]:[])].map(async id=>({id,who:await getIdentity(id)})));
     if(staff.some(x=>!x.who?.inGroup))return res.status(400).json({error:"The host and co-host must be current Lemonz group members."});
-    const userNames=await Promise.all(staff.map(async x=>{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,u.name||x.id];}));
+    const userNames=await Promise.all(staff.map(async x=>{try{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(x.id));const u=await r.json().catch(()=>({}));return [x.id,r.ok&&u.name?String(u.name):x.id];}catch{return [x.id,x.id];}}));
     const names=Object.fromEntries(userNames);
     const cfg=await settings(),auto=requestAutoApproved(who,cfg);
     const result=await pool.query("INSERT INTO session_requests(session_type,title,details,preferred_date,preferred_time,host_id,host_name,cohost_id,cohost_name,requested_by,requested_by_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *",[type,title,details,date,time,hostId,names[hostId],cohostId||null,cohostId?names[cohostId]:null,String(req.session.user.id),String(req.session.user.name)]);
