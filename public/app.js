@@ -61,6 +61,7 @@ function showPage(page,view) {
   document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===page&&(b.dataset.view||defaultViews[page]||"")===(selectedView||"")));
   const pageEl=$(`${page}Page`);
   if(pageEl?.querySelector("[data-workspace-panel]"))pageEl.querySelectorAll("[data-workspace-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.workspacePanel!==selectedView));
+  if(page==="punishments")document.querySelectorAll("[data-workspace-switch]").forEach(button=>button.classList.toggle("active",button.dataset.workspaceView===selectedView));
   $("pageTitle").textContent=pageNames[page]||"Workspace";$("crumb").textContent=(selectedView?selectedView+" / ":"")+page.toUpperCase();
   clearNotice();
   if(page==="myActivity")loadMyActivity();
