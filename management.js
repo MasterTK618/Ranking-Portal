@@ -345,7 +345,7 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
   router.get("/session-requests",async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});const cfg=await settings();if(Number(who.rank)<Number(cfg.session_requests_view_rank||230))return res.status(403).json({error:"Your role cannot view session requests."});const canReview=Number(who.rank)>=Number(cfg.session_approve_rank||243);
     const result=canReview?await pool.query("SELECT * FROM session_requests ORDER BY created_at DESC LIMIT 300"):await pool.query("SELECT * FROM session_requests WHERE requested_by=$1 ORDER BY created_at DESC LIMIT 100",[String(req.session.user.id)]);
-    res.json({items:result.rows.map(x=>({...x,canCancel:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview)})),canReview,rank:Number(who.rank),settings:cfg});
+    res.json({items:result.rows.map(x=>({...x,canCancel:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview),canEdit:x.status==="PENDING"&&(String(x.requested_by)===String(req.session.user.id)||canReview),canDelete:String(x.requested_by)===String(req.session.user.id)||canReview})),canReview,rank:Number(who.rank),settings:cfg});
   }catch(e){next(e);}});
   router.post("/session-requests",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who||!who.inGroup||Number(who.rank)<1)return res.status(403).json({error:"You must be a current Lemonz group member to request a session."});
@@ -388,6 +388,29 @@ function createManagementRouter({ pool, getIdentity, requireLogin, csrf, require
     await client.query("COMMIT");res.json({ok:true,item:updated.rows[0],session:scheduled});
   }catch(e){if(client)await client.query("ROLLBACK").catch(()=>{});next(e);}finally{client?.release();}});
   // Request deletion is handled once by the complete route below.
+  router.patch("/session-requests/:id",csrf,async(req,res,next)=>{try{
+    if(!/^\\d+$/.test(String(req.params.id||"")))return res.status(400).json({error:"Invalid session request ID."});
+    const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
+    const cfg=await settings(),canReview=Number(who.rank)>=Number(cfg.session_approve_rank||243);
+    const found=await pool.query("SELECT * FROM session_requests WHERE id=$1",[req.params.id]);
+    if(!found.rowCount)return res.status(404).json({error:"Session request not found."});
+    const current=found.rows[0],isOwner=String(current.requested_by)===String(req.session.user.id);
+    if(!canReview&&!isOwner)return res.status(403).json({error:"You cannot edit this session request."});
+    if(current.status!=="PENDING")return res.status(409).json({error:"Only pending session requests can be edited."});
+    const b=req.body||{},type=String(b.sessionType||""),title=String(b.title||"").trim(),details=String(b.details||"").trim(),date=String(b.preferredDate||""),time=String(b.preferredTime||""),hostId=String(b.hostId||""),cohostId=String(b.cohostId||"");
+    const parsed=new Date(date+"T00:00:00.000Z");
+    if(!["PROMOTIONAL","RECRUITMENT","MINI_GAMES"].includes(type)||title.length<3||title.length>100||details.length<10||details.length>2000)return res.status(400).json({error:"Choose a session type, enter a clear title, and provide at least 10 characters of details."});
+    if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time))return res.status(400).json({error:"Choose a valid proposed date and time."});
+    if(!/^\\d+$/.test(hostId)||cohostId&&!/^\\d+$/.test(cohostId)||hostId===cohostId&&cohostId)return res.status(400).json({error:"Choose a valid host and a different co-host."});
+    const ids=[hostId,...(cohostId?[cohostId]:[])],people=await Promise.all(ids.map(async id=>({id,who:await getIdentity(id)})));
+    if(people.some(x=>!x.who?.inGroup))return res.status(400).json({error:"The host and co-host must be current Lemonz group members."});
+    const names=Object.fromEntries(await Promise.all(ids.map(async id=>{try{const r=await fetch("https://users.roblox.com/v1/users/"+encodeURIComponent(id));const u=await r.json().catch(()=>({}));return [id,u.name||id];}catch{return [id,id];}})));
+    const updated=await pool.query("UPDATE session_requests SET session_type=$1,title=$2,details=$3,preferred_date=$4,preferred_time=$5,host_id=$6,host_name=$7,cohost_id=$8,cohost_name=$9 WHERE id=$10 AND status='PENDING' RETURNING *",[type,title,details,date,time,hostId,names[hostId],cohostId||null,cohostId?names[cohostId]:null,req.params.id]);
+    if(!updated.rowCount)return res.status(409).json({error:"This request changed while you were editing it. Refresh the inbox."});
+    await pool.query("INSERT INTO management_audit_logs(category,action,target_id,target_username,details,actor_id,actor_name) VALUES($1,$2,$3,$4,$5,$6,$7)",["SESSION_REQUEST","UPDATED",String(updated.rows[0].requested_by),String(updated.rows[0].requested_by_name),"Session request #"+updated.rows[0].id+" updated: "+title,String(req.session.user.id),String(req.session.user.name)]);
+    res.json({ok:true,item:updated.rows[0]});
+  }catch(e){next(e);}});
+
   router.get("/session-requests/audit",async(req,res,next)=>{try{const who=await gate(req,res,"session_approve_rank");if(!who)return;const result=await pool.query("SELECT * FROM management_audit_logs WHERE category='SESSION' ORDER BY created_at DESC LIMIT 300");res.json({items:result.rows});}catch(e){next(e);}});
   router.patch("/sessions/:id/roles",csrf,async(req,res,next)=>{try{
     const who=await identity(req);if(!who)return res.status(401).json({error:"Sign in first."});
