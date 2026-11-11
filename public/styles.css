@@ -1173,3 +1173,160 @@ button[type="button"],button[type="submit"]{touch-action:manipulation}
 .session-request-card footer{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 @media(max-width:900px){.session-create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.session-create-grid{grid-template-columns:1fr}.session-create-grid>.full-width{grid-column:auto}.workspace-switcher>*{flex:1 1 100%}}
+
+
+/* =========================================================
+   LEMONZ UI REFRESH — presentation layer only
+   Keeps existing page markup, IDs, events, and API behavior.
+   ========================================================= */
+:root{
+  --bg:#f4f4f1;--panel:#fff;--panel2:#f8f8f5;--text:#20211e;--muted:#85877f;
+  --line:#e4e5df;--yellow:#f5ca2d;--yellow2:#ffdc59;
+  --shadow:0 10px 32px rgba(24,24,18,.055);
+  --radius-lg:18px;--radius-md:13px;
+}
+body.dark,:root.dark{
+  --bg:#0c0d0f;--panel:#121417;--panel2:#181b1f;--text:#f2f3f4;--muted:#92979f;
+  --line:#262a30;--yellow:#f5ca2d;--yellow2:#ffdf69;
+  --shadow:0 14px 40px rgba(0,0,0,.22);
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);transition:background .2s ease,color .2s ease}
+.app-shell{background:var(--bg)}
+.sidebar{
+  width:258px;padding:22px 15px 16px;background:var(--panel);
+  border-right:1px solid var(--line);box-shadow:8px 0 30px rgba(0,0,0,.025);
+  transition:width .2s ease,background .2s ease;
+}
+.brand{gap:12px;margin:0 5px 28px;font-size:20px;letter-spacing:-.55px}
+.brand-mark{width:36px;height:36px;border-radius:12px;background:var(--yellow);color:#211b08;font-weight:900}
+.brand-sub{letter-spacing:1.45px;font-size:8px}
+.side-label{padding:0 11px;margin:20px 0 7px;font-size:9px;letter-spacing:1.35px}
+.nav-item{
+  width:100%;min-height:40px;padding:10px 11px;border-radius:10px;margin:2px 0;
+  gap:12px;color:var(--muted);font-size:12px;font-weight:650;transition:background .15s ease,color .15s ease,transform .15s ease;
+}
+.nav-item span{font-size:12px;width:auto;text-align:left}
+.nav-item:hover{background:var(--panel2);color:var(--text);transform:translateX(2px)}
+.nav-item.active{background:rgba(245,202,45,.14);color:var(--text);box-shadow:inset 3px 0 0 var(--yellow)}
+body:not(.dark) .nav-item.active{background:#fff5ce;color:#4d3d08}
+.sidebar-bottom{padding-top:14px;border-top:1px solid var(--line)}
+.group-pill{background:var(--panel2);border-color:var(--line);border-radius:12px;padding:11px}
+.theme-toggle,.quiet-btn{
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);
+  border-radius:10px;padding:10px 13px;transition:border-color .15s ease,background .15s ease,transform .15s ease;
+}
+.theme-toggle:hover,.quiet-btn:hover{border-color:rgba(245,202,45,.65);transform:translateY(-1px)}
+.main{margin-left:258px;padding:25px clamp(22px,3.2vw,54px) 28px;max-width:none}
+.topbar{min-height:58px;padding:0 0 17px;gap:18px}
+.topbar-crumb{display:flex;align-items:center;gap:10px;min-width:0}
+.topbar-brand-mark{width:29px;height:29px;border-radius:9px;background:var(--yellow);color:#211b08;display:grid;place-items:center;font-weight:900}
+.topbar-divider{color:var(--muted);opacity:.55}
+.topbar-workspace{font-weight:750;font-size:13px}
+h1{font-size:18px;letter-spacing:-.45px;margin:0}
+.top-actions{gap:8px}
+.top-icon-btn{width:36px;height:36px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--muted)}
+.top-icon-btn:hover{color:var(--text);border-color:var(--yellow)}
+.command-open{min-width:210px;display:flex;align-items:center;gap:9px;justify-content:flex-start}
+.command-open span{flex:1;text-align:left;color:var(--muted)}
+kbd{border:1px solid var(--line);border-radius:5px;padding:2px 5px;font-size:9px;color:var(--muted)}
+.page{padding:26px 0 32px}
+.page-intro,.welcome-row{margin-bottom:23px}
+.page-intro h2,.welcome-row h2{font-size:25px;letter-spacing:-.9px}
+.page-intro p,.welcome-row p{font-size:12px;line-height:1.65}
+.eyebrow{font-size:9px;letter-spacing:1.45px}
+.stat-grid{gap:13px}
+.stat-card,.content-card,.overview-panel,.overview-metric,.views-stat{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);
+}
+.stat-card{padding:19px;min-height:145px}
+.stat-icon{background:rgba(245,202,45,.13);color:#d4a900;border-radius:11px}
+.content-card{padding:21px}
+.card-heading h3,.section-heading h3,.directory-toolbar h3{font-size:15px;letter-spacing:-.25px}
+.primary-btn{background:var(--yellow);color:#211b08;border-radius:10px;box-shadow:0 2px 0 #d2a90e;font-weight:800}
+.primary-btn:hover{background:var(--yellow2)}
+input,select,textarea{background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px 13px;font-size:12px}
+input:focus,select:focus,textarea:focus{border-color:var(--yellow);box-shadow:0 0 0 3px rgba(245,202,45,.13)}
+.data-table th{font-size:9px;letter-spacing:.9px}
+.data-table td{font-size:12px}
+.data-table tbody tr:hover{background:var(--panel2)}
+.quick-action{background:var(--panel2);border-radius:13px;padding:17px;border-color:var(--line)}
+.quick-action:hover{background:rgba(245,202,45,.08);border-color:rgba(245,202,45,.55)}
+.quick-action span{color:#d5a900}
+.notice{border:1px solid rgba(245,202,45,.25);border-radius:12px}
+footer{color:var(--muted)}
+
+/* People / member directory workspace */
+.directory-workspace{display:grid;grid-template-columns:minmax(205px,245px) minmax(0,1fr);gap:17px;align-items:start}
+.directory-rank-sidebar{position:sticky;top:18px;padding:17px;max-height:calc(100vh - 36px);overflow:auto}
+.directory-sidebar-heading h3{font-size:14px;margin:0 0 5px}
+.directory-sidebar-heading p{font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 14px}
+.directory-rank-sidebar #directoryRankOptions{display:grid;gap:7px}
+.directory-rank-sidebar #directoryRankOptions button,
+.directory-rank-sidebar #directoryRankOptions .rank-option{
+  width:100%;text-align:left;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+  border-radius:11px;padding:11px 12px;font-size:11px;transition:.15s ease;
+}
+.directory-rank-sidebar #directoryRankOptions button:hover,
+.directory-rank-sidebar #directoryRankOptions .rank-option:hover{border-color:var(--yellow);background:rgba(245,202,45,.07)}
+.directory-rank-sidebar #directoryRankOptions button.active,
+.directory-rank-sidebar #directoryRankOptions .rank-option.active{border-color:var(--yellow);background:rgba(245,202,45,.12);box-shadow:inset 0 0 0 1px rgba(245,202,45,.12)}
+.directory-main-column{min-width:0}
+.directory-shell{padding:20px}
+.directory-toolbar{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}
+.directory-toolbar h3{margin:0}
+.directory-toolbar p{font-size:11px;color:var(--muted);margin:5px 0 0}
+.table-actions{display:flex;gap:7px;flex-wrap:wrap}
+.table-actions .quiet-btn{font-size:10px;padding:9px 11px}
+.directory-filters{display:flex;gap:9px;align-items:center;margin:18px 0 13px}
+.directory-search{flex:1;min-width:160px}
+.directory-status{font-size:11px;color:var(--muted);padding:2px 0 12px}
+.staff-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.staff-card,.staff-member-card,.directory-member,.member-card{
+  background:var(--panel2);border:1px solid var(--line);border-radius:13px;transition:border-color .15s ease,background .15s ease,transform .15s ease;
+}
+.staff-card:hover,.staff-member-card:hover,.directory-member:hover,.member-card:hover{
+  border-color:rgba(245,202,45,.65);background:rgba(245,202,45,.045);transform:translateY(-1px)
+}
+.staff-card button,.staff-member-card button,.directory-member button,.member-card button{color:inherit}
+.member-profile{margin-top:17px;padding:22px}
+.member-profile .profile-header{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
+.member-profile h3{font-size:20px;letter-spacing:-.5px}
+.member-profile .profile-avatar{border-radius:16px}
+.member-profile .profile-stat,.member-profile .profile-stat-card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px}
+.member-profile .profile-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px}
+.member-profile .profile-tabs button{border:1px solid transparent;background:transparent;color:var(--muted);border-radius:9px;padding:9px 12px}
+.member-profile .profile-tabs button.active{background:rgba(245,202,45,.12);color:var(--text);border-color:rgba(245,202,45,.35)}
+.empty-state,.directory-error{background:var(--panel2);border:1px dashed var(--line);border-radius:12px;padding:20px;color:var(--muted);font-size:12px}
+.directory-error p{overflow-wrap:anywhere}
+.directory-stale-note{background:rgba(245,202,45,.09);border:1px solid rgba(245,202,45,.2);border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--muted)}
+
+/* Make the interface comfortable at laptop and tablet widths. */
+@media(max-width:1100px){
+  .main{padding-left:24px;padding-right:24px}
+  .directory-workspace{grid-template-columns:190px minmax(0,1fr)}
+  .staff-grid{grid-template-columns:1fr}
+  .command-open{min-width:42px;width:42px;padding:10px;justify-content:center}
+  .command-open span,.command-open kbd{display:none}
+}
+@media(max-width:760px){
+  .sidebar{width:76px;padding:18px 10px}
+  .brand{justify-content:center;margin:0 0 24px}
+  .brand>span:last-child,.side-label,.nav-item span,.sidebar-toggle-label,.group-pill>span:not(.status-dot),.theme-toggle span:last-child,.user-box{display:none}
+  .nav-item{justify-content:center;font-size:17px;padding:12px 6px}
+  .main{margin-left:76px;padding:17px 15px 22px}
+  .topbar{align-items:flex-start}
+  .topbar-crumb{flex-wrap:wrap}
+  .topbar-workspace,.topbar-divider:first-of-type{display:none}
+  .top-actions{gap:5px}
+  .top-icon-btn{width:32px;height:32px}
+  .directory-workspace{grid-template-columns:1fr}
+  .directory-rank-sidebar{position:static;max-height:none}
+  .directory-rank-sidebar #directoryRankOptions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .staff-grid{grid-template-columns:1fr}
+  .directory-toolbar{align-items:flex-start}
+  .directory-filters{flex-wrap:wrap}
+  .directory-filters .quiet-btn{width:100%}
+  .stat-grid,.quick-grid{grid-template-columns:1fr}
+  .page{padding-top:20px}
+}
