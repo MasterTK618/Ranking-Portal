@@ -1051,7 +1051,9 @@ function renderDirectoryMembers(members){
 function renderDirectoryRankSidebar(members){
  const root=$("directoryRankOptions");if(!root)return;
  const eligibleRoles=(Array.isArray(directoryRoles)&&directoryRoles.length?directoryRoles:members.map(m=>({name:m.role,rank:m.rank})))
-  .filter(r=>Number(r.rank)>=0)
+  // Roblox's default "Members" role is not a staff/group rank category.
+  // Only show named, real group roles with a positive rank number.
+  .filter(r=>Number(r.rank)>0&&String(r.name||"").trim().toLowerCase()!=="members")
   .sort((a,b)=>Number(b.rank)-Number(a.rank));
  const unique=[];const seen=new Set();
  eligibleRoles.forEach(role=>{const rank=Number(role.rank);if(!Number.isFinite(rank)||seen.has(rank))return;seen.add(rank);unique.push({rank,name:String(role.name||members.find(m=>Number(m.rank)===rank)?.role||("Rank "+rank))});});
