@@ -55,7 +55,7 @@ async function api(url,options={}) {
     throw error;
   }finally{if(timeout)clearTimeout(timeout);}
 }
-function showPage(page,view) {
+function showPage(page,view,skipPageLoad=false) {
   const selectedView=view||defaultViews[page]||"";
   Object.keys(pageNames).forEach(k=>$(`${k}Page`).classList.toggle("hidden",k!==page));
   document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===page&&(b.dataset.view||defaultViews[page]||"")===(selectedView||"")));
@@ -64,22 +64,24 @@ function showPage(page,view) {
   if(page==="punishments")document.querySelectorAll("[data-workspace-switch]").forEach(button=>button.classList.toggle("active",button.dataset.workspaceView===selectedView));
   $("pageTitle").textContent=pageNames[page]||"Workspace";$("crumb").textContent=(selectedView?selectedView+" / ":"")+page.toUpperCase();
   clearNotice();
-  if(page==="myActivity")loadMyActivity();
-  if(page==="logs")loadManagementAudit();
-  if(page==="announcements")loadAnnouncements();
-  if(page==="rank")loadRoles();
-  if(page==="views")loadViews();
-  if(page==="settings")loadGameSettings();
-  if(page==="sessions"){if(!staffDirectory.length)loadStaffDirectory();if(selectedView==="requests")loadSessionRequests();else loadSessions();}
-  if(page==="members"){loadStaffDirectory();if($("directorySearch"))$("directorySearch").focus();}
-  if(page==="activity"){loadManagement("activity");loadActivityAlerts();}
-  if(page==="ingame")loadInGame();
-  if(page==="gameLinks")loadGameLinks();
-  if(page==="punishments"){loadManagement("punishments");if(selectedView==="requests")loadEvidence();}
-  if(page==="promotions"){loadPromotionRoleOptions();loadManagement("promotions");}
-  if(page==="leaves")loadManagement("leaves");
-  if(page==="tasks")loadTasks();
-  if(page==="knowledge")loadKnowledge();if(page==="notifications")loadNotifications();if(page==="approvals")loadApprovals();if(page==="analytics")loadAnalytics();
+  if(!skipPageLoad){
+    if(page==="myActivity")loadMyActivity();
+    if(page==="logs")loadManagementAudit();
+    if(page==="announcements")loadAnnouncements();
+    if(page==="rank")loadRoles();
+    if(page==="views")loadViews();
+    if(page==="settings")loadGameSettings();
+    if(page==="sessions"){if(!staffDirectory.length)loadStaffDirectory();if(selectedView==="requests")loadSessionRequests();else loadSessions();}
+    if(page==="members"){loadStaffDirectory();if($("directorySearch"))$("directorySearch").focus();}
+    if(page==="activity"){loadManagement("activity");loadActivityAlerts();}
+    if(page==="ingame")loadInGame();
+    if(page==="gameLinks")loadGameLinks();
+    if(page==="punishments"){loadManagement("punishments");if(selectedView==="requests")loadEvidence();}
+    if(page==="promotions"){loadPromotionRoleOptions();loadManagement("promotions");}
+    if(page==="leaves")loadManagement("leaves");
+    if(page==="tasks")loadTasks();
+    if(page==="knowledge")loadKnowledge();if(page==="notifications")loadNotifications();if(page==="approvals")loadApprovals();if(page==="analytics")loadAnalytics();
+  }
 }
 document.addEventListener("click",event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const nav=target.closest(".nav-item[data-page]");if(nav){event.preventDefault();showPage(nav.dataset.page,nav.dataset.view);return;}const quick=target.closest("[data-go]");if(quick){event.preventDefault();showPage(quick.dataset.go,quick.dataset.view);}});
 $("topRefreshButton")?.addEventListener("click",()=>{const active=document.querySelector(".nav-item.active");if(active)showPage(active.dataset.page,active.dataset.view);});
@@ -1532,7 +1534,7 @@ async function openWorkflowTarget(type,id){
  type=String(type||"").toUpperCase().replace("DISCIPLINE","PUNISHMENT").replace("PUNISHMENT_REQUEST","PUNISHMENT").replace("SESSION_REQUEST","SESSION");
  const map={PROMOTION:{page:"promotions",view:"reviews",loader:()=>loadManagement("promotions")},PUNISHMENT:{page:"punishments",view:"reviews",loader:()=>loadManagement("punishments")},LEAVE:{page:"leaves",view:"inbox",loader:()=>loadManagement("leaves")},SESSION:{page:"sessions",view:"requests",loader:()=>loadSessionRequests()},SHIFT:{page:"sessions",view:"schedule",loader:()=>loadSessions()},TASK:{page:"tasks",view:"",loader:()=>loadTasks()},ANNOUNCEMENT:{page:"announcements",view:"",loader:()=>loadAnnouncements()}};
  const route=map[String(type||"").toUpperCase()];if(!route){notice("This notification does not have a destination yet.","error");return;}
- showPage(route.page,route.view);await route.loader();
+ showPage(route.page,route.view,true);await route.loader();
  if(id){const row=[...document.querySelectorAll("[data-record-id]")].find(el=>String(el.dataset.recordId)===String(id));if(row){row.scrollIntoView({behavior:"smooth",block:"center"});row.classList.add("workflow-target-highlight");}}
 }
 document.addEventListener("click",async e=>{
