@@ -1330,3 +1330,30 @@ footer{color:var(--muted)}
   .stat-grid,.quick-grid{grid-template-columns:1fr}
   .page{padding-top:20px}
 }
+
+/* Member directory card components */
+.directory-rank-option{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:11px;
+  background:var(--panel2);color:var(--text);text-align:left;cursor:pointer;
+}
+.directory-rank-option>span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.directory-rank-option b{font-size:11px;font-weight:750;overflow:hidden;text-overflow:ellipsis}
+.directory-rank-option small{font-size:9px;color:var(--muted)}
+.directory-rank-option strong{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.directory-rank-option:hover{border-color:var(--yellow);background:rgba(245,202,45,.07)}
+.directory-rank-option.active{border-color:var(--yellow);background:rgba(245,202,45,.12)}
+.directory-rank-option.active strong{color:var(--text)}
+.staff-card{
+  width:100%;min-width:0;display:flex;align-items:center;gap:12px;
+  padding:12px;border:1px solid var(--line);border-radius:13px;
+  background:var(--panel2);color:var(--text);text-align:left;cursor:pointer;
+}
+.staff-avatar{width:43px;height:43px;flex:0 0 43px;object-fit:cover;border-radius:12px;background:var(--panel)}
+.staff-card-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.staff-card-copy b{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.staff-card-copy small{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.staff-card-copy .staff-team-label{color:var(--muted)}
+.staff-card-side{flex:0 0 auto}
+.staff-card-side .quiet-btn{font-size:9px;padding:7px 9px;white-space:nowrap}
+@media(max-width:900px){.staff-card-side{display:none}}
